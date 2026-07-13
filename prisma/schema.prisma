@@ -1,0 +1,191 @@
+// QR Ordering & Billing System — Prisma schema
+// See plan: C:\Users\princ\.claude\plans\sprightly-wishing-pizza.md
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum BusinessType {
+  RESTAURANT
+  CAFE
+  BAKERY
+  GROCERY
+  MEDICAL
+  ELECTRONICS
+  CLOTHING
+  STORE
+  OTHER
+}
+
+enum FoodType {
+  VEG
+  NON_VEG
+  NA
+}
+
+enum TaxType {
+  PERCENTAGE
+  FIXED
+}
+
+enum TaxAppliesTo {
+  ENTIRE_BILL
+  CATEGORY
+}
+
+model Admin {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  createdAt    DateTime @default(now())
+  shop         Shop?
+
+  @@map("admins")
+}
+
+model Shop {
+  id             String       @id @default(cuid())
+  adminId        String       @unique
+  admin          Admin        @relation(fields: [adminId], references: [id], onDelete: Cascade)
+  slug           String       @unique
+  businessName   String
+  businessType   BusinessType @default(RESTAURANT)
+  logoUrl        String?
+  phone          String?
+  whatsappNumber String
+  address        String?
+  gstNumber      String?
+  currency       String       @default("INR")
+
+  // Payment settings
+  upiId             String?
+  acceptCash        Boolean @default(true)
+  bankAccountName   String?
+  bankAccountNumber String?
+  bankIfsc          String?
+  bankName          String?
+  paymentQrImageUrl String?
+
+  // Order settings
+  requireCustomerName    Boolean @default(true)
+  requirePhone           Boolean @default(false)
+  requireTableNumber     Boolean @default(true)
+  requireDeliveryAddress Boolean @default(false)
+  allowNotes             Boolean @default(true)
+  saveOrdersToDb         Boolean @default(false)
+
+  isPublished Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  categories Category[]
+  products   Product[]
+  taxes      Tax[]
+  orders     Order[]
+
+  @@map("shops")
+}
+
+model Category {
+  id        String   @id @default(cuid())
+  shopId    String
+  shop      Shop     @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  name      String
+  sortOrder Int      @default(0)
+  isVisible Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  products Product[]
+  taxes    Tax[]
+
+  @@index([shopId])
+  @@map("categories")
+}
+
+model Product {
+  id          String   @id @default(cuid())
+  shopId      String
+  shop        Shop     @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  categoryId  String
+  category    Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  name        String
+  description String?
+  price       Decimal  @db.Decimal(10, 2)
+  imageUrl    String?
+  unit        String?
+  foodType    FoodType @default(NA)
+  isAvailable Boolean  @default(true)
+  isVisible   Boolean  @default(true)
+  stock       Int?
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  orderItems OrderItem[]
+
+  @@index([shopId])
+  @@index([categoryId])
+  @@map("products")
+}
+
+model Tax {
+  id         String       @id @default(cuid())
+  shopId     String
+  shop       Shop         @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  name       String
+  type       TaxType      @default(PERCENTAGE)
+  value      Decimal      @db.Decimal(10, 2)
+  appliesTo  TaxAppliesTo @default(ENTIRE_BILL)
+  categoryId String?
+  category   Category?    @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  isEnabled  Boolean      @default(true)
+  sortOrder  Int          @default(0)
+  createdAt  DateTime     @default(now())
+  updatedAt  DateTime     @updatedAt
+
+  @@index([shopId])
+  @@map("taxes")
+}
+
+model Order {
+  id              String   @id @default(cuid())
+  shopId          String
+  shop            Shop     @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  billNumber      String
+  customerName    String?
+  customerPhone   String?
+  tableNumber     String?
+  deliveryAddress String?
+  notes           String?
+  subtotal        Decimal  @db.Decimal(10, 2)
+  taxTotal        Decimal  @db.Decimal(10, 2)
+  grandTotal      Decimal  @db.Decimal(10, 2)
+  taxBreakdown    Json
+  createdAt       DateTime @default(now())
+
+  items OrderItem[]
+
+  @@index([shopId])
+  @@map("orders")
+}
+
+model OrderItem {
+  id        String   @id @default(cuid())
+  orderId   String
+  order     Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  productId String?
+  product   Product? @relation(fields: [productId], references: [id])
+  name      String
+  price     Decimal  @db.Decimal(10, 2)
+  quantity  Int
+  lineTotal Decimal  @db.Decimal(10, 2)
+
+  @@index([orderId])
+  @@map("order_items")
+}
