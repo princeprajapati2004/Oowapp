@@ -73,7 +73,7 @@ export function AdminShell({
 
   async function handleLogout() {
     await api.post("/api/auth/logout");
-    router.push("/admin/login");
+    router.push("/login");
     router.refresh();
   }
 

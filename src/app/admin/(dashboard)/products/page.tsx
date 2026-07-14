@@ -8,7 +8,7 @@ import { ProductsManager } from "@/components/admin/products-manager";
 
 export default async function ProductsPage() {
   const session = await getAdminSession();
-  if (!session) redirect("/admin/login");
+  if (!session) redirect("/login");
 
   const [products, categories, shop] = await Promise.all([
     listProducts(session.shopId),

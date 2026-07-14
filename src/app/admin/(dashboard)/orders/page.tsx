@@ -18,7 +18,7 @@ import {
 
 export default async function OrdersPage() {
   const session = await getAdminSession();
-  if (!session) redirect("/admin/login");
+  if (!session) redirect("/login");
 
   const shop = await getShopById(session.shopId);
 

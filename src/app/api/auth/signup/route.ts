@@ -10,11 +10,13 @@ import {
 import { signupSchema } from "@/lib/validation/auth";
 import { handleApiError } from "@/lib/api-utils";
 import { createShopForAdmin } from "@/lib/services/shop";
+import { writeAuditLog, extractRequestMeta } from "@/lib/services/audit-log";
 
 export async function POST(request: Request) {
   try {
     const body = await request.json();
     const input = signupSchema.parse(body);
+    const { ipAddress, userAgent, requestId } = extractRequestMeta(request);
 
     const existing = await db.admin.findUnique({
       where: { email: input.email },
@@ -41,6 +43,18 @@ export async function POST(request: Request) {
       sameSite: "lax",
       path: "/",
       maxAge: SESSION_DURATION_SECONDS,
+    });
+
+    await writeAuditLog({
+      action: "ADMIN_SIGNUP",
+      actorType: "admin",
+      actorId: admin.id,
+      targetType: "shop",
+      targetId: shop.id,
+      shopId: shop.id,
+      ipAddress,
+      userAgent,
+      requestId,
     });
 
     return NextResponse.json({ shopSlug: shop.slug });

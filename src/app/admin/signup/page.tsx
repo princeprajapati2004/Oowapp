@@ -116,7 +116,7 @@ export default function SignupPage() {
 
         <p className="text-center text-sm text-muted-foreground">
           Already have a shop?{" "}
-          <Link href="/admin/login" className="font-medium text-foreground underline underline-offset-4">
+          <Link href="/login" className="font-medium text-foreground underline underline-offset-4">
             Log in
           </Link>
         </p>

@@ -1,5 +1,4 @@
 // QR Ordering & Billing System — Prisma schema
-// See plan: C:\Users\princ\.claude\plans\sprightly-wishing-pizza.md
 
 generator client {
   provider = "prisma-client"
@@ -9,6 +8,8 @@ generator client {
 datasource db {
   provider = "postgresql"
 }
+
+// ─── Enums ────────────────────────────────────────────────────────────────────
 
 enum BusinessType {
   RESTAURANT
@@ -38,6 +39,58 @@ enum TaxAppliesTo {
   CATEGORY
 }
 
+enum ShopStatus {
+  ACTIVE
+  SUSPENDED
+  INACTIVE
+  DELETED
+}
+
+enum SubscriptionPlan {
+  FREE
+  STARTER
+  PRO
+  ENTERPRISE
+}
+
+enum SubscriptionStatus {
+  TRIAL
+  ACTIVE
+  EXPIRED
+  CANCELLED
+}
+
+enum AuditAction {
+  // Auth
+  ADMIN_SIGNUP
+  ADMIN_LOGIN
+  ADMIN_LOGOUT
+  SUPER_ADMIN_LOGIN
+  SUPER_ADMIN_LOGOUT
+  // Business lifecycle
+  SHOP_UPDATED
+  SHOP_SUSPENDED
+  SHOP_ACTIVATED
+  SHOP_DELETED
+  // Content
+  CATEGORY_CREATED
+  CATEGORY_UPDATED
+  CATEGORY_DELETED
+  PRODUCT_CREATED
+  PRODUCT_UPDATED
+  PRODUCT_DELETED
+  TAX_CREATED
+  TAX_UPDATED
+  TAX_DELETED
+  // Orders
+  ORDER_CREATED
+  // Platform
+  PLATFORM_SETTINGS_UPDATED
+  SUBSCRIPTION_CHANGED
+}
+
+// ─── Core Models ──────────────────────────────────────────────────────────────
+
 model Admin {
   id           String   @id @default(cuid())
   email        String   @unique
@@ -62,6 +115,19 @@ model Shop {
   gstNumber      String?
   currency       String       @default("INR")
 
+  // Owner profile
+  ownerName String?
+  city      String?
+  state     String?
+  country   String?
+
+  // Platform lifecycle
+  status          ShopStatus @default(ACTIVE)
+  lastLoginAt     DateTime?
+  suspendedAt     DateTime?
+  suspendedReason String?
+  deletedAt       DateTime?
+
   // Payment settings
   upiId             String?
   acceptCash        Boolean @default(true)
@@ -83,10 +149,11 @@ model Shop {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  categories Category[]
-  products   Product[]
-  taxes      Tax[]
-  orders     Order[]
+  categories    Category[]
+  products      Product[]
+  taxes         Tax[]
+  orders        Order[]
+  subscriptions Subscription[]
 
   @@map("shops")
 }
@@ -98,6 +165,8 @@ model Category {
   name      String
   sortOrder Int      @default(0)
   isVisible Boolean  @default(true)
+  createdBy String?
+  updatedBy String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -124,6 +193,8 @@ model Product {
   isVisible   Boolean  @default(true)
   stock       Int?
   sortOrder   Int      @default(0)
+  createdBy   String?
+  updatedBy   String?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -146,6 +217,8 @@ model Tax {
   category   Category?    @relation(fields: [categoryId], references: [id], onDelete: SetNull)
   isEnabled  Boolean      @default(true)
   sortOrder  Int          @default(0)
+  createdBy  String?
+  updatedBy  String?
   createdAt  DateTime     @default(now())
   updatedAt  DateTime     @updatedAt
 
@@ -188,4 +261,62 @@ model OrderItem {
 
   @@index([orderId])
   @@map("order_items")
+}
+
+// ─── SaaS Platform Models ─────────────────────────────────────────────────────
+
+model SuperAdmin {
+  id           String    @id @default(cuid())
+  email        String    @unique
+  passwordHash String
+  name         String
+  lastLoginAt  DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@map("super_admins")
+}
+
+model Subscription {
+  id        String             @id @default(cuid())
+  shopId    String
+  shop      Shop               @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  plan      SubscriptionPlan   @default(FREE)
+  status    SubscriptionStatus @default(TRIAL)
+  startDate DateTime           @default(now())
+  endDate   DateTime?
+  createdAt DateTime           @default(now())
+  updatedAt DateTime           @updatedAt
+
+  @@index([shopId])
+  @@map("subscriptions")
+}
+
+model AuditLog {
+  id         String      @id @default(cuid())
+  action     AuditAction
+  actorType  String
+  actorId    String
+  targetType String?
+  targetId   String?
+  metadata   Json?
+  shopId     String?
+  ipAddress  String?
+  userAgent  String?
+  requestId  String?
+  createdAt  DateTime    @default(now())
+
+  @@index([shopId])
+  @@index([actorId])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+model PlatformSettings {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  value     String
+  updatedAt DateTime @updatedAt
+
+  @@map("platform_settings")
 }

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { ZodError } from "zod";
-import { UnauthorizedError } from "@/lib/session";
+import { UnauthorizedError, ForbiddenError } from "@/lib/session";
 
 export class NotFoundError extends Error {
   constructor(message = "Not found") {
@@ -12,6 +12,9 @@ export class NotFoundError extends Error {
 export function handleApiError(error: unknown) {
   if (error instanceof UnauthorizedError) {
     return NextResponse.json({ error: error.message }, { status: 401 });
+  }
+  if (error instanceof ForbiddenError) {
+    return NextResponse.json({ error: error.message }, { status: 403 });
   }
   if (error instanceof NotFoundError) {
     return NextResponse.json({ error: error.message }, { status: 404 });

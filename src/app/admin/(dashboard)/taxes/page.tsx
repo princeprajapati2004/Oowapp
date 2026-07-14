@@ -8,7 +8,7 @@ import { TaxesManager } from "@/components/admin/taxes-manager";
 
 export default async function TaxesPage() {
   const session = await getAdminSession();
-  if (!session) redirect("/admin/login");
+  if (!session) redirect("/login");
 
   const [taxes, categories, shop] = await Promise.all([
     listTaxes(session.shopId),

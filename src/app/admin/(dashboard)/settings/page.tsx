@@ -8,7 +8,7 @@ import type { BusinessInfoInput } from "@/lib/validation/shop-settings";
 
 export default async function SettingsPage() {
   const session = await getAdminSession();
-  if (!session) redirect("/admin/login");
+  if (!session) redirect("/login");
 
   const shop = await getShopById(session.shopId);
 

@@ -13,7 +13,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 
 export default async function AdminDashboardPage() {
   const session = await getAdminSession();
-  if (!session) redirect("/admin/login");
+  if (!session) redirect("/login");
 
   const [shop, categories, products] = await Promise.all([
     getShopById(session.shopId),

@@ -10,7 +10,7 @@ export default async function DashboardLayout({
 }) {
   const session = await getAdminSession();
   if (!session) {
-    redirect("/admin/login");
+    redirect("/login");
   }
 
   const shop = await getShopById(session.shopId);

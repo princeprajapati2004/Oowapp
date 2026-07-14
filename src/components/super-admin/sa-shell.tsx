@@ -1,0 +1,119 @@
+"use client";
+
+import { useState } from "react";
+import Link from "next/link";
+import { usePathname, useRouter } from "next/navigation";
+import {
+  LayoutDashboard,
+  Building2,
+  Menu,
+  LogOut,
+  Shield,
+} from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Sheet, SheetContent, SheetTrigger, SheetTitle } from "@/components/ui/sheet";
+import { ThemeToggle } from "@/components/shared/theme-toggle";
+import { cn } from "@/lib/utils";
+import { api } from "@/lib/api-client";
+
+const NAV_ITEMS = [
+  { href: "/super-admin", label: "Dashboard", icon: LayoutDashboard, exact: true },
+  { href: "/super-admin/businesses", label: "Businesses", icon: Building2, exact: false },
+];
+
+function NavLinks({ pathname, onNavigate }: { pathname: string; onNavigate?: () => void }) {
+  return (
+    <nav className="space-y-1">
+      {NAV_ITEMS.map((item) => {
+        const active = item.exact ? pathname === item.href : pathname.startsWith(item.href);
+        const Icon = item.icon;
+        return (
+          <Link
+            key={item.href}
+            href={item.href}
+            onClick={onNavigate}
+            className={cn(
+              "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
+              active
+                ? "bg-primary text-primary-foreground"
+                : "text-muted-foreground hover:bg-muted hover:text-foreground"
+            )}
+          >
+            <Icon className="size-4" />
+            {item.label}
+          </Link>
+        );
+      })}
+    </nav>
+  );
+}
+
+export function SAShell({ children }: { children: React.ReactNode }) {
+  const pathname = usePathname();
+  const router = useRouter();
+  const [mobileOpen, setMobileOpen] = useState(false);
+
+  async function handleLogout() {
+    await api.post("/api/super-admin/auth/logout");
+    router.push("/login");
+    router.refresh();
+  }
+
+  return (
+    <div className="flex min-h-screen">
+      {/* Desktop sidebar */}
+      <aside className="hidden md:flex w-60 shrink-0 flex-col border-r bg-background p-4">
+        <div className="mb-6 px-2 flex items-center gap-2">
+          <Shield className="size-4 text-primary" />
+          <div>
+            <p className="text-sm font-semibold">Platform Admin</p>
+            <p className="text-xs text-muted-foreground">MyKharcha</p>
+          </div>
+        </div>
+        <NavLinks pathname={pathname} />
+        <div className="mt-auto pt-4 border-t">
+          <button
+            onClick={handleLogout}
+            className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-muted-foreground hover:bg-muted hover:text-foreground"
+          >
+            <LogOut className="size-4" />
+            Log out
+          </button>
+        </div>
+      </aside>
+
+      {/* Main content */}
+      <div className="flex-1 flex flex-col min-w-0">
+        <header className="flex items-center justify-between border-b px-4 py-3 md:px-6">
+          <div className="flex items-center gap-2 md:hidden">
+            <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
+              <SheetTrigger render={<Button variant="ghost" size="icon" aria-label="Open menu" />}>
+                <Menu className="size-5" />
+              </SheetTrigger>
+              <SheetContent side="left" className="w-60 p-4">
+                <SheetTitle className="mb-4 px-2 flex items-center gap-2 text-sm font-semibold">
+                  <Shield className="size-4 text-primary" /> Platform Admin
+                </SheetTitle>
+                <NavLinks pathname={pathname} onNavigate={() => setMobileOpen(false)} />
+                <div className="mt-4 border-t pt-4">
+                  <button
+                    onClick={handleLogout}
+                    className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-muted-foreground hover:bg-muted hover:text-foreground"
+                  >
+                    <LogOut className="size-4" />
+                    Log out
+                  </button>
+                </div>
+              </SheetContent>
+            </Sheet>
+            <span className="text-sm font-semibold">Platform Admin</span>
+          </div>
+          <div className="hidden md:block" />
+          <ThemeToggle />
+        </header>
+
+        <main className="flex-1 p-4 md:p-6">{children}</main>
+      </div>
+    </div>
+  );
+}

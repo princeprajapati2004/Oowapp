@@ -5,7 +5,7 @@ import { CategoriesManager } from "@/components/admin/categories-manager";
 
 export default async function CategoriesPage() {
   const session = await getAdminSession();
-  if (!session) redirect("/admin/login");
+  if (!session) redirect("/login");
 
   const categories = await listCategories(session.shopId);
 

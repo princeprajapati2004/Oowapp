@@ -9,7 +9,7 @@ import { PrintButton } from "@/components/shared/print-button";
 
 export default async function MenuPrintPage() {
   const session = await getAdminSession();
-  if (!session) redirect("/admin/login");
+  if (!session) redirect("/login");
 
   const [categories, products, shop] = await Promise.all([
     listCategories(session.shopId),
