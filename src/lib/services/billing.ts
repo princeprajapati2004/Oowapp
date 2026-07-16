@@ -49,6 +49,8 @@ export function calculateBill(items: BillLineItem[], taxes: BillTax[]): BillTota
           amount = tax.type === "PERCENTAGE" ? (base * tax.value) / 100 : tax.value;
         }
       } else {
+        // FIXED taxes on ENTIRE_BILL (e.g. delivery fees) always apply when the cart is
+        // non-empty. There is no minimum-order threshold — that is intentional by design.
         amount = tax.type === "PERCENTAGE" ? (subtotal * tax.value) / 100 : tax.value;
       }
       return { id: tax.id, name: tax.name, amount: round2(amount) };

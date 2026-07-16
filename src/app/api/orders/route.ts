@@ -3,6 +3,7 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { handleApiError, NotFoundError } from "@/lib/api-utils";
 import { calculateBill } from "@/lib/services/billing";
+import { checkRateLimit } from "@/lib/rate-limit";
 import type { Prisma } from "@/generated/prisma/client";
 
 const orderItemSchema = z.object({
@@ -26,6 +27,12 @@ const createOrderSchema = z.object({
 
 export async function POST(request: Request) {
   try {
+    // 10 submissions per IP per minute — blocks naive spam without affecting real customers.
+    const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "unknown";
+    if (!checkRateLimit(`orders:${ip}`, 10, 60_000)) {
+      return NextResponse.json({ error: "Too many requests" }, { status: 429 });
+    }
+
     const body = await request.json();
     const input = createOrderSchema.parse(body);
 

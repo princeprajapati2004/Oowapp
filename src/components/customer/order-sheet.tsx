@@ -127,7 +127,10 @@ export function OrderSheet({
 
     onOrderPlaced();
     setPlacing(false);
-    window.location.href = url;
+    // Open WhatsApp in a new tab so the customer stays on the menu page.
+    // On mobile the OS intercepts the wa.me URL and opens the WhatsApp app directly
+    // without any visible tab switch.
+    window.open(url, "_blank", "noopener,noreferrer");
   }
 
   return (

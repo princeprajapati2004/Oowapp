@@ -86,13 +86,39 @@ export async function updateShopSettings(shopId: string, data: ShopSettingsInput
 export async function getPublicShopBundle(slug: string) {
   const shop = await db.shop.findUnique({
     where: { slug },
-    include: {
+    select: {
+      // Public business identity
+      slug: true,
+      businessName: true,
+      logoUrl: true,
+      address: true,
+      phone: true,
+      currency: true,
+      // Critical — where orders are sent
+      whatsappNumber: true,
+      // Checkout form requirements
+      requireCustomerName: true,
+      requirePhone: true,
+      requireTableNumber: true,
+      requireDeliveryAddress: true,
+      allowNotes: true,
+      // Payment display (intentionally shown to customers)
+      upiId: true,
+      acceptCash: true,
+      bankAccountNumber: true,
+      bankName: true,
+      bankIfsc: true,
+      paymentQrImageUrl: true,
+      // Gate checks — stripped before the value is returned to the caller
+      isPublished: true,
+      status: true,
       categories: {
         where: { isVisible: true },
         orderBy: { sortOrder: "asc" },
       },
+      // isAvailable: true hides sold-out products from the customer menu entirely
       products: {
-        where: { isVisible: true },
+        where: { isVisible: true, isAvailable: true },
         orderBy: { sortOrder: "asc" },
       },
       taxes: {
@@ -106,5 +132,7 @@ export async function getPublicShopBundle(slug: string) {
     return null;
   }
 
-  return shop;
+  // Strip internal gate fields before forwarding to the RSC — they must not reach the browser.
+  const { isPublished: _pub, status: _status, ...publicBundle } = shop;
+  return publicBundle;
 }
