@@ -24,7 +24,7 @@ const NAV_ITEMS = [
 
 function NavLinks({ pathname, onNavigate }: { pathname: string; onNavigate?: () => void }) {
   return (
-    <nav className="space-y-1">
+    <nav className="space-y-0.5">
       {NAV_ITEMS.map((item) => {
         const active = item.exact ? pathname === item.href : pathname.startsWith(item.href);
         const Icon = item.icon;
@@ -34,13 +34,13 @@ function NavLinks({ pathname, onNavigate }: { pathname: string; onNavigate?: () 
             href={item.href}
             onClick={onNavigate}
             className={cn(
-              "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
+              "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-all duration-150",
               active
-                ? "bg-primary text-primary-foreground"
+                ? "bg-primary/10 text-primary"
                 : "text-muted-foreground hover:bg-muted hover:text-foreground"
             )}
           >
-            <Icon className="size-4" />
+            <Icon className={cn("size-4 shrink-0", active ? "text-primary" : "text-muted-foreground")} />
             {item.label}
           </Link>
         );
@@ -62,41 +62,43 @@ export function SAShell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="flex min-h-screen">
-      <aside className="hidden md:flex w-60 shrink-0 flex-col border-r bg-background p-4">
-        <div className="mb-6 px-2 flex items-center gap-2.5">
+      <aside className="hidden md:flex w-60 shrink-0 flex-col border-r bg-background print:hidden">
+        <div className="flex h-14 items-center gap-2.5 border-b px-4">
           <Image
             src="/logo_1.webp"
             alt="OOWAPP"
-            width={32}
-            height={32}
-            className="rounded-lg shrink-0"
+            width={28}
+            height={28}
+            className="rounded-md shrink-0"
           />
           <div>
-            <p className="text-sm font-semibold">Platform Admin</p>
-            <p className="text-xs text-muted-foreground">OOWAPP</p>
+            <p className="text-sm font-semibold leading-tight">Platform Admin</p>
+            <p className="text-[11px] text-muted-foreground">OOWAPP</p>
           </div>
         </div>
-        <NavLinks pathname={pathname} />
-        <div className="mt-auto pt-4 border-t">
-          <button
-            onClick={handleLogout}
-            className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-muted-foreground hover:bg-muted hover:text-foreground"
-          >
-            <LogOut className="size-4" />
-            Log out
-          </button>
+        <div className="flex-1 overflow-y-auto p-3">
+          <NavLinks pathname={pathname} />
+          <div className="mt-auto pt-3 border-t">
+            <button
+              onClick={handleLogout}
+              className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-muted-foreground transition-all duration-150 hover:bg-muted hover:text-foreground"
+            >
+              <LogOut className="size-4 shrink-0" />
+              Log out
+            </button>
+          </div>
         </div>
       </aside>
 
       <div className="flex-1 flex flex-col min-w-0">
-        <header className="flex items-center justify-between border-b px-4 py-3 md:px-6">
-          <div className="flex items-center gap-2 md:hidden">
+        <header className="flex h-14 items-center justify-between border-b px-4 md:px-6">
+          <div className="flex items-center gap-3 md:hidden">
             <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
               <SheetTrigger render={<Button variant="ghost" size="icon" aria-label="Open menu" />}>
                 <Menu className="size-5" />
               </SheetTrigger>
-              <SheetContent side="left" className="w-60 p-4">
-                <SheetTitle className="mb-4 px-2 flex items-center gap-2.5 text-sm font-semibold">
+              <SheetContent side="left" className="w-60 flex flex-col p-0 gap-0">
+                <div className="flex h-14 items-center gap-2.5 border-b px-4">
                   <Image
                     src="/logo_1.webp"
                     alt="OOWAPP"
@@ -104,17 +106,19 @@ export function SAShell({ children }: { children: React.ReactNode }) {
                     height={24}
                     className="rounded-md shrink-0"
                   />
-                  Platform Admin
-                </SheetTitle>
-                <NavLinks pathname={pathname} onNavigate={() => setMobileOpen(false)} />
-                <div className="mt-4 border-t pt-4">
-                  <button
-                    onClick={handleLogout}
-                    className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-muted-foreground hover:bg-muted hover:text-foreground"
-                  >
-                    <LogOut className="size-4" />
-                    Log out
-                  </button>
+                  <SheetTitle className="text-sm font-semibold">Platform Admin</SheetTitle>
+                </div>
+                <div className="flex-1 overflow-y-auto p-3">
+                  <NavLinks pathname={pathname} onNavigate={() => setMobileOpen(false)} />
+                  <div className="mt-4 border-t pt-3">
+                    <button
+                      onClick={handleLogout}
+                      className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-muted-foreground transition-all duration-150 hover:bg-muted hover:text-foreground"
+                    >
+                      <LogOut className="size-4" />
+                      Log out
+                    </button>
+                  </div>
                 </div>
               </SheetContent>
             </Sheet>

@@ -16,13 +16,17 @@ export default function DashboardError({
   }, [error]);
 
   return (
-    <div className="flex flex-col items-center justify-center gap-3 rounded-xl border border-dashed py-16 text-center">
-      <AlertTriangle className="size-8 text-destructive" />
-      <p className="font-medium">Something went wrong</p>
-      <p className="max-w-sm text-sm text-muted-foreground">
-        {error.message || "An unexpected error occurred. Please try again."}
-      </p>
-      <Button onClick={reset}>Try again</Button>
+    <div className="flex flex-col items-center justify-center gap-4 rounded-2xl border border-dashed bg-muted/20 py-16 text-center px-6">
+      <div className="flex size-14 items-center justify-center rounded-2xl bg-destructive/10">
+        <AlertTriangle className="size-7 text-destructive" />
+      </div>
+      <div className="space-y-1">
+        <p className="font-semibold text-sm">Something went wrong</p>
+        <p className="max-w-xs text-sm text-muted-foreground leading-relaxed">
+          {error.message || "An unexpected error occurred. Please try again."}
+        </p>
+      </div>
+      <Button onClick={reset} variant="outline" size="sm">Try again</Button>
     </div>
   );
 }

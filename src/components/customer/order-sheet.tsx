@@ -31,6 +31,7 @@ export function OrderSheet({
   onOrderPlaced,
   shop,
   taxes,
+  prefilledTable,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -40,6 +41,7 @@ export function OrderSheet({
   onOrderPlaced: () => void;
   shop: CustomerShop;
   taxes: CustomerTax[];
+  prefilledTable?: string;
 }) {
   const [step, setStep] = useState<Step>("cart");
   const [checkoutValues, setCheckoutValues] = useState<CheckoutInput | null>(null);
@@ -60,10 +62,12 @@ export function OrderSheet({
       buildCheckoutSchema({
         requireCustomerName: shop.requireCustomerName,
         requirePhone: shop.requirePhone,
-        requireTableNumber: shop.requireTableNumber,
+        // If the table is pre-filled from the URL, treat it as not-required in the form
+        // (the value is injected into checkoutValues at submit time, bypassing the field).
+        requireTableNumber: shop.requireTableNumber && !prefilledTable,
         requireDeliveryAddress: shop.requireDeliveryAddress,
       }),
-    [shop]
+    [shop, prefilledTable]
   );
 
   const {
@@ -88,7 +92,11 @@ export function OrderSheet({
   );
 
   function handleGenerateBill(values: CheckoutInput) {
-    setCheckoutValues(values);
+    setCheckoutValues({
+      ...values,
+      // Use the URL-prefilled table when the customer doesn't type it manually.
+      tableNumber: values.tableNumber || prefilledTable || "",
+    });
     setBillNumber(generateBillNumber(shop.slug));
     setStep("bill");
   }
@@ -137,14 +145,14 @@ export function OrderSheet({
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
         side="bottom"
-        className="mx-auto flex max-h-[90vh] max-w-lg flex-col overflow-y-auto rounded-t-2xl"
+        className="mx-auto flex max-h-[92vh] max-w-lg flex-col overflow-hidden rounded-t-2xl p-0 gap-0"
       >
         {step === "cart" && (
           <>
-            <SheetHeader>
-              <SheetTitle>Your cart</SheetTitle>
+            <SheetHeader className="px-5 pt-5 pb-0">
+              <SheetTitle className="text-lg">Your cart</SheetTitle>
             </SheetHeader>
-            <div className="flex-1 space-y-3 px-4">
+            <div className="flex-1 overflow-y-auto px-5 pb-2 space-y-2 pt-4">
               {items.length === 0 ? (
                 <EmptyState
                   icon={ShoppingBag}
@@ -153,11 +161,11 @@ export function OrderSheet({
                 />
               ) : (
                 items.map((item) => (
-                  <div key={item.productId} className="flex items-center gap-3 rounded-lg border p-3">
-                    <div className="flex-1">
-                      <p className="text-sm font-medium">{item.name}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {formatCurrency(item.price, shop.currency)} each
+                  <div key={item.productId} className="flex items-center gap-3 rounded-xl bg-muted/50 px-3 py-2.5">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium leading-snug truncate">{item.name}</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        {formatCurrency(item.price, shop.currency)} × {item.quantity} = {formatCurrency(item.price * item.quantity, shop.currency)}
                       </p>
                     </div>
                     <QtyStepper
@@ -167,58 +175,68 @@ export function OrderSheet({
                     />
                     <Button
                       variant="ghost"
-                      size="icon"
+                      size="icon-sm"
                       onClick={() => onRemove(item.productId)}
                       aria-label="Remove"
+                      className="shrink-0 text-muted-foreground hover:text-destructive"
                     >
-                      <Trash2 className="size-4 text-destructive" />
+                      <Trash2 className="size-4" />
                     </Button>
                   </div>
                 ))
               )}
             </div>
             {items.length > 0 && (
-              <SheetFooter className="gap-2">
-                <div className="flex items-center justify-between text-sm font-medium">
-                  <span>Subtotal</span>
-                  <span>{formatCurrency(bill.subtotal, shop.currency)}</span>
+              <div className="border-t bg-background px-5 py-4 space-y-3">
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-muted-foreground">Subtotal ({items.length} item{items.length !== 1 ? "s" : ""})</span>
+                  <span className="font-semibold">{formatCurrency(bill.subtotal, shop.currency)}</span>
                 </div>
-                <Button size="lg" className="w-full" onClick={() => setStep("checkout")}>
-                  Checkout
+                <Button
+                  size="lg"
+                  className="h-12 w-full bg-primary text-primary-foreground hover:bg-primary/90 shadow-sm shadow-primary/20"
+                  onClick={() => setStep("checkout")}
+                >
+                  Proceed to checkout
                 </Button>
-              </SheetFooter>
+              </div>
             )}
           </>
         )}
 
         {step === "checkout" && (
           <>
-            <SheetHeader>
+            <SheetHeader className="px-5 pt-4 pb-0">
               <button
                 type="button"
                 onClick={() => setStep("cart")}
-                className="mb-1 flex items-center gap-1 text-sm text-muted-foreground"
+                className="mb-2 flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
               >
                 <ArrowLeft className="size-3.5" /> Back to cart
               </button>
-              <SheetTitle>Your details</SheetTitle>
+              <SheetTitle className="text-lg">Your details</SheetTitle>
             </SheetHeader>
-            <form onSubmit={handleSubmit(handleGenerateBill)} className="flex-1 space-y-4 px-4">
+            <form onSubmit={handleSubmit(handleGenerateBill)} className="flex-1 overflow-y-auto px-5 pb-4 space-y-4 pt-4">
               {shop.requireCustomerName && (
                 <FormRow label="Name" htmlFor="customerName" required error={errors.customerName}>
-                  <Input id="customerName" {...register("customerName")} />
+                  <Input id="customerName" placeholder="Your name" {...register("customerName")} />
                 </FormRow>
               )}
               {shop.requirePhone && (
                 <FormRow label="Phone number" htmlFor="customerPhone" required error={errors.customerPhone}>
-                  <Input id="customerPhone" inputMode="numeric" {...register("customerPhone")} />
+                  <Input id="customerPhone" inputMode="numeric" placeholder="Your phone number" {...register("customerPhone")} />
                 </FormRow>
               )}
-              {shop.requireTableNumber && (
+              {prefilledTable ? (
+                <div className="flex items-center justify-between rounded-xl bg-muted/50 px-4 py-2.5 text-sm">
+                  <span className="text-muted-foreground font-medium">Table</span>
+                  <span className="font-semibold">{prefilledTable}</span>
+                </div>
+              ) : shop.requireTableNumber ? (
                 <FormRow label="Table number" htmlFor="tableNumber" required error={errors.tableNumber}>
-                  <Input id="tableNumber" {...register("tableNumber")} />
+                  <Input id="tableNumber" placeholder="e.g. Table 5" {...register("tableNumber")} />
                 </FormRow>
-              )}
+              ) : null}
               {shop.requireDeliveryAddress && (
                 <FormRow
                   label="Delivery address"
@@ -226,17 +244,21 @@ export function OrderSheet({
                   required
                   error={errors.deliveryAddress}
                 >
-                  <Textarea id="deliveryAddress" rows={2} {...register("deliveryAddress")} />
+                  <Textarea id="deliveryAddress" rows={2} placeholder="Your full address" {...register("deliveryAddress")} />
                 </FormRow>
               )}
               {shop.allowNotes && (
                 <FormRow label="Special instructions" htmlFor="notes" description="Optional">
-                  <Textarea id="notes" rows={2} {...register("notes")} />
+                  <Textarea id="notes" rows={2} placeholder="Allergies, preferences…" {...register("notes")} />
                 </FormRow>
               )}
 
-              <Button type="submit" size="lg" className="w-full">
-                Generate bill
+              <Button
+                type="submit"
+                size="lg"
+                className="h-12 w-full bg-primary text-primary-foreground hover:bg-primary/90 shadow-sm shadow-primary/20"
+              >
+                Review bill
               </Button>
             </form>
           </>
@@ -244,101 +266,119 @@ export function OrderSheet({
 
         {step === "bill" && checkoutValues && (
           <>
-            <SheetHeader>
+            <SheetHeader className="px-5 pt-4 pb-0">
               <button
                 type="button"
                 onClick={() => setStep("checkout")}
-                className="mb-1 flex items-center gap-1 text-sm text-muted-foreground"
+                className="mb-2 flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
               >
                 <ArrowLeft className="size-3.5" /> Back
               </button>
-              <SheetTitle>Your bill</SheetTitle>
+              <SheetTitle className="text-lg">Review your bill</SheetTitle>
             </SheetHeader>
-            <div className="flex-1 space-y-4 px-4 text-sm">
-              <div className="text-center">
-                {shop.logoUrl ? (
-                  <Image
-                    src={shop.logoUrl}
-                    alt={shop.businessName}
-                    width={48}
-                    height={48}
-                    unoptimized
-                    className="mx-auto mb-1 rounded-full object-cover"
-                  />
-                ) : null}
-                <p className="font-bold">{shop.businessName}</p>
-                {shop.address ? <p className="text-xs text-muted-foreground">{shop.address}</p> : null}
-                {shop.phone ? <p className="text-xs text-muted-foreground">{shop.phone}</p> : null}
-                <p className="mt-1 text-xs text-muted-foreground">
-                  Bill No: {billNumber} &middot; {new Date().toLocaleString()}
-                </p>
-              </div>
 
-              <div className="space-y-1 border-y py-2">
-                {items.map((item) => (
-                  <div key={item.productId} className="flex justify-between">
-                    <span>
-                      {item.quantity} x {item.name}
-                    </span>
-                    <span>{formatCurrency(item.price * item.quantity, shop.currency)}</span>
-                  </div>
-                ))}
-              </div>
-
-              <div className="space-y-1">
-                <div className="flex justify-between text-muted-foreground">
-                  <span>Subtotal</span>
-                  <span>{formatCurrency(bill.subtotal, shop.currency)}</span>
+            <div className="flex-1 overflow-y-auto px-5 pb-2 space-y-4 pt-4">
+              <div className="rounded-2xl border bg-card overflow-hidden">
+                <div className="px-4 py-4 text-center border-b bg-muted/30">
+                  {shop.logoUrl ? (
+                    <Image
+                      src={shop.logoUrl}
+                      alt={shop.businessName}
+                      width={44}
+                      height={44}
+                      unoptimized
+                      className="mx-auto mb-2 rounded-full object-cover ring-2 ring-border"
+                    />
+                  ) : null}
+                  <p className="font-bold text-base">{shop.businessName}</p>
+                  {shop.address ? <p className="text-xs text-muted-foreground mt-0.5">{shop.address}</p> : null}
+                  {shop.phone ? <p className="text-xs text-muted-foreground">{shop.phone}</p> : null}
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    Bill #{billNumber}
+                  </p>
                 </div>
-                {bill.taxLines.map((line) => (
-                  <div key={line.id} className="flex justify-between text-muted-foreground">
-                    <span>{line.name}</span>
-                    <span>{formatCurrency(line.amount, shop.currency)}</span>
+
+                <div className="px-4 py-3 space-y-2 border-b">
+                  {items.map((item) => (
+                    <div key={item.productId} className="flex items-start justify-between gap-2 text-sm">
+                      <div className="flex-1 min-w-0">
+                        <span className="font-medium">{item.name}</span>
+                        <span className="text-muted-foreground ml-1">× {item.quantity}</span>
+                      </div>
+                      <span className="font-medium shrink-0">{formatCurrency(item.price * item.quantity, shop.currency)}</span>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="px-4 py-3 space-y-1.5 text-sm">
+                  <div className="flex justify-between text-muted-foreground">
+                    <span>Subtotal</span>
+                    <span>{formatCurrency(bill.subtotal, shop.currency)}</span>
                   </div>
-                ))}
-                <div className="flex justify-between border-t pt-1.5 text-base font-bold">
-                  <span>Grand total</span>
-                  <span>{formatCurrency(bill.grandTotal, shop.currency)}</span>
+                  {bill.taxLines.map((line) => (
+                    <div key={line.id} className="flex justify-between text-muted-foreground">
+                      <span>{line.name}</span>
+                      <span>{formatCurrency(line.amount, shop.currency)}</span>
+                    </div>
+                  ))}
+                  <div className="flex justify-between border-t pt-2 mt-1 font-bold text-base">
+                    <span>Grand total</span>
+                    <span className="text-primary">{formatCurrency(bill.grandTotal, shop.currency)}</span>
+                  </div>
                 </div>
               </div>
 
               {(shop.upiId || shop.paymentQrImageUrl || shop.acceptCash || shop.bankAccountNumber) && (
-                <div className="space-y-1 rounded-lg border p-3 text-xs">
-                  <p className="font-semibold">Payment options</p>
-                  {shop.upiId ? <p>UPI: {shop.upiId}</p> : null}
-                  {shop.bankAccountNumber ? (
-                    <p>
-                      Bank: {shop.bankName} &middot; {shop.bankAccountNumber} &middot; {shop.bankIfsc}
-                    </p>
-                  ) : null}
-                  {shop.acceptCash ? <p>Cash accepted</p> : null}
-                  {shop.paymentQrImageUrl ? (
+                <div className="rounded-xl border bg-card px-4 py-3 space-y-2 text-sm">
+                  <p className="font-semibold text-xs uppercase tracking-wide text-muted-foreground">Payment options</p>
+                  {shop.upiId && (
+                    <div className="flex items-center gap-2">
+                      <span className="text-muted-foreground">UPI</span>
+                      <span className="font-medium">{shop.upiId}</span>
+                    </div>
+                  )}
+                  {shop.bankAccountNumber && (
+                    <div className="text-xs text-muted-foreground">
+                      {shop.bankName} · {shop.bankAccountNumber} · {shop.bankIfsc}
+                    </div>
+                  )}
+                  {shop.acceptCash && (
+                    <div className="flex items-center gap-1.5 text-muted-foreground">
+                      <span className="size-1.5 rounded-full bg-success inline-block" />
+                      Cash accepted
+                    </div>
+                  )}
+                  {shop.paymentQrImageUrl && (
                     <Image
                       src={shop.paymentQrImageUrl}
                       alt="Payment QR"
-                      width={120}
-                      height={120}
+                      width={128}
+                      height={128}
                       unoptimized
-                      className="mx-auto rounded-lg border"
+                      className="mx-auto rounded-xl border"
                     />
-                  ) : null}
+                  )}
                 </div>
               )}
 
-              {checkoutValues.notes ? (
-                <p className="text-xs text-muted-foreground">Notes: {checkoutValues.notes}</p>
-              ) : null}
+              {checkoutValues.notes && (
+                <div className="rounded-xl border bg-card px-4 py-3 text-sm">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-1">Notes</p>
+                  <p className="text-muted-foreground">{checkoutValues.notes}</p>
+                </div>
+              )}
             </div>
-            <SheetFooter>
+
+            <div className="border-t bg-background px-5 py-4">
               <Button
                 size="lg"
-                className="w-full bg-emerald-600 text-white hover:bg-emerald-700"
+                className="h-12 w-full bg-primary text-primary-foreground hover:bg-primary/90 shadow-sm shadow-primary/20"
                 disabled={placing}
                 onClick={handlePlaceOrder}
               >
-                {placing ? "Placing order…" : "Place order via WhatsApp"}
+                {placing ? "Opening WhatsApp…" : "Place order via WhatsApp"}
               </Button>
-            </SheetFooter>
+            </div>
           </>
         )}
       </SheetContent>

@@ -9,5 +9,5 @@ export default async function QrPage() {
 
   const shop = await getShopById(session.shopId);
 
-  return <QrCodeGenerator slug={shop.slug} businessName={shop.businessName} />;
+  return <QrCodeGenerator slug={shop.slug} businessName={shop.businessName} businessType={shop.businessType} />;
 }

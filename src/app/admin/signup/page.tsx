@@ -50,33 +50,33 @@ export default function SignupPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-muted/40 px-4 py-10">
-      <div className="w-full max-w-md space-y-6">
+    <div className="min-h-screen flex items-center justify-center bg-muted/30 px-4 py-10">
+      <div className="w-full max-w-sm space-y-6">
         <div className="flex flex-col items-center gap-3">
           <Image
             src="/logo_1.webp"
             alt="OOWAPP"
-            width={72}
-            height={72}
-            className="rounded-2xl"
+            width={64}
+            height={64}
+            className="rounded-2xl ring-4 ring-background shadow-md"
             priority
           />
           <div className="space-y-0.5 text-center">
-            <h1 className="text-2xl font-bold tracking-tight">OOWAPP</h1>
+            <h1 className="text-xl font-bold tracking-tight">OOWAPP</h1>
             <p className="text-sm text-muted-foreground">Order on WhatsApp</p>
           </div>
           <InstallApp alwaysShow />
         </div>
 
-        <div className="bg-background border rounded-2xl shadow-sm p-6 sm:p-8 space-y-6">
-          <div className="space-y-1 text-center">
-            <h2 className="text-lg font-semibold tracking-tight">Set up your shop</h2>
+        <div className="rounded-2xl border bg-card shadow-md p-6 space-y-5">
+          <div className="space-y-1">
+            <h2 className="text-base font-semibold tracking-tight">Set up your shop</h2>
             <p className="text-sm text-muted-foreground">
               Create your free ordering page in under a minute.
             </p>
           </div>
 
-          <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+          <form onSubmit={handleSubmit(onSubmit)} className="space-y-3">
             <FieldGroup>
               <FormRow label="Business name" htmlFor="businessName" required error={errors.businessName}>
                 <Input
@@ -128,14 +128,21 @@ export default function SignupPage() {
               </FormRow>
             </FieldGroup>
 
-            <Button type="submit" className="w-full" size="lg" disabled={isSubmitting}>
+            <Button
+              type="submit"
+              className="h-10 w-full bg-primary text-primary-foreground hover:bg-primary/90 shadow-sm shadow-primary/20 transition-all"
+              disabled={isSubmitting}
+            >
               {isSubmitting ? "Creating your shop…" : "Create my shop"}
             </Button>
           </form>
 
           <p className="text-center text-sm text-muted-foreground">
             Already have a shop?{" "}
-            <Link href="/login" className="font-medium text-foreground underline underline-offset-4">
+            <Link
+              href="/login"
+              className="font-medium text-primary hover:text-primary/80 underline underline-offset-4 transition-colors"
+            >
               Log in
             </Link>
           </p>

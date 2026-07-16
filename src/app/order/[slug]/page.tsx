@@ -5,16 +5,19 @@ import { CustomerMenu } from "@/components/customer/customer-menu";
 
 export default async function OrderPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ slug: string }>;
+  searchParams: Promise<{ table?: string }>;
 }) {
-  const { slug } = await params;
+  const [{ slug }, resolvedSearch] = await Promise.all([params, searchParams]);
   const shop = await getPublicShopBundle(slug);
 
   if (!shop) {
     notFound();
   }
 
+  const prefilledTable = resolvedSearch.table?.trim() || undefined;
   const { categories, products, taxes, ...shopInfo } = shop;
 
   return (
@@ -23,6 +26,7 @@ export default async function OrderPage({
       categories={categories}
       products={serializeProducts(products)}
       taxes={serializeTaxes(taxes)}
+      prefilledTable={prefilledTable}
     />
   );
 }

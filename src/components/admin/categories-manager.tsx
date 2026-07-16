@@ -124,47 +124,51 @@ export function CategoriesManager({ initialCategories }: { initialCategories: Ca
           action={<Button onClick={openCreate}>Add category</Button>}
         />
       ) : (
-        <div className="space-y-2">
+        <div className="overflow-hidden rounded-xl border bg-card divide-y">
           {categories.map((category, index) => (
-            <div key={category.id} className="flex items-center gap-3 rounded-lg border p-3">
-              <div className="flex flex-col">
+            <div key={category.id} className="flex items-center gap-3 px-4 py-3 hover:bg-muted/40 transition-colors">
+              <div className="flex flex-col gap-0.5">
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="size-6"
+                  className="size-6 rounded text-muted-foreground hover:text-foreground"
                   disabled={index === 0}
                   onClick={() => handleMove(index, -1)}
                   aria-label="Move up"
                 >
-                  <ArrowUp className="size-3.5" />
+                  <ArrowUp className="size-3" />
                 </Button>
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="size-6"
+                  className="size-6 rounded text-muted-foreground hover:text-foreground"
                   disabled={index === categories.length - 1}
                   onClick={() => handleMove(index, 1)}
                   aria-label="Move down"
                 >
-                  <ArrowDown className="size-3.5" />
+                  <ArrowDown className="size-3" />
                 </Button>
               </div>
-              <p className="flex-1 font-medium truncate">{category.name}</p>
+              <div className="flex-1 min-w-0">
+                <p className="font-medium text-sm truncate">{category.name}</p>
+                <p className="text-xs text-muted-foreground">{category.isVisible ? "Visible" : "Hidden"}</p>
+              </div>
               <Switch
                 checked={category.isVisible}
                 onCheckedChange={() => handleToggleVisible(category)}
                 aria-label="Visible to customers"
               />
-              <Button variant="ghost" size="icon" onClick={() => openEdit(category)} aria-label="Edit">
-                <Pencil className="size-4" />
+              <Button variant="ghost" size="icon-sm" onClick={() => openEdit(category)} aria-label="Edit" className="text-muted-foreground hover:text-foreground">
+                <Pencil className="size-3.5" />
               </Button>
               <Button
                 variant="ghost"
-                size="icon"
+                size="icon-sm"
                 onClick={() => setDeleteTarget(category)}
                 aria-label="Delete"
+                className="text-muted-foreground hover:text-destructive"
               >
-                <Trash2 className="size-4 text-destructive" />
+                <Trash2 className="size-3.5" />
               </Button>
             </div>
           ))}
@@ -186,8 +190,8 @@ export function CategoriesManager({ initialCategories }: { initialCategories: Ca
                 autoFocus
               />
             </FormRow>
-            <div className="flex items-center justify-between rounded-lg border p-3">
-              <p className="text-sm font-medium">Visible to customers</p>
+            <div className="flex items-center justify-between rounded-xl border bg-card px-4 py-3 transition-colors hover:bg-muted/40">
+              <p className="text-sm font-medium select-none">Visible to customers</p>
               <Switch checked={isVisible} onCheckedChange={setIsVisible} />
             </div>
           </div>

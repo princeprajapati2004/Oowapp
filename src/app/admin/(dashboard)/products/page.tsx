@@ -21,6 +21,7 @@ export default async function ProductsPage() {
       initialProducts={serializeProducts(products)}
       categories={categories}
       currency={shop.currency}
+      businessType={shop.businessType}
     />
   );
 }

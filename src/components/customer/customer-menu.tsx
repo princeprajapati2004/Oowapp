@@ -26,11 +26,13 @@ export function CustomerMenu({
   categories,
   products,
   taxes,
+  prefilledTable,
 }: {
   shop: CustomerShop;
   categories: CustomerCategory[];
   products: CustomerProduct[];
   taxes: CustomerTax[];
+  prefilledTable?: string;
 }) {
   const cart = useCart(shop.slug);
   const [search, setSearch] = useState("");
@@ -73,8 +75,8 @@ export function CustomerMenu({
   }
 
   return (
-    <div className="min-h-screen bg-muted/30 pb-28">
-      <header className="sticky top-0 z-30 border-b bg-background/95 backdrop-blur">
+    <div className="min-h-screen bg-muted/20 pb-32" style={{ paddingBottom: 'calc(8rem + env(safe-area-inset-bottom))' }}>
+      <header className="sticky top-0 z-30 border-b bg-background/98 backdrop-blur-sm">
         <div className="mx-auto flex max-w-3xl items-center gap-3 px-4 py-3">
           {shop.logoUrl ? (
             <Image
@@ -83,11 +85,15 @@ export function CustomerMenu({
               width={40}
               height={40}
               unoptimized
-              className="size-10 shrink-0 rounded-full object-cover"
+              className="size-10 shrink-0 rounded-full object-cover ring-2 ring-border"
             />
-          ) : null}
+          ) : (
+            <div className="size-10 shrink-0 rounded-full bg-primary/10 flex items-center justify-center">
+              <span className="text-sm font-bold text-primary">{shop.businessName[0]}</span>
+            </div>
+          )}
           <div className="min-w-0 flex-1">
-            <h1 className="truncate font-bold leading-tight">{shop.businessName}</h1>
+            <h1 className="truncate font-bold leading-tight text-base">{shop.businessName}</h1>
             <p className="text-xs text-muted-foreground">Scan, order, done.</p>
           </div>
           <InstallApp className="hidden sm:flex" />
@@ -95,24 +101,26 @@ export function CustomerMenu({
         </div>
         <div className="mx-auto max-w-3xl px-4 pb-3">
           <div className="relative">
-            <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+            <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground pointer-events-none" />
             <Input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search menu…"
-              className="pl-9"
+              className="pl-9 h-10 bg-muted/50 border-transparent focus:border-input focus:bg-background transition-colors"
             />
           </div>
         </div>
         {categoriesWithProducts.length > 1 ? (
           <div className="mx-auto max-w-3xl overflow-x-auto px-4 pb-3">
-            <div className="flex gap-2">
+            <div className="flex gap-1.5">
               <button
                 type="button"
                 onClick={() => setActiveCategory("all")}
                 className={cn(
-                  "shrink-0 rounded-full border px-3.5 py-1.5 text-sm font-medium",
-                  activeCategory === "all" ? "bg-primary text-primary-foreground" : "bg-background"
+                  "shrink-0 rounded-full px-4 py-1.5 text-sm font-medium transition-all duration-200",
+                  activeCategory === "all"
+                    ? "bg-primary text-primary-foreground shadow-sm"
+                    : "bg-muted text-muted-foreground hover:bg-muted/80 hover:text-foreground"
                 )}
               >
                 All
@@ -123,8 +131,10 @@ export function CustomerMenu({
                   key={c.id}
                   onClick={() => setActiveCategory(c.id)}
                   className={cn(
-                    "shrink-0 rounded-full border px-3.5 py-1.5 text-sm font-medium",
-                    activeCategory === c.id ? "bg-primary text-primary-foreground" : "bg-background"
+                    "shrink-0 rounded-full px-4 py-1.5 text-sm font-medium transition-all duration-200",
+                    activeCategory === c.id
+                      ? "bg-primary text-primary-foreground shadow-sm"
+                      : "bg-muted text-muted-foreground hover:bg-muted/80 hover:text-foreground"
                   )}
                 >
                   {c.name}
@@ -135,7 +145,7 @@ export function CustomerMenu({
         ) : null}
       </header>
 
-      <main className="mx-auto max-w-3xl px-4 py-4">
+      <main className="mx-auto max-w-3xl px-4 py-5">
         {filtered.length === 0 ? (
           <EmptyState
             icon={PackageSearch}
@@ -158,17 +168,19 @@ export function CustomerMenu({
       </main>
 
       {cart.totalQuantity > 0 ? (
-        <div className="fixed inset-x-0 bottom-4 z-40 flex justify-center px-4">
+        <div
+          className="fixed inset-x-0 z-40 flex justify-center px-4 animate-in slide-in-from-bottom-3 fade-in-0 duration-300"
+          style={{ bottom: 'calc(1rem + env(safe-area-inset-bottom))' }}
+        >
           <Button
-            size="lg"
             onClick={() => setOrderSheetOpen(true)}
-            className="flex w-full max-w-sm items-center justify-between gap-3 bg-emerald-600 text-white shadow-lg hover:bg-emerald-700"
+            className="flex h-12 w-full max-w-sm items-center justify-between gap-3 bg-primary px-5 text-primary-foreground shadow-lg shadow-primary/25 hover:bg-primary/90 transition-all"
           >
             <span className="flex items-center gap-2">
               <ShoppingCart className="size-4" />
-              {cart.totalQuantity} item{cart.totalQuantity > 1 ? "s" : ""}
+              <span className="font-semibold">{cart.totalQuantity} item{cart.totalQuantity > 1 ? "s" : ""}</span>
             </span>
-            <span>{formatCurrency(subtotal, shop.currency)}</span>
+            <span className="font-semibold">{formatCurrency(subtotal, shop.currency)}</span>
           </Button>
         </div>
       ) : null}
@@ -193,6 +205,7 @@ export function CustomerMenu({
         }}
         shop={shop}
         taxes={taxes}
+        prefilledTable={prefilledTable}
       />
     </div>
   );

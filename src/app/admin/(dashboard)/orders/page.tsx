@@ -59,39 +59,50 @@ export default async function OrdersPage() {
           description="Orders placed by customers will show up here."
         />
       ) : (
-        <div className="overflow-x-auto rounded-xl border">
+        <div className="overflow-x-auto rounded-xl border bg-card">
           <Table>
             <TableHeader>
-              <TableRow>
-                <TableHead>Bill No.</TableHead>
+              <TableRow className="hover:bg-transparent">
+                <TableHead className="w-28">Bill No.</TableHead>
                 <TableHead>Customer</TableHead>
-                <TableHead>Table / Address</TableHead>
-                <TableHead>Items</TableHead>
+                <TableHead className="hidden sm:table-cell">Table / Address</TableHead>
+                <TableHead className="hidden md:table-cell">Items</TableHead>
                 <TableHead className="text-right">Total</TableHead>
-                <TableHead>Date</TableHead>
+                <TableHead className="hidden lg:table-cell text-right">Date</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {serialized.map((order) => (
-                <TableRow key={order.id}>
-                  <TableCell className="font-medium">{order.billNumber}</TableCell>
+                <TableRow key={order.id} className="hover:bg-muted/40">
+                  <TableCell className="font-mono text-xs font-medium text-muted-foreground">
+                    {order.billNumber}
+                  </TableCell>
                   <TableCell>
-                    {order.customerName || "—"}
+                    <div className="font-medium text-sm">{order.customerName || "—"}</div>
                     {order.customerPhone ? (
-                      <span className="block text-xs text-muted-foreground">{order.customerPhone}</span>
+                      <div className="text-xs text-muted-foreground">{order.customerPhone}</div>
                     ) : null}
                   </TableCell>
-                  <TableCell>{order.tableNumber || order.deliveryAddress || "—"}</TableCell>
-                  <TableCell>
-                    <Badge variant="secondary">
+                  <TableCell className="hidden sm:table-cell text-sm text-muted-foreground max-w-32 truncate">
+                    {order.tableNumber || order.deliveryAddress || "—"}
+                  </TableCell>
+                  <TableCell className="hidden md:table-cell">
+                    <Badge variant="secondary" className="font-medium">
                       {order.items.length} item{order.items.length !== 1 ? "s" : ""}
                     </Badge>
                   </TableCell>
-                  <TableCell className="text-right font-medium">
-                    {formatCurrency(order.grandTotal, shop.currency)}
+                  <TableCell className="text-right">
+                    <span className="font-semibold text-sm">
+                      {formatCurrency(order.grandTotal, shop.currency)}
+                    </span>
                   </TableCell>
-                  <TableCell className="text-xs text-muted-foreground">
-                    {new Date(order.createdAt).toLocaleString()}
+                  <TableCell className="hidden lg:table-cell text-right">
+                    <div className="text-xs text-muted-foreground">
+                      {new Date(order.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      {new Date(order.createdAt).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}
+                    </div>
                   </TableCell>
                 </TableRow>
               ))}

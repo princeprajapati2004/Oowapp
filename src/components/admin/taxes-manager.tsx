@@ -193,28 +193,28 @@ export function TaxesManager({
         />
       ) : (
         <div className="grid gap-4 lg:grid-cols-3">
-          <div className="space-y-2 lg:col-span-2">
+          <div className="lg:col-span-2 overflow-hidden rounded-xl border bg-card divide-y">
             {taxes.map((tax) => (
-              <div key={tax.id} className="flex items-center gap-3 rounded-lg border p-3">
-                <div className="flex-1">
-                  <p className="font-medium">{tax.name}</p>
-                  <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
-                    <Badge variant="secondary">
+              <div key={tax.id} className="flex items-center gap-3 px-4 py-3 hover:bg-muted/40 transition-colors">
+                <div className="flex-1 min-w-0">
+                  <p className="font-medium text-sm">{tax.name}</p>
+                  <div className="flex flex-wrap items-center gap-1.5 mt-0.5">
+                    <Badge variant="secondary" className="text-xs">
                       {tax.type === "PERCENTAGE" ? `${tax.value}%` : formatCurrency(tax.value, currency)}
                     </Badge>
-                    <span>
+                    <span className="text-xs text-muted-foreground">
                       {tax.appliesTo === "ENTIRE_BILL"
                         ? "Entire bill"
                         : `Category: ${tax.category?.name ?? "—"}`}
                     </span>
                   </div>
                 </div>
-                <Switch checked={tax.isEnabled} onCheckedChange={() => handleToggleEnabled(tax)} />
-                <Button variant="ghost" size="icon" onClick={() => openEdit(tax)} aria-label="Edit">
-                  <Pencil className="size-4" />
+                <Switch checked={tax.isEnabled} onCheckedChange={() => handleToggleEnabled(tax)} aria-label="Enable/disable tax" />
+                <Button variant="ghost" size="icon-sm" onClick={() => openEdit(tax)} aria-label="Edit" className="text-muted-foreground hover:text-foreground">
+                  <Pencil className="size-3.5" />
                 </Button>
-                <Button variant="ghost" size="icon" onClick={() => setDeleteTarget(tax)} aria-label="Delete">
-                  <Trash2 className="size-4 text-destructive" />
+                <Button variant="ghost" size="icon-sm" onClick={() => setDeleteTarget(tax)} aria-label="Delete" className="text-muted-foreground hover:text-destructive">
+                  <Trash2 className="size-3.5" />
                 </Button>
               </div>
             ))}
@@ -231,7 +231,9 @@ export function TaxesManager({
               {categories.length > 1 && (
                 <Select value={previewCategoryId} onValueChange={(v) => setPreviewCategoryId(v ?? "")}>
                   <SelectTrigger className="w-full">
-                    <SelectValue />
+                    <SelectValue>
+                      {categories.find((c) => c.id === previewCategoryId)?.name ?? "Select category"}
+                    </SelectValue>
                   </SelectTrigger>
                   <SelectContent>
                     {categories.map((c) => (
@@ -330,7 +332,9 @@ export function TaxesManager({
                   onValueChange={(v) => setForm((f) => ({ ...f, categoryId: v }))}
                 >
                   <SelectTrigger id="tax-category" className="w-full">
-                    <SelectValue placeholder="Select category" />
+                    <SelectValue>
+                      {categories.find((c) => c.id === form.categoryId)?.name ?? "Select category"}
+                    </SelectValue>
                   </SelectTrigger>
                   <SelectContent>
                     {categories.map((c) => (
@@ -343,8 +347,8 @@ export function TaxesManager({
               </FormRow>
             )}
 
-            <div className="flex items-center justify-between rounded-lg border p-3">
-              <p className="text-sm font-medium">Enabled</p>
+            <div className="flex items-center justify-between rounded-xl border bg-card px-4 py-3 transition-colors hover:bg-muted/40">
+              <p className="text-sm font-medium select-none">Enabled</p>
               <Switch
                 checked={form.isEnabled}
                 onCheckedChange={(v) => setForm((f) => ({ ...f, isEnabled: v }))}

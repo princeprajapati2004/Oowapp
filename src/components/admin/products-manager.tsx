@@ -38,6 +38,7 @@ import { EmptyState } from "@/components/shared/empty-state";
 import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 import { ImageUploader } from "@/components/shared/image-uploader";
 import { api, ApiError } from "@/lib/api-client";
+import { isFoodBusiness, type BusinessType } from "@/lib/business-types";
 import { formatCurrency } from "@/lib/utils/currency";
 import { cn } from "@/lib/utils";
 import type { Category } from "@/generated/prisma/client";
@@ -63,10 +64,12 @@ export function ProductsManager({
   initialProducts,
   categories,
   currency,
+  businessType,
 }: {
   initialProducts: ProductRow[];
   categories: Category[];
   currency: string;
+  businessType: BusinessType;
 }) {
   const [products, setProducts] = useState(initialProducts);
   const [search, setSearch] = useState("");
@@ -193,20 +196,22 @@ export function ProductsManager({
         />
       ) : (
         <>
-          <div className="flex flex-col gap-3 rounded-xl border bg-card p-3 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex flex-1 flex-col gap-2 sm:flex-row">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+            <div className="flex flex-1 gap-2">
               <div className="relative flex-1">
-                <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground pointer-events-none" />
                 <Input
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                   placeholder="Search products…"
-                  className="pl-9"
+                  className="pl-9 h-9 bg-muted/50 border-transparent focus:border-input focus:bg-background transition-colors"
                 />
               </div>
               <Select value={categoryFilter} onValueChange={(v) => setCategoryFilter(v ?? "all")}>
-                <SelectTrigger className="sm:w-48">
-                  <SelectValue />
+                <SelectTrigger className="w-40 h-9">
+                  <SelectValue>
+                    {categoryFilter === "all" ? "All categories" : (categories.find((c) => c.id === categoryFilter)?.name ?? "All categories")}
+                  </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All categories</SelectItem>
@@ -218,22 +223,24 @@ export function ProductsManager({
                 </SelectContent>
               </Select>
             </div>
-            <div className="flex items-center justify-end gap-1">
+            <div className="flex items-center gap-0.5 rounded-lg border bg-muted/50 p-0.5">
               <Button
-                variant={view === "grid" ? "default" : "ghost"}
-                size="icon"
+                variant={view === "grid" ? "secondary" : "ghost"}
+                size="icon-sm"
                 onClick={() => setView("grid")}
                 aria-label="Grid view"
+                className={view === "grid" ? "shadow-sm" : ""}
               >
-                <LayoutGrid className="size-4" />
+                <LayoutGrid className="size-3.5" />
               </Button>
               <Button
-                variant={view === "list" ? "default" : "ghost"}
-                size="icon"
+                variant={view === "list" ? "secondary" : "ghost"}
+                size="icon-sm"
                 onClick={() => setView("list")}
                 aria-label="List view"
+                className={view === "list" ? "shadow-sm" : ""}
               >
-                <ListIcon className="size-4" />
+                <ListIcon className="size-3.5" />
               </Button>
             </div>
           </div>
@@ -250,53 +257,55 @@ export function ProductsManager({
               className={cn(
                 view === "grid"
                   ? "grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3"
-                  : "flex flex-col gap-2"
+                  : "overflow-hidden rounded-xl border bg-card divide-y"
               )}
             >
               {filtered.map((product) => (
                 <div
                   key={product.id}
                   className={cn(
-                    "rounded-xl border bg-card p-3 transition-shadow hover:shadow-sm",
-                    view === "list" && "flex items-center gap-3"
+                    view === "grid"
+                      ? "rounded-xl border bg-card overflow-hidden transition-all duration-200 hover:shadow-md hover:-translate-y-0.5"
+                      : "flex items-center gap-3 px-4 py-3 hover:bg-muted/40 transition-colors"
                   )}
                 >
                   <div
                     className={cn(
-                      "relative overflow-hidden rounded-lg bg-muted",
-                      view === "grid" ? "mb-3 h-32 w-full" : "size-14 shrink-0"
+                      "relative overflow-hidden bg-muted shrink-0",
+                      view === "grid" ? "h-36 w-full" : "size-12 rounded-lg"
                     )}
                   >
                     {product.imageUrl ? (
                       <Image src={product.imageUrl} alt={product.name} fill className="object-cover" unoptimized />
                     ) : (
                       <div className="flex size-full items-center justify-center">
-                        <ImageOff className="size-5 text-muted-foreground" />
+                        <ImageOff className="size-4 text-muted-foreground/50" />
                       </div>
                     )}
                   </div>
-                  <div className={cn("flex-1", view === "grid" && "space-y-1")}>
+                  <div className={cn("flex-1 min-w-0", view === "grid" && "p-3 space-y-1.5")}>
                     <div className="flex items-start justify-between gap-2">
-                      <p className="font-medium leading-tight">{product.name}</p>
-                      <p className="shrink-0 font-semibold">{formatCurrency(product.price, currency)}</p>
+                      <p className="font-medium leading-tight text-sm truncate">{product.name}</p>
+                      <p className="shrink-0 font-semibold text-sm">{formatCurrency(product.price, currency)}</p>
                     </div>
-                    <div className="flex flex-wrap items-center gap-1.5">
-                      <Badge variant="secondary">{product.category.name}</Badge>
-                      {!product.isAvailable && <Badge variant="destructive">Out of stock</Badge>}
-                      {!product.isVisible && <Badge variant="outline">Hidden</Badge>}
+                    <div className="flex flex-wrap items-center gap-1">
+                      <Badge variant="secondary" className="text-xs">{product.category.name}</Badge>
+                      {!product.isAvailable && <Badge variant="destructive" className="text-xs">Out of stock</Badge>}
+                      {!product.isVisible && <Badge variant="outline" className="text-xs">Hidden</Badge>}
                     </div>
                   </div>
-                  <div className={cn("flex gap-1", view === "grid" && "mt-2 justify-end")}>
-                    <Button variant="ghost" size="icon" onClick={() => openEdit(product)} aria-label="Edit">
-                      <Pencil className="size-4" />
+                  <div className={cn("flex items-center gap-0.5 shrink-0", view === "grid" && "px-3 pb-3")}>
+                    <Button variant="ghost" size="icon-sm" onClick={() => openEdit(product)} aria-label="Edit" className="text-muted-foreground hover:text-foreground">
+                      <Pencil className="size-3.5" />
                     </Button>
                     <Button
                       variant="ghost"
-                      size="icon"
+                      size="icon-sm"
                       onClick={() => setDeleteTarget(product)}
                       aria-label="Delete"
+                      className="text-muted-foreground hover:text-destructive"
                     >
-                      <Trash2 className="size-4 text-destructive" />
+                      <Trash2 className="size-3.5" />
                     </Button>
                   </div>
                 </div>
@@ -356,7 +365,9 @@ export function ProductsManager({
             <FormRow label="Category" htmlFor="product-category" required>
               <Select value={form.categoryId} onValueChange={(v) => setForm((f) => ({ ...f, categoryId: v ?? "" }))}>
                 <SelectTrigger id="product-category" className="w-full">
-                  <SelectValue />
+                  <SelectValue>
+                    {categories.find((c) => c.id === form.categoryId)?.name ?? "Select category"}
+                  </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   {categories.map((c) => (
@@ -368,23 +379,25 @@ export function ProductsManager({
               </Select>
             </FormRow>
 
-            <FormRow label="Food type" htmlFor="product-food-type">
-              <RadioGroup
-                className="flex gap-4"
-                value={form.foodType}
-                onValueChange={(v) => setForm((f) => ({ ...f, foodType: v as typeof f.foodType }))}
-              >
-                <label className="flex items-center gap-2 text-sm">
-                  <RadioGroupItem value="VEG" /> Veg
-                </label>
-                <label className="flex items-center gap-2 text-sm">
-                  <RadioGroupItem value="NON_VEG" /> Non-veg
-                </label>
-                <label className="flex items-center gap-2 text-sm">
-                  <RadioGroupItem value="NA" /> N/A
-                </label>
-              </RadioGroup>
-            </FormRow>
+            {isFoodBusiness(businessType) && (
+              <FormRow label="Food type" htmlFor="product-food-type">
+                <RadioGroup
+                  className="flex gap-4"
+                  value={form.foodType}
+                  onValueChange={(v) => setForm((f) => ({ ...f, foodType: v as typeof f.foodType }))}
+                >
+                  <label className="flex items-center gap-2 text-sm">
+                    <RadioGroupItem value="VEG" /> Veg
+                  </label>
+                  <label className="flex items-center gap-2 text-sm">
+                    <RadioGroupItem value="NON_VEG" /> Non-veg
+                  </label>
+                  <label className="flex items-center gap-2 text-sm">
+                    <RadioGroupItem value="NA" /> N/A
+                  </label>
+                </RadioGroup>
+              </FormRow>
+            )}
 
             <FormRow label="Stock (optional)" htmlFor="product-stock" description="Leave blank for unlimited">
               <Input
@@ -396,15 +409,15 @@ export function ProductsManager({
               />
             </FormRow>
 
-            <div className="flex items-center justify-between rounded-lg border p-3">
-              <p className="text-sm font-medium">Available</p>
+            <div className="flex items-center justify-between rounded-xl border bg-card px-4 py-3 transition-colors hover:bg-muted/40">
+              <p className="text-sm font-medium select-none">Available</p>
               <Switch
                 checked={form.isAvailable}
                 onCheckedChange={(v) => setForm((f) => ({ ...f, isAvailable: v }))}
               />
             </div>
-            <div className="flex items-center justify-between rounded-lg border p-3">
-              <p className="text-sm font-medium">Visible to customers</p>
+            <div className="flex items-center justify-between rounded-xl border bg-card px-4 py-3 transition-colors hover:bg-muted/40">
+              <p className="text-sm font-medium select-none">Visible to customers</p>
               <Switch
                 checked={form.isVisible}
                 onCheckedChange={(v) => setForm((f) => ({ ...f, isVisible: v }))}

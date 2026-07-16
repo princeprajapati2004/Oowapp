@@ -4,12 +4,19 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "sonner";
 import { orderSettingsSchema, type OrderSettingsInput } from "@/lib/validation/shop-settings";
+import { isFoodBusiness, type BusinessType } from "@/lib/business-types";
 import { api, ApiError } from "@/lib/api-client";
 import { Button } from "@/components/ui/button";
 import { ToggleRow } from "@/components/shared/toggle-row";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 
-export function OrderSettingsForm({ defaultValues }: { defaultValues: OrderSettingsInput }) {
+export function OrderSettingsForm({
+  defaultValues,
+  businessType,
+}: {
+  defaultValues: OrderSettingsInput;
+  businessType: BusinessType;
+}) {
   const {
     handleSubmit,
     watch,
@@ -49,11 +56,14 @@ export function OrderSettingsForm({ defaultValues }: { defaultValues: OrderSetti
             checked={values.requirePhone}
             onCheckedChange={(v) => setValue("requirePhone", v)}
           />
-          <ToggleRow
-            label="Require table number"
-            checked={values.requireTableNumber}
-            onCheckedChange={(v) => setValue("requireTableNumber", v)}
-          />
+          {isFoodBusiness(businessType) && (
+            <ToggleRow
+              label="Require table number"
+              description="Ask customers to enter their table number during checkout."
+              checked={values.requireTableNumber}
+              onCheckedChange={(v) => setValue("requireTableNumber", v)}
+            />
+          )}
           <ToggleRow
             label="Require delivery address"
             checked={values.requireDeliveryAddress}
