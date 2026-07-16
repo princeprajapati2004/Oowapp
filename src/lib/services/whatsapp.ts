@@ -53,7 +53,9 @@ export function buildOrderMessage(input: OrderMessageInput) {
 }
 
 export function buildWhatsAppUrl(phoneNumber: string, message: string) {
-  return `https://wa.me/${phoneNumber}?text=${encodeURIComponent(message)}`;
+  // wa.me requires digits only — no leading +, spaces, or dashes.
+  const digits = phoneNumber.replace(/\D/g, "");
+  return `https://wa.me/${digits}?text=${encodeURIComponent(message)}`;
 }
 
 export function generateBillNumber(shopSlug: string) {

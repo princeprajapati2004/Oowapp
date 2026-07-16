@@ -89,7 +89,6 @@ export function QrCodeGenerator({ slug, businessName }: { slug: string; business
             variant="ghost"
             className="w-full"
             render={<a href={`/order/${slug}`} target="_blank" rel="noreferrer" />}
-            nativeButton={false}
           >
             <ExternalLink className="size-4" /> Preview customer view
           </Button>

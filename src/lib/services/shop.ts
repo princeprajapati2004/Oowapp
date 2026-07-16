@@ -102,7 +102,7 @@ export async function getPublicShopBundle(slug: string) {
     },
   });
 
-  if (!shop || !shop.isPublished) {
+  if (!shop || !shop.isPublished || shop.status !== "ACTIVE") {
     return null;
   }
 

@@ -15,6 +15,7 @@ const orderItemSchema = z.object({
 
 const createOrderSchema = z.object({
   shopSlug: z.string(),
+  billNumber: z.string().optional(),
   customerName: z.string().optional(),
   customerPhone: z.string().optional(),
   tableNumber: z.string().optional(),
@@ -42,7 +43,7 @@ export async function POST(request: Request) {
       input.items.map((item) => ({ ...item, id: item.productId })),
       shop.taxes.map((t) => ({ ...t, value: Number(t.value) }))
     );
-    const billNumber = `${shop.slug.slice(0, 4).toUpperCase()}-${Date.now()}`;
+    const billNumber = input.billNumber ?? `${shop.slug.slice(0, 4).toUpperCase()}-${Date.now()}`;
 
     const order = await db.order.create({
       data: {

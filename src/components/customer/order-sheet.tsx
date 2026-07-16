@@ -43,6 +43,7 @@ export function OrderSheet({
 }) {
   const [step, setStep] = useState<Step>("cart");
   const [checkoutValues, setCheckoutValues] = useState<CheckoutInput | null>(null);
+  const [billNumber, setBillNumber] = useState<string>("");
   const [placing, setPlacing] = useState(false);
 
   // Reset to the cart step whenever the sheet transitions from closed to open.
@@ -88,6 +89,7 @@ export function OrderSheet({
 
   function handleGenerateBill(values: CheckoutInput) {
     setCheckoutValues(values);
+    setBillNumber(generateBillNumber(shop.slug));
     setStep("bill");
   }
 
@@ -111,6 +113,7 @@ export function OrderSheet({
     api
       .post("/api/orders", {
         shopSlug: shop.slug,
+        billNumber,
         customerName: checkoutValues.customerName,
         customerPhone: checkoutValues.customerPhone,
         tableNumber: checkoutValues.tableNumber,
@@ -264,7 +267,7 @@ export function OrderSheet({
                 {shop.address ? <p className="text-xs text-muted-foreground">{shop.address}</p> : null}
                 {shop.phone ? <p className="text-xs text-muted-foreground">{shop.phone}</p> : null}
                 <p className="mt-1 text-xs text-muted-foreground">
-                  Bill No: {generateBillNumber(shop.slug)} &middot; {new Date().toLocaleString()}
+                  Bill No: {billNumber} &middot; {new Date().toLocaleString()}
                 </p>
               </div>
 
