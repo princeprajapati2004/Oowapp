@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/shared/empty-state";
 import { ThemeToggle } from "@/components/shared/theme-toggle";
+import { InstallApp } from "@/components/shared/install-app";
 import { ProductCard } from "@/components/customer/product-card";
 import { ItemDetailSheet } from "@/components/customer/item-detail-sheet";
 import { OrderSheet } from "@/components/customer/order-sheet";
@@ -89,6 +90,7 @@ export function CustomerMenu({
             <h1 className="truncate font-bold leading-tight">{shop.businessName}</h1>
             <p className="text-xs text-muted-foreground">Scan, order, done.</p>
           </div>
+          <InstallApp className="hidden sm:flex" />
           <ThemeToggle />
         </div>
         <div className="mx-auto max-w-3xl px-4 pb-3">

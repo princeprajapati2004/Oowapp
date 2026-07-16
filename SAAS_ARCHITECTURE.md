@@ -1,4 +1,4 @@
-# MyKharcha — Multi-Tenant SaaS Architecture
+# OOWAPP — Multi-Tenant SaaS Architecture
 
 **Status:** Awaiting approval before implementation begins.
 
@@ -371,7 +371,7 @@ Inspired by: Vercel, Clerk, Stripe dashboards.
 **Layout:**
 ```
 ┌─────────────────────────────────────────────────────┐
-│  ◈ MyKharcha Platform    [Bell] [SA Avatar ▾]        │
+│  ◈ OOWAPP Platform    [Bell] [SA Avatar ▾]        │
 ├──────────────┬──────────────────────────────────────┤
 │              │                                       │
 │  Dashboard   │   OVERVIEW CARDS (row of 4)           │

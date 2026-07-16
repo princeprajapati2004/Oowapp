@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
@@ -19,6 +20,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { FormRow } from "@/components/shared/form-row";
+import { InstallApp } from "@/components/shared/install-app";
 
 export default function SignupPage() {
   const router = useRouter();
@@ -49,77 +51,95 @@ export default function SignupPage() {
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-muted/40 px-4 py-10">
-      <div className="w-full max-w-md bg-background border rounded-2xl shadow-sm p-6 sm:p-8 space-y-6">
-        <div className="space-y-1 text-center">
-          <h1 className="text-2xl font-bold tracking-tight">Set up your shop</h1>
-          <p className="text-sm text-muted-foreground">
-            Create your free ordering page in under a minute.
-          </p>
+      <div className="w-full max-w-md space-y-6">
+        <div className="flex flex-col items-center gap-3">
+          <Image
+            src="/logo_1.webp"
+            alt="OOWAPP"
+            width={72}
+            height={72}
+            className="rounded-2xl"
+            priority
+          />
+          <div className="space-y-0.5 text-center">
+            <h1 className="text-2xl font-bold tracking-tight">OOWAPP</h1>
+            <p className="text-sm text-muted-foreground">Order on WhatsApp</p>
+          </div>
+          <InstallApp alwaysShow />
         </div>
 
-        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-          <FieldGroup>
-            <FormRow label="Business name" htmlFor="businessName" required error={errors.businessName}>
-              <Input
-                id="businessName"
-                placeholder="e.g. Heritage Kitchen"
-                {...register("businessName")}
-              />
-            </FormRow>
+        <div className="bg-background border rounded-2xl shadow-sm p-6 sm:p-8 space-y-6">
+          <div className="space-y-1 text-center">
+            <h2 className="text-lg font-semibold tracking-tight">Set up your shop</h2>
+            <p className="text-sm text-muted-foreground">
+              Create your free ordering page in under a minute.
+            </p>
+          </div>
 
-            <FormRow label="Business type" htmlFor="businessType" required>
-              <Select
-                value={businessType}
-                onValueChange={(v) => v && setValue("businessType", v as SignupInput["businessType"])}
+          <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+            <FieldGroup>
+              <FormRow label="Business name" htmlFor="businessName" required error={errors.businessName}>
+                <Input
+                  id="businessName"
+                  placeholder="e.g. Heritage Kitchen"
+                  {...register("businessName")}
+                />
+              </FormRow>
+
+              <FormRow label="Business type" htmlFor="businessType" required>
+                <Select
+                  value={businessType}
+                  onValueChange={(v) => v && setValue("businessType", v as SignupInput["businessType"])}
+                >
+                  <SelectTrigger id="businessType" className="w-full">
+                    <SelectValue placeholder="Select a business type" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {BUSINESS_TYPES.map((type) => (
+                      <SelectItem key={type} value={type}>
+                        {BUSINESS_TYPE_LABELS[type]}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </FormRow>
+
+              <FormRow
+                label="WhatsApp number"
+                htmlFor="whatsappNumber"
+                required
+                description="Include country code, e.g. 91XXXXXXXXXX — orders will be sent here."
+                error={errors.whatsappNumber}
               >
-                <SelectTrigger id="businessType" className="w-full">
-                  <SelectValue placeholder="Select a business type" />
-                </SelectTrigger>
-                <SelectContent>
-                  {BUSINESS_TYPES.map((type) => (
-                    <SelectItem key={type} value={type}>
-                      {BUSINESS_TYPE_LABELS[type]}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </FormRow>
+                <Input
+                  id="whatsappNumber"
+                  inputMode="numeric"
+                  placeholder="91XXXXXXXXXX"
+                  {...register("whatsappNumber")}
+                />
+              </FormRow>
 
-            <FormRow
-              label="WhatsApp number"
-              htmlFor="whatsappNumber"
-              required
-              description="Include country code, e.g. 91XXXXXXXXXX — orders will be sent here."
-              error={errors.whatsappNumber}
-            >
-              <Input
-                id="whatsappNumber"
-                inputMode="numeric"
-                placeholder="91XXXXXXXXXX"
-                {...register("whatsappNumber")}
-              />
-            </FormRow>
+              <FormRow label="Email" htmlFor="email" required error={errors.email}>
+                <Input id="email" type="email" placeholder="you@example.com" {...register("email")} />
+              </FormRow>
 
-            <FormRow label="Email" htmlFor="email" required error={errors.email}>
-              <Input id="email" type="email" placeholder="you@example.com" {...register("email")} />
-            </FormRow>
+              <FormRow label="Password" htmlFor="password" required error={errors.password}>
+                <Input id="password" type="password" placeholder="••••••••" {...register("password")} />
+              </FormRow>
+            </FieldGroup>
 
-            <FormRow label="Password" htmlFor="password" required error={errors.password}>
-              <Input id="password" type="password" placeholder="••••••••" {...register("password")} />
-            </FormRow>
-          </FieldGroup>
+            <Button type="submit" className="w-full" size="lg" disabled={isSubmitting}>
+              {isSubmitting ? "Creating your shop…" : "Create my shop"}
+            </Button>
+          </form>
 
-          <Button type="submit" className="w-full" size="lg" disabled={isSubmitting}>
-            {isSubmitting ? "Creating your shop…" : "Create my shop"}
-          </Button>
-        </form>
-
-        <p className="text-center text-sm text-muted-foreground">
-          Already have a shop?{" "}
-          <Link href="/login" className="font-medium text-foreground underline underline-offset-4">
-            Log in
-          </Link>
-        </p>
+          <p className="text-center text-sm text-muted-foreground">
+            Already have a shop?{" "}
+            <Link href="/login" className="font-medium text-foreground underline underline-offset-4">
+              Log in
+            </Link>
+          </p>
+        </div>
       </div>
     </div>
   );

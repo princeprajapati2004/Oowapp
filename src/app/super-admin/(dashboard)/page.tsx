@@ -37,7 +37,7 @@ export default async function SuperAdminDashboardPage() {
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Platform Overview</h1>
         <p className="text-muted-foreground text-sm">
-          All businesses and activity across MyKharcha.
+          All businesses and activity across OOWAPP.
         </p>
       </div>
 

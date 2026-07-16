@@ -1,4 +1,4 @@
-# MyKharcha — QR Ordering & Billing
+# OOWAPP - QR Ordering & Billing
 
 A mobile-first QR ordering & billing app for small businesses (restaurants, cafes, tea
 stalls, grocery/medical/electronics/clothing shops, etc.). Customers scan a QR, browse a

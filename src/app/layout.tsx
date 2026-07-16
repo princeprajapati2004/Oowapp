@@ -4,6 +4,7 @@ import "./globals.css";
 import { ThemeProvider } from "@/components/theme-provider";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Toaster } from "@/components/ui/sonner";
+import { PwaRegister } from "@/components/shared/pwa-register";
 
 const inter = Inter({
   variable: "--font-sans",
@@ -12,14 +13,36 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "MyKharcha — QR Ordering & Billing",
-  description: "Mobile-first QR ordering and billing for small businesses.",
+  title: "OOWAPP — Order on WhatsApp",
+  description: "Order on WhatsApp",
+  applicationName: "OOWAPP",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "default",
+    title: "OOWAPP",
+  },
+  openGraph: {
+    type: "website",
+    title: "OOWAPP — Order on WhatsApp",
+    description: "Order on WhatsApp",
+    siteName: "OOWAPP",
+  },
+  twitter: {
+    card: "summary",
+    title: "OOWAPP — Order on WhatsApp",
+    description: "Order on WhatsApp",
+  },
 };
 
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
   maximumScale: 1,
+  viewportFit: "cover",
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#ffffff" },
+    { media: "(prefers-color-scheme: dark)", color: "#1a1a1a" },
+  ],
 };
 
 export default function RootLayout({
@@ -45,6 +68,7 @@ export default function RootLayout({
             <Toaster position="top-center" richColors />
           </TooltipProvider>
         </ThemeProvider>
+        <PwaRegister />
       </body>
     </html>
   );

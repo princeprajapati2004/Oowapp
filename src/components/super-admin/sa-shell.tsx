@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
@@ -8,11 +9,11 @@ import {
   Building2,
   Menu,
   LogOut,
-  Shield,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger, SheetTitle } from "@/components/ui/sheet";
 import { ThemeToggle } from "@/components/shared/theme-toggle";
+import { InstallApp } from "@/components/shared/install-app";
 import { cn } from "@/lib/utils";
 import { api } from "@/lib/api-client";
 
@@ -61,13 +62,18 @@ export function SAShell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="flex min-h-screen">
-      {/* Desktop sidebar */}
       <aside className="hidden md:flex w-60 shrink-0 flex-col border-r bg-background p-4">
-        <div className="mb-6 px-2 flex items-center gap-2">
-          <Shield className="size-4 text-primary" />
+        <div className="mb-6 px-2 flex items-center gap-2.5">
+          <Image
+            src="/logo_1.webp"
+            alt="OOWAPP"
+            width={32}
+            height={32}
+            className="rounded-lg shrink-0"
+          />
           <div>
             <p className="text-sm font-semibold">Platform Admin</p>
-            <p className="text-xs text-muted-foreground">MyKharcha</p>
+            <p className="text-xs text-muted-foreground">OOWAPP</p>
           </div>
         </div>
         <NavLinks pathname={pathname} />
@@ -82,7 +88,6 @@ export function SAShell({ children }: { children: React.ReactNode }) {
         </div>
       </aside>
 
-      {/* Main content */}
       <div className="flex-1 flex flex-col min-w-0">
         <header className="flex items-center justify-between border-b px-4 py-3 md:px-6">
           <div className="flex items-center gap-2 md:hidden">
@@ -91,8 +96,15 @@ export function SAShell({ children }: { children: React.ReactNode }) {
                 <Menu className="size-5" />
               </SheetTrigger>
               <SheetContent side="left" className="w-60 p-4">
-                <SheetTitle className="mb-4 px-2 flex items-center gap-2 text-sm font-semibold">
-                  <Shield className="size-4 text-primary" /> Platform Admin
+                <SheetTitle className="mb-4 px-2 flex items-center gap-2.5 text-sm font-semibold">
+                  <Image
+                    src="/logo_1.webp"
+                    alt="OOWAPP"
+                    width={24}
+                    height={24}
+                    className="rounded-md shrink-0"
+                  />
+                  Platform Admin
                 </SheetTitle>
                 <NavLinks pathname={pathname} onNavigate={() => setMobileOpen(false)} />
                 <div className="mt-4 border-t pt-4">
@@ -109,7 +121,10 @@ export function SAShell({ children }: { children: React.ReactNode }) {
             <span className="text-sm font-semibold">Platform Admin</span>
           </div>
           <div className="hidden md:block" />
-          <ThemeToggle />
+          <div className="flex items-center gap-2">
+            <InstallApp />
+            <ThemeToggle />
+          </div>
         </header>
 
         <main className="flex-1 p-4 md:p-6">{children}</main>

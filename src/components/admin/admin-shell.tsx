@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
@@ -18,6 +19,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger, SheetTitle } from "@/components/ui/sheet";
 import { ThemeToggle } from "@/components/shared/theme-toggle";
+import { InstallApp } from "@/components/shared/install-app";
 import { cn } from "@/lib/utils";
 import { api } from "@/lib/api-client";
 
@@ -80,9 +82,18 @@ export function AdminShell({
   return (
     <div className="flex min-h-screen">
       <aside className="hidden md:flex w-64 shrink-0 flex-col border-r bg-background p-4 print:hidden">
-        <div className="mb-6 px-2">
-          <p className="text-sm font-semibold truncate">{shopName}</p>
-          <p className="text-xs text-muted-foreground">/order/{shopSlug}</p>
+        <div className="mb-6 px-2 flex items-center gap-2.5">
+          <Image
+            src="/logo_1.webp"
+            alt="OOWAPP"
+            width={32}
+            height={32}
+            className="rounded-lg shrink-0"
+          />
+          <div className="min-w-0">
+            <p className="text-sm font-semibold truncate">{shopName}</p>
+            <p className="text-xs text-muted-foreground truncate">/order/{shopSlug}</p>
+          </div>
         </div>
         <NavLinks pathname={pathname} />
         <div className="mt-auto space-y-1 pt-4">
@@ -112,8 +123,15 @@ export function AdminShell({
                 <Menu className="size-5" />
               </SheetTrigger>
               <SheetContent side="left" className="w-64 p-4">
-                <SheetTitle className="mb-4 px-2 text-sm font-semibold truncate">
-                  {shopName}
+                <SheetTitle className="mb-4 px-2 flex items-center gap-2.5 text-sm font-semibold">
+                  <Image
+                    src="/logo_1.webp"
+                    alt="OOWAPP"
+                    width={24}
+                    height={24}
+                    className="rounded-md shrink-0"
+                  />
+                  <span className="truncate">{shopName}</span>
                 </SheetTitle>
                 <NavLinks pathname={pathname} onNavigate={() => setMobileOpen(false)} />
                 <div className="mt-4 space-y-1 border-t pt-4">
@@ -138,7 +156,10 @@ export function AdminShell({
             <p className="text-sm font-semibold truncate">{shopName}</p>
           </div>
           <div className="hidden md:block" />
-          <ThemeToggle />
+          <div className="flex items-center gap-2">
+            <InstallApp />
+            <ThemeToggle />
+          </div>
         </header>
 
         <main className="flex-1 p-4 md:p-6">{children}</main>
