@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import { toast } from "sonner";
 import {
@@ -26,12 +26,11 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-  SheetFooter,
-} from "@/components/ui/sheet";
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { FormRow } from "@/components/shared/form-row";
 import { EmptyState } from "@/components/shared/empty-state";
@@ -76,11 +75,17 @@ export function ProductsManager({
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
   const [view, setView] = useState<"grid" | "list">("grid");
 
-  const [sheetOpen, setSheetOpen] = useState(false);
+  const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<ProductRow | null>(null);
   const [form, setForm] = useState(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<ProductRow | null>(null);
+
+  // Category search
+  const [categorySearch, setCategorySearch] = useState("");
+
+  // Undo delete
+  const deleteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const filtered = useMemo(() => {
     return products.filter((product) => {
@@ -93,10 +98,17 @@ export function ProductsManager({
     });
   }, [products, search, categoryFilter]);
 
+  const filteredCategories = useMemo(() => {
+    if (!categorySearch.trim()) return categories;
+    const q = categorySearch.toLowerCase();
+    return categories.filter((c) => c.name.toLowerCase().includes(q));
+  }, [categories, categorySearch]);
+
   function openCreate() {
     setEditing(null);
     setForm({ ...EMPTY_FORM, categoryId: categories[0]?.id ?? "" });
-    setSheetOpen(true);
+    setCategorySearch("");
+    setDialogOpen(true);
   }
 
   function openEdit(product: ProductRow) {
@@ -113,7 +125,8 @@ export function ProductsManager({
       isVisible: product.isVisible,
       stock: product.stock === null || product.stock === undefined ? "" : String(product.stock),
     });
-    setSheetOpen(true);
+    setCategorySearch("");
+    setDialogOpen(true);
   }
 
   async function handleSave() {
@@ -155,7 +168,7 @@ export function ProductsManager({
         setProducts((prev) => [...prev, serialized]);
         toast.success("Product added");
       }
-      setSheetOpen(false);
+      setDialogOpen(false);
     } catch (error) {
       toast.error(error instanceof ApiError ? error.message : "Failed to save");
     } finally {
@@ -163,17 +176,45 @@ export function ProductsManager({
     }
   }
 
-  async function handleDelete() {
+  function handleDeleteRequest(product: ProductRow) {
+    setDeleteTarget(product);
+  }
+
+  function handleDeleteConfirm() {
     if (!deleteTarget) return;
-    try {
-      await api.delete(`/api/admin/products/${deleteTarget.id}`);
-      setProducts((prev) => prev.filter((p) => p.id !== deleteTarget.id));
-      toast.success("Product deleted");
-    } catch (error) {
-      toast.error(error instanceof ApiError ? error.message : "Failed to delete");
-    } finally {
-      setDeleteTarget(null);
-    }
+    const targetProduct = deleteTarget;
+    const previousProducts = [...products];
+
+    // Optimistic: remove immediately
+    setProducts((prev) => prev.filter((p) => p.id !== targetProduct.id));
+    setDeleteTarget(null);
+
+    // Show undo toast — actual delete fires after the toast duration
+    const timerId = setTimeout(async () => {
+      try {
+        await api.delete(`/api/admin/products/${targetProduct.id}`);
+      } catch (error) {
+        // Restore on failure
+        setProducts(previousProducts);
+        toast.error(error instanceof ApiError ? error.message : "Failed to delete product");
+      }
+    }, 5000);
+
+    deleteTimerRef.current = timerId;
+
+    toast("Product deleted", {
+      description: `"${targetProduct.name}" removed.`,
+      action: {
+        label: "Undo",
+        onClick: () => {
+          clearTimeout(timerId);
+          deleteTimerRef.current = null;
+          setProducts(previousProducts);
+          toast.success("Delete undone");
+        },
+      },
+      duration: 5000,
+    });
   }
 
   return (
@@ -301,7 +342,7 @@ export function ProductsManager({
                     <Button
                       variant="ghost"
                       size="icon-sm"
-                      onClick={() => setDeleteTarget(product)}
+                      onClick={() => handleDeleteRequest(product)}
                       aria-label="Delete"
                       className="text-muted-foreground hover:text-destructive"
                     >
@@ -315,12 +356,14 @@ export function ProductsManager({
         </>
       )}
 
-      <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
-        <SheetContent className="w-full sm:max-w-md overflow-y-auto">
-          <SheetHeader>
-            <SheetTitle>{editing ? "Edit product" : "Add product"}</SheetTitle>
-          </SheetHeader>
-          <div className="space-y-4 px-4">
+      {/* Centered product form dialog */}
+      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <DialogContent className="flex flex-col p-0 gap-0 sm:max-w-xl max-h-[92dvh] overflow-hidden">
+          <DialogHeader className="flex-shrink-0 px-5 py-4 border-b">
+            <DialogTitle>{editing ? "Edit product" : "Add product"}</DialogTitle>
+          </DialogHeader>
+
+          <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
             <FormRow label="Image" htmlFor="product-image">
               <ImageUploader value={form.imageUrl} onChange={(url) => setForm((f) => ({ ...f, imageUrl: url }))} />
             </FormRow>
@@ -370,11 +413,29 @@ export function ProductsManager({
                   </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
-                  {categories.map((c) => (
-                    <SelectItem key={c.id} value={c.id}>
-                      {c.name}
-                    </SelectItem>
-                  ))}
+                  {categories.length > 5 && (
+                    <div className="px-2 pb-1.5 pt-1">
+                      <div className="relative">
+                        <Search className="absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+                        <input
+                          className="w-full rounded-md border bg-transparent py-1.5 pl-8 pr-3 text-sm outline-none focus:ring-1 focus:ring-ring"
+                          placeholder="Search categories…"
+                          value={categorySearch}
+                          onChange={(e) => setCategorySearch(e.target.value)}
+                          onKeyDown={(e) => e.stopPropagation()}
+                        />
+                      </div>
+                    </div>
+                  )}
+                  {filteredCategories.length === 0 ? (
+                    <div className="px-3 py-2 text-sm text-muted-foreground">No categories found</div>
+                  ) : (
+                    filteredCategories.map((c) => (
+                      <SelectItem key={c.id} value={c.id}>
+                        {c.name}
+                      </SelectItem>
+                    ))
+                  )}
                 </SelectContent>
               </Select>
             </FormRow>
@@ -424,13 +485,14 @@ export function ProductsManager({
               />
             </div>
           </div>
-          <SheetFooter>
+
+          <div className="flex-shrink-0 border-t bg-muted/50 px-5 py-4 flex justify-end gap-2 rounded-b-xl">
             <Button onClick={handleSave} disabled={saving}>
               {saving ? "Saving…" : "Save product"}
             </Button>
-          </SheetFooter>
-        </SheetContent>
-      </Sheet>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <ConfirmDialog
         open={!!deleteTarget}
@@ -439,7 +501,7 @@ export function ProductsManager({
         description={`"${deleteTarget?.name}" will be permanently removed.`}
         confirmLabel="Delete"
         destructive
-        onConfirm={handleDelete}
+        onConfirm={handleDeleteConfirm}
       />
     </div>
   );

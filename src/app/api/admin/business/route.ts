@@ -6,6 +6,7 @@ import {
   businessInfoSchema,
   paymentSettingsSchema,
   orderSettingsSchema,
+  restaurantSettingsSchema,
 } from "@/lib/validation/shop-settings";
 
 export async function GET() {
@@ -27,7 +28,13 @@ export async function PATCH(request: Request) {
     if (section === "business") data = businessInfoSchema.parse(rest);
     else if (section === "payment") data = paymentSettingsSchema.parse(rest);
     else if (section === "orders") data = orderSettingsSchema.parse(rest);
-    else return NextResponse.json({ error: "Unknown settings section" }, { status: 400 });
+    else if (section === "restaurant") {
+      const parsed = restaurantSettingsSchema.parse(rest);
+      data = {
+        enableTableQr: parsed.enableTableQr,
+        tableNames: JSON.stringify(parsed.tableNames),
+      };
+    } else return NextResponse.json({ error: "Unknown settings section" }, { status: 400 });
 
     const shop = await updateShopSettings(session.shopId, data);
     return NextResponse.json(shop);

@@ -77,6 +77,8 @@ export type ShopSettingsInput = Partial<{
   allowNotes: boolean;
   saveOrdersToDb: boolean;
   isPublished: boolean;
+  enableTableQr: boolean;
+  tableNames: string | null;
 }>;
 
 export async function updateShopSettings(shopId: string, data: ShopSettingsInput) {

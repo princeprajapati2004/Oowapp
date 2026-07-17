@@ -40,3 +40,9 @@ export const orderSettingsSchema = z.object({
   isPublished: z.boolean(),
 });
 export type OrderSettingsInput = z.infer<typeof orderSettingsSchema>;
+
+export const restaurantSettingsSchema = z.object({
+  enableTableQr: z.boolean(),
+  tableNames: z.array(z.string().trim().min(1).max(50)).max(100),
+});
+export type RestaurantSettingsInput = z.infer<typeof restaurantSettingsSchema>;

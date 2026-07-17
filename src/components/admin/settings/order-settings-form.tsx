@@ -13,9 +13,11 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 export function OrderSettingsForm({
   defaultValues,
   businessType,
+  bare,
 }: {
   defaultValues: OrderSettingsInput;
   businessType: BusinessType;
+  bare?: boolean;
 }) {
   const {
     handleSubmit,
@@ -38,60 +40,64 @@ export function OrderSettingsForm({
     }
   }
 
+  const formContent = (
+    <form onSubmit={handleSubmit(onSubmit)} className="space-y-3">
+      <ToggleRow
+        label="Require customer name"
+        checked={values.requireCustomerName}
+        onCheckedChange={(v) => setValue("requireCustomerName", v)}
+      />
+      <ToggleRow
+        label="Require phone number"
+        checked={values.requirePhone}
+        onCheckedChange={(v) => setValue("requirePhone", v)}
+      />
+      {isFoodBusiness(businessType) && (
+        <ToggleRow
+          label="Require table number"
+          description="Ask customers to enter their table number during checkout."
+          checked={values.requireTableNumber}
+          onCheckedChange={(v) => setValue("requireTableNumber", v)}
+        />
+      )}
+      <ToggleRow
+        label="Require delivery address"
+        checked={values.requireDeliveryAddress}
+        onCheckedChange={(v) => setValue("requireDeliveryAddress", v)}
+      />
+      <ToggleRow
+        label="Allow special instructions / notes"
+        checked={values.allowNotes}
+        onCheckedChange={(v) => setValue("allowNotes", v)}
+      />
+      <ToggleRow
+        label="Save orders to database"
+        description="Keep a log of orders in /admin/orders. Off by default — orders always go to WhatsApp either way."
+        checked={values.saveOrdersToDb}
+        onCheckedChange={(v) => setValue("saveOrdersToDb", v)}
+      />
+      <ToggleRow
+        label="Menu is live"
+        description="Turn off to temporarily hide your ordering page from customers."
+        checked={values.isPublished}
+        onCheckedChange={(v) => setValue("isPublished", v)}
+      />
+
+      <Button type="submit" disabled={isSubmitting}>
+        {isSubmitting ? "Saving…" : "Save order settings"}
+      </Button>
+    </form>
+  );
+
+  if (bare) return formContent;
+
   return (
     <Card>
       <CardHeader>
         <CardTitle>Order settings</CardTitle>
         <CardDescription>Choose what customers must fill in before checkout.</CardDescription>
       </CardHeader>
-      <CardContent>
-        <form onSubmit={handleSubmit(onSubmit)} className="space-y-3">
-          <ToggleRow
-            label="Require customer name"
-            checked={values.requireCustomerName}
-            onCheckedChange={(v) => setValue("requireCustomerName", v)}
-          />
-          <ToggleRow
-            label="Require phone number"
-            checked={values.requirePhone}
-            onCheckedChange={(v) => setValue("requirePhone", v)}
-          />
-          {isFoodBusiness(businessType) && (
-            <ToggleRow
-              label="Require table number"
-              description="Ask customers to enter their table number during checkout."
-              checked={values.requireTableNumber}
-              onCheckedChange={(v) => setValue("requireTableNumber", v)}
-            />
-          )}
-          <ToggleRow
-            label="Require delivery address"
-            checked={values.requireDeliveryAddress}
-            onCheckedChange={(v) => setValue("requireDeliveryAddress", v)}
-          />
-          <ToggleRow
-            label="Allow special instructions / notes"
-            checked={values.allowNotes}
-            onCheckedChange={(v) => setValue("allowNotes", v)}
-          />
-          <ToggleRow
-            label="Save orders to database"
-            description="Keep a log of orders in /admin/orders. Off by default — orders always go to WhatsApp either way."
-            checked={values.saveOrdersToDb}
-            onCheckedChange={(v) => setValue("saveOrdersToDb", v)}
-          />
-          <ToggleRow
-            label="Menu is live"
-            description="Turn off to temporarily hide your ordering page from customers."
-            checked={values.isPublished}
-            onCheckedChange={(v) => setValue("isPublished", v)}
-          />
-
-          <Button type="submit" disabled={isSubmitting}>
-            {isSubmitting ? "Saving…" : "Save order settings"}
-          </Button>
-        </form>
-      </CardContent>
+      <CardContent>{formContent}</CardContent>
     </Card>
   );
 }

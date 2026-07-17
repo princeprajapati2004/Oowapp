@@ -9,5 +9,23 @@ export default async function QrPage() {
 
   const shop = await getShopById(session.shopId);
 
-  return <QrCodeGenerator slug={shop.slug} businessName={shop.businessName} businessType={shop.businessType} />;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const shopAny = shop as any;
+  let configuredTables: string[] | undefined;
+  if (shopAny.enableTableQr && shopAny.tableNames) {
+    try {
+      configuredTables = JSON.parse(shopAny.tableNames) as string[];
+    } catch {
+      configuredTables = undefined;
+    }
+  }
+
+  return (
+    <QrCodeGenerator
+      slug={shop.slug}
+      businessName={shop.businessName}
+      businessType={shop.businessType}
+      configuredTables={configuredTables}
+    />
+  );
 }

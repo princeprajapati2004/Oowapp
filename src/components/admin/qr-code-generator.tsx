@@ -20,10 +20,12 @@ export function QrCodeGenerator({
   slug,
   businessName,
   businessType,
+  configuredTables,
 }: {
   slug: string;
   businessName: string;
   businessType: BusinessType;
+  configuredTables?: string[];
 }) {
   const [pngDataUrl, setPngDataUrl] = useState<string | null>(null);
   const [svgMarkup, setSvgMarkup] = useState<string | null>(null);
@@ -31,7 +33,7 @@ export function QrCodeGenerator({
 
   // Table QR state
   const [tableCountInput, setTableCountInput] = useState("5");
-  const [tableQrs, setTableQrs] = useState<{ table: number; dataUrl: string }[]>([]);
+  const [tableQrs, setTableQrs] = useState<{ table: string; dataUrl: string }[]>([]);
   const [generatingTables, setGeneratingTables] = useState(false);
 
   useEffect(() => {
@@ -68,14 +70,26 @@ export function QrCodeGenerator({
   }
 
   async function generateTableQrs() {
-    const n = parseInt(tableCountInput, 10);
-    if (!n || n < 1 || n > 50) return;
     const base = process.env.NEXT_PUBLIC_APP_URL || window.location.origin;
     setGeneratingTables(true);
+
+    // Use configured table names if available, otherwise fall back to count-based generation
+    const tableNames: string[] = configuredTables && configuredTables.length > 0
+      ? configuredTables
+      : (() => {
+          const n = parseInt(tableCountInput, 10);
+          if (!n || n < 1 || n > 50) return [];
+          return Array.from({ length: n }, (_, i) => String(i + 1));
+        })();
+
+    if (tableNames.length === 0) {
+      setGeneratingTables(false);
+      return;
+    }
+
     const qrs = await Promise.all(
-      Array.from({ length: n }, async (_, i) => {
-        const table = i + 1;
-        const url = `${base}/order/${slug}?table=${table}`;
+      tableNames.map(async (table) => {
+        const url = `${base}/order/${slug}?table=${encodeURIComponent(table)}`;
         const dataUrl = await QRCode.toDataURL(url, { width: 300, margin: 2 });
         return { table, dataUrl };
       })
@@ -155,6 +169,7 @@ export function QrCodeGenerator({
           <Button
             variant="ghost"
             className="w-full text-muted-foreground"
+            nativeButton={false}
             render={<a href={`/order/${slug}`} target="_blank" rel="noreferrer" />}
           >
             <ExternalLink className="size-4" /> Preview customer view
@@ -174,25 +189,33 @@ export function QrCodeGenerator({
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="flex items-end gap-2">
-              <div className="flex-1 space-y-1">
-                <label htmlFor="table-count" className="text-sm font-medium">
-                  Number of tables
-                </label>
-                <Input
-                  id="table-count"
-                  type="number"
-                  min={1}
-                  max={50}
-                  value={tableCountInput}
-                  onChange={(e) => setTableCountInput(e.target.value)}
-                  className="h-9"
-                />
+            {configuredTables && configuredTables.length > 0 ? (
+              <div className="rounded-lg bg-muted/50 px-3 py-2 text-sm text-muted-foreground">
+                {configuredTables.length} table{configuredTables.length !== 1 ? "s" : ""} configured in Settings.
+                Click Generate to create QRs for all of them.
               </div>
-              <Button onClick={generateTableQrs} disabled={generatingTables} className="h-9">
-                {generatingTables ? "Generating…" : "Generate"}
-              </Button>
-            </div>
+            ) : (
+              <div className="flex items-end gap-2">
+                <div className="flex-1 space-y-1">
+                  <label htmlFor="table-count" className="text-sm font-medium">
+                    Number of tables
+                  </label>
+                  <Input
+                    id="table-count"
+                    type="number"
+                    min={1}
+                    max={50}
+                    value={tableCountInput}
+                    onChange={(e) => setTableCountInput(e.target.value)}
+                    className="h-9"
+                  />
+                </div>
+              </div>
+            )}
+
+            <Button onClick={generateTableQrs} disabled={generatingTables} className="w-full h-9">
+              {generatingTables ? "Generating…" : "Generate table QRs"}
+            </Button>
 
             {tableQrs.length > 0 && (
               <>
@@ -208,7 +231,7 @@ export function QrCodeGenerator({
                       key={table}
                       className="flex flex-col items-center gap-1.5 rounded-xl border bg-card p-2.5"
                     >
-                      <p className="text-xs font-semibold">Table {table}</p>
+                      <p className="text-xs font-semibold text-center leading-tight">Table {table}</p>
                       <div className="rounded-lg border bg-white p-1">
                         {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img src={dataUrl} alt={`Table ${table} QR`} className="size-20" />

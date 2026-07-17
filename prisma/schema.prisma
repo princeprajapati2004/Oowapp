@@ -60,6 +60,15 @@ enum SubscriptionStatus {
   CANCELLED
 }
 
+enum OrderStatus {
+  PENDING
+  CONFIRMED
+  PREPARING
+  READY
+  COMPLETED
+  CANCELLED
+}
+
 enum AuditAction {
   // Auth
   ADMIN_SIGNUP
@@ -146,8 +155,13 @@ model Shop {
   saveOrdersToDb         Boolean @default(false)
 
   isPublished Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+
+  // Restaurant-specific settings
+  enableTableQr Boolean @default(false)
+  tableNames    String? // JSON-encoded string[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   categories    Category[]
   products      Product[]
@@ -236,11 +250,12 @@ model Order {
   tableNumber     String?
   deliveryAddress String?
   notes           String?
-  subtotal        Decimal  @db.Decimal(10, 2)
-  taxTotal        Decimal  @db.Decimal(10, 2)
-  grandTotal      Decimal  @db.Decimal(10, 2)
+  subtotal        Decimal     @db.Decimal(10, 2)
+  taxTotal        Decimal     @db.Decimal(10, 2)
+  grandTotal      Decimal     @db.Decimal(10, 2)
   taxBreakdown    Json
-  createdAt       DateTime @default(now())
+  status          OrderStatus @default(PENDING)
+  createdAt       DateTime    @default(now())
 
   items OrderItem[]
 
