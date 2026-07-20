@@ -33,6 +33,7 @@ export type PaymentSettingsInput = z.infer<typeof paymentSettingsSchema>;
 export const orderSettingsSchema = z.object({
   requireCustomerName: z.boolean(),
   requirePhone: z.boolean(),
+  enableTableNumber: z.boolean(),
   requireTableNumber: z.boolean(),
   requireDeliveryAddress: z.boolean(),
   allowNotes: z.boolean(),
@@ -40,6 +41,12 @@ export const orderSettingsSchema = z.object({
   isPublished: z.boolean(),
 });
 export type OrderSettingsInput = z.infer<typeof orderSettingsSchema>;
+
+export const notificationSettingsSchema = z.object({
+  notifyNewOrders: z.boolean(),
+  notifyOrderUpdates: z.boolean(),
+});
+export type NotificationSettingsInput = z.infer<typeof notificationSettingsSchema>;
 
 export const restaurantSettingsSchema = z.object({
   enableTableQr: z.boolean(),

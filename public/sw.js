@@ -49,6 +49,54 @@ self.addEventListener("fetch", (e) => {
   e.respondWith(staleWhileRevalidate(request));
 });
 
+// ─── Push Notifications ──────────────────────────────────────────────────────
+
+self.addEventListener("push", (e) => {
+  if (!e.data) return;
+
+  let payload = { title: "OOWAPP", body: "You have a new notification", url: "/admin/orders", tag: undefined };
+  try {
+    payload = { ...payload, ...e.data.json() };
+  } catch {
+    payload.body = e.data.text();
+  }
+
+  e.waitUntil(
+    self.registration.showNotification(payload.title, {
+      body: payload.body,
+      icon: "/icons/icon-192x192.png",
+      badge: "/icons/icon-72x72.png",
+      tag: payload.tag,
+      data: { url: payload.url },
+      requireInteraction: false,
+      vibrate: [200, 100, 200],
+    })
+  );
+});
+
+self.addEventListener("notificationclick", (e) => {
+  e.notification.close();
+  const url = (e.notification.data && e.notification.data.url) || "/admin/orders";
+
+  e.waitUntil(
+    clients
+      .matchAll({ type: "window", includeUncontrolled: true })
+      .then((windowClients) => {
+        // Focus an existing window if the app is already open
+        for (const client of windowClients) {
+          if (client.url.includes(self.location.origin) && "focus" in client) {
+            client.navigate(url);
+            return client.focus();
+          }
+        }
+        // Open a new window
+        if (clients.openWindow) return clients.openWindow(url);
+      })
+  );
+});
+
+// ─── Cache strategies ─────────────────────────────────────────────────────────
+
 async function cacheFirst(request) {
   const cached = await caches.match(request);
   if (cached) return cached;

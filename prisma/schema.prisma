@@ -149,6 +149,7 @@ model Shop {
   // Order settings
   requireCustomerName    Boolean @default(true)
   requirePhone           Boolean @default(false)
+  enableTableNumber      Boolean @default(true)
   requireTableNumber     Boolean @default(true)
   requireDeliveryAddress Boolean @default(false)
   allowNotes             Boolean @default(true)
@@ -160,14 +161,19 @@ model Shop {
   enableTableQr Boolean @default(false)
   tableNames    String? // JSON-encoded string[]
 
+  // Push notification preferences
+  notifyNewOrders    Boolean @default(true)
+  notifyOrderUpdates Boolean @default(true)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  categories    Category[]
-  products      Product[]
-  taxes         Tax[]
-  orders        Order[]
-  subscriptions Subscription[]
+  categories        Category[]
+  products          Product[]
+  taxes             Tax[]
+  orders            Order[]
+  subscriptions     Subscription[]
+  pushSubscriptions PushSubscription[]
 
   @@map("shops")
 }
@@ -255,6 +261,11 @@ model Order {
   grandTotal      Decimal     @db.Decimal(10, 2)
   taxBreakdown    Json
   status          OrderStatus @default(PENDING)
+  // Discount (Feature 3)
+  discountType    String?
+  discountValue   Decimal?    @db.Decimal(10, 2)
+  discountReason  String?
+  discountedTotal Decimal?    @db.Decimal(10, 2)
   createdAt       DateTime    @default(now())
 
   items OrderItem[]
@@ -334,4 +345,19 @@ model PlatformSettings {
   updatedAt DateTime @updatedAt
 
   @@map("platform_settings")
+}
+
+// Feature 4: Web push subscriptions
+model PushSubscription {
+  id        String   @id @default(cuid())
+  shopId    String
+  shop      Shop     @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  endpoint  String   @unique
+  p256dh    String
+  auth      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([shopId])
+  @@map("push_subscriptions")
 }

@@ -63,9 +63,8 @@ export function OrderSheet({
       buildCheckoutSchema({
         requireCustomerName: shop.requireCustomerName,
         requirePhone: shop.requirePhone,
-        // If the table is pre-filled from the URL, treat it as not-required in the form
-        // (the value is injected into checkoutValues at submit time, bypassing the field).
-        requireTableNumber: shop.requireTableNumber && !prefilledTable,
+        // Table number is only required when the feature is enabled AND there's no prefilled value.
+        requireTableNumber: shop.enableTableNumber && shop.requireTableNumber && !prefilledTable,
         requireDeliveryAddress: shop.requireDeliveryAddress,
       }),
     [shop, prefilledTable]
@@ -95,8 +94,9 @@ export function OrderSheet({
   function handleGenerateBill(values: CheckoutInput) {
     setCheckoutValues({
       ...values,
-      // Use the URL-prefilled table when the customer doesn't type it manually.
-      tableNumber: values.tableNumber || prefilledTable || "",
+      tableNumber: shop.enableTableNumber
+        ? (values.tableNumber || prefilledTable || "")
+        : "",
     });
     setBillNumber(generateBillNumber(shop.slug));
     setStep("bill");
@@ -407,16 +407,23 @@ export function OrderSheet({
                   <Input id="customerPhone" inputMode="numeric" placeholder="Your phone number" {...register("customerPhone")} />
                 </FormRow>
               )}
-              {prefilledTable ? (
-                <div className="flex items-center justify-between rounded-xl bg-muted/50 px-4 py-2.5 text-sm">
-                  <span className="text-muted-foreground font-medium">Table</span>
-                  <span className="font-semibold">{prefilledTable}</span>
-                </div>
-              ) : shop.requireTableNumber ? (
-                <FormRow label="Table number" htmlFor="tableNumber" required error={errors.tableNumber}>
-                  <Input id="tableNumber" placeholder="e.g. Table 5" {...register("tableNumber")} />
-                </FormRow>
-              ) : null}
+              {shop.enableTableNumber && (
+                prefilledTable ? (
+                  <div className="flex items-center justify-between rounded-xl bg-muted/50 px-4 py-2.5 text-sm">
+                    <span className="text-muted-foreground font-medium">Table</span>
+                    <span className="font-semibold">{prefilledTable}</span>
+                  </div>
+                ) : (
+                  <FormRow
+                    label="Table number"
+                    htmlFor="tableNumber"
+                    required={shop.requireTableNumber}
+                    error={errors.tableNumber}
+                  >
+                    <Input id="tableNumber" placeholder="e.g. Table 5" {...register("tableNumber")} />
+                  </FormRow>
+                )
+              )}
               {shop.requireDeliveryAddress && (
                 <FormRow
                   label="Delivery address"

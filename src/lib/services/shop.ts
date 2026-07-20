@@ -36,6 +36,7 @@ export async function createShopForAdmin(
       businessName: input.businessName,
       businessType: input.businessType,
       whatsappNumber: input.whatsappNumber,
+      enableTableNumber: !deliveryFirst,
       requireTableNumber: !deliveryFirst,
       requireDeliveryAddress: deliveryFirst,
     },
@@ -72,6 +73,7 @@ export type ShopSettingsInput = Partial<{
   paymentQrImageUrl: string | null;
   requireCustomerName: boolean;
   requirePhone: boolean;
+  enableTableNumber: boolean;
   requireTableNumber: boolean;
   requireDeliveryAddress: boolean;
   allowNotes: boolean;
@@ -79,6 +81,8 @@ export type ShopSettingsInput = Partial<{
   isPublished: boolean;
   enableTableQr: boolean;
   tableNames: string | null;
+  notifyNewOrders: boolean;
+  notifyOrderUpdates: boolean;
 }>;
 
 export async function updateShopSettings(shopId: string, data: ShopSettingsInput) {
@@ -101,6 +105,7 @@ export async function getPublicShopBundle(slug: string) {
       // Checkout form requirements
       requireCustomerName: true,
       requirePhone: true,
+      enableTableNumber: true,
       requireTableNumber: true,
       requireDeliveryAddress: true,
       allowNotes: true,

@@ -1,9 +1,11 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { toast } from "sonner";
-import { ClipboardList } from "lucide-react";
+import { ClipboardList, ExternalLink } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/shared/empty-state";
 import { api, ApiError } from "@/lib/api-client";
 import { formatCurrency } from "@/lib/utils/currency";
@@ -128,6 +130,7 @@ export function OrdersManager({
                 <TableHead>Status</TableHead>
                 <TableHead className="text-right">Total</TableHead>
                 <TableHead className="hidden lg:table-cell text-right">Date</TableHead>
+                <TableHead className="w-8" />
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -186,6 +189,17 @@ export function OrdersManager({
                       <div className="text-xs text-muted-foreground">
                         {new Date(order.createdAt).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}
                       </div>
+                    </TableCell>
+                    <TableCell className="p-1">
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        className="text-muted-foreground hover:text-foreground"
+                        render={<Link href={`/admin/orders/${order.id}`} />}
+                        aria-label="View bill"
+                      >
+                        <ExternalLink className="size-3.5" />
+                      </Button>
                     </TableCell>
                   </TableRow>
                 );

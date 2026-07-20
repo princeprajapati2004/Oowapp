@@ -6,6 +6,7 @@ import { BusinessInfoForm } from "@/components/admin/settings/business-info-form
 import { PaymentSettingsForm } from "@/components/admin/settings/payment-settings-form";
 import { OrderSettingsForm } from "@/components/admin/settings/order-settings-form";
 import { RestaurantSettingsForm } from "@/components/admin/settings/restaurant-settings-form";
+import { NotificationSettingsForm } from "@/components/admin/settings/notification-settings-form";
 import { SettingsAccordion } from "@/components/admin/settings/settings-accordion";
 import type { BusinessInfoInput } from "@/lib/validation/shop-settings";
 
@@ -71,6 +72,7 @@ export default async function SettingsPage() {
           defaultValues={{
             requireCustomerName: shop.requireCustomerName,
             requirePhone: shop.requirePhone,
+            enableTableNumber: shopAny.enableTableNumber ?? true,
             requireTableNumber: shop.requireTableNumber,
             requireDeliveryAddress: shop.requireDeliveryAddress,
             allowNotes: shop.allowNotes,
@@ -99,6 +101,20 @@ export default async function SettingsPage() {
                   }
                 })()
               : [],
+          }}
+        />
+      ),
+    },
+    {
+      id: "notifications",
+      title: "Notifications",
+      description: "Push notifications for new orders and updates.",
+      content: (
+        <NotificationSettingsForm
+          bare
+          defaultValues={{
+            notifyNewOrders: (shopAny.notifyNewOrders as boolean) ?? true,
+            notifyOrderUpdates: (shopAny.notifyOrderUpdates as boolean) ?? true,
           }}
         />
       ),

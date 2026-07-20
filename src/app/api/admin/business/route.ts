@@ -7,6 +7,7 @@ import {
   paymentSettingsSchema,
   orderSettingsSchema,
   restaurantSettingsSchema,
+  notificationSettingsSchema,
 } from "@/lib/validation/shop-settings";
 
 export async function GET() {
@@ -34,6 +35,8 @@ export async function PATCH(request: Request) {
         enableTableQr: parsed.enableTableQr,
         tableNames: JSON.stringify(parsed.tableNames),
       };
+    } else if (section === "notifications") {
+      data = notificationSettingsSchema.parse(rest);
     } else return NextResponse.json({ error: "Unknown settings section" }, { status: 400 });
 
     const shop = await updateShopSettings(session.shopId, data);
