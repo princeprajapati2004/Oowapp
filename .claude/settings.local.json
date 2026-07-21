@@ -1,7 +1,10 @@
 {
   "permissions": {
     "allow": [
-      "Bash(npx prisma *)"
+      "Bash(npx prisma *)",
+      "Bash(command -v docker)",
+      "Bash(command -v pg_ctl)",
+      "Bash(command -v postgres)"
     ]
   }
 }

@@ -19,16 +19,19 @@ export async function POST(request: Request) {
     const input = loginSchema.parse(body);
     const { ipAddress, userAgent, requestId } = extractRequestMeta(request);
 
-    const SA_EMAIL = process.env.SUPER_ADMIN_SEED_EMAIL;
-    const SA_PASSWORD = process.env.SUPER_ADMIN_SEED_PASSWORD;
-
     // Super Admin path — checked first, exclusively by email match
-    if (SA_EMAIL && input.email === SA_EMAIL) {
-      if (!SA_PASSWORD || input.password !== SA_PASSWORD) {
+    const superAdmin = await db.superAdmin.findUnique({ where: { email: input.email } });
+    if (superAdmin) {
+      if (!(await verifyPassword(input.password, superAdmin.passwordHash))) {
         return NextResponse.json({ error: "Invalid credentials" }, { status: 401 });
       }
 
-      const token = await signSuperAdminSession({ superAdminId: "platform-owner" });
+      await db.superAdmin.update({
+        where: { id: superAdmin.id },
+        data: { lastLoginAt: new Date() },
+      });
+
+      const token = await signSuperAdminSession({ superAdminId: superAdmin.id });
       const cookieStore = await cookies();
       cookieStore.set(SA_SESSION_COOKIE, token, {
         httpOnly: true,
@@ -41,7 +44,7 @@ export async function POST(request: Request) {
       await writeAuditLog({
         action: "SUPER_ADMIN_LOGIN",
         actorType: "super_admin",
-        actorId: "platform-owner",
+        actorId: superAdmin.id,
         ipAddress,
         userAgent,
         requestId,

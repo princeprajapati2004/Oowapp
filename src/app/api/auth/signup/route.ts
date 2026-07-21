@@ -10,6 +10,7 @@ import {
 import { signupSchema } from "@/lib/validation/auth";
 import { handleApiError } from "@/lib/api-utils";
 import { createShopForAdmin } from "@/lib/services/shop";
+import { createInitialSubscription } from "@/lib/services/subscription";
 import { writeAuditLog, extractRequestMeta } from "@/lib/services/audit-log";
 
 export async function POST(request: Request) {
@@ -34,6 +35,7 @@ export async function POST(request: Request) {
       data: { email: input.email, passwordHash },
     });
     const shop = await createShopForAdmin(admin.id, input);
+    await createInitialSubscription(shop.id);
 
     const token = await signSession({ adminId: admin.id, shopId: shop.id });
     const cookieStore = await cookies();
@@ -52,6 +54,19 @@ export async function POST(request: Request) {
       targetType: "shop",
       targetId: shop.id,
       shopId: shop.id,
+      ipAddress,
+      userAgent,
+      requestId,
+    });
+
+    await writeAuditLog({
+      action: "SUBSCRIPTION_CHANGED",
+      actorType: "system",
+      actorId: admin.id,
+      targetType: "shop",
+      targetId: shop.id,
+      shopId: shop.id,
+      metadata: { event: "trial_started", plan: "FREE" },
       ipAddress,
       userAgent,
       requestId,

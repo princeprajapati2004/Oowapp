@@ -7,6 +7,8 @@ import { usePathname, useRouter } from "next/navigation";
 import {
   LayoutDashboard,
   Building2,
+  CreditCard,
+  Layers,
   Menu,
   LogOut,
 } from "lucide-react";
@@ -20,6 +22,8 @@ import { api } from "@/lib/api-client";
 const NAV_ITEMS = [
   { href: "/super-admin", label: "Dashboard", icon: LayoutDashboard, exact: true },
   { href: "/super-admin/businesses", label: "Businesses", icon: Building2, exact: false },
+  { href: "/super-admin/subscriptions", label: "Subscriptions", icon: CreditCard, exact: false },
+  { href: "/super-admin/plans", label: "Plans", icon: Layers, exact: false },
 ];
 
 function NavLinks({ pathname, onNavigate }: { pathname: string; onNavigate?: () => void }) {

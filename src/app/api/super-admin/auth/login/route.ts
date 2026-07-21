@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { z } from "zod";
+import { db } from "@/lib/db";
 import {
+  verifyPassword,
   signSuperAdminSession,
   SA_SESSION_COOKIE,
   SESSION_DURATION_SECONDS,
@@ -20,19 +22,17 @@ export async function POST(request: Request) {
     const { email, password } = loginSchema.parse(body);
     const { ipAddress, userAgent, requestId } = extractRequestMeta(request);
 
-    const validEmail = process.env.SUPER_ADMIN_SEED_EMAIL;
-    const validPassword = process.env.SUPER_ADMIN_SEED_PASSWORD;
-
-    if (
-      !validEmail ||
-      !validPassword ||
-      email !== validEmail ||
-      password !== validPassword
-    ) {
+    const superAdmin = await db.superAdmin.findUnique({ where: { email } });
+    if (!superAdmin || !(await verifyPassword(password, superAdmin.passwordHash))) {
       return NextResponse.json({ error: "Invalid credentials" }, { status: 401 });
     }
 
-    const token = await signSuperAdminSession({ superAdminId: "platform-owner" });
+    await db.superAdmin.update({
+      where: { id: superAdmin.id },
+      data: { lastLoginAt: new Date() },
+    });
+
+    const token = await signSuperAdminSession({ superAdminId: superAdmin.id });
     const cookieStore = await cookies();
     cookieStore.set(SA_SESSION_COOKIE, token, {
       httpOnly: true,
@@ -45,7 +45,7 @@ export async function POST(request: Request) {
     await writeAuditLog({
       action: "SUPER_ADMIN_LOGIN",
       actorType: "super_admin",
-      actorId: "platform-owner",
+      actorId: superAdmin.id,
       ipAddress,
       userAgent,
       requestId,

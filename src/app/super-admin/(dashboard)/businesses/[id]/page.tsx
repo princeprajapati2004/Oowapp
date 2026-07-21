@@ -1,8 +1,14 @@
 import { notFound } from "next/navigation";
 import { getBusinessById } from "@/lib/services/business-management";
+import { getSubscriptionDetailForSuperAdmin } from "@/lib/services/subscription-admin";
+import { getFeaturePermissionsForBusiness } from "@/lib/services/feature-permission";
+import { listPlans } from "@/lib/services/plan";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { formatDate } from "@/lib/utils/date";
 import { BusinessActions } from "./business-actions";
+import { SubscriptionManager } from "@/components/super-admin/subscription-manager";
+import { FeaturePermissionsPanel } from "@/components/super-admin/feature-permissions-panel";
 
 export default async function BusinessDetailPage({
   params,
@@ -18,8 +24,37 @@ export default async function BusinessDetailPage({
     notFound();
   }
 
-  const plan = business.subscriptions[0]?.plan ?? "FREE";
-  const subStatus = business.subscriptions[0]?.status ?? "—";
+  const [subscriptionDetail, featurePermissions, plans] = await Promise.all([
+    getSubscriptionDetailForSuperAdmin(id),
+    getFeaturePermissionsForBusiness(id),
+    listPlans(),
+  ]);
+
+  const currentForClient = {
+    planCode: subscriptionDetail.current.planCode,
+    planName: subscriptionDetail.current.planName,
+    displayStatus: subscriptionDetail.current.displayStatus,
+    duration: subscriptionDetail.current.duration,
+    startDate: subscriptionDetail.current.startDate.toISOString(),
+    endDate: subscriptionDetail.current.endDate ? subscriptionDetail.current.endDate.toISOString() : null,
+    daysRemaining: subscriptionDetail.current.daysRemaining,
+    createdBy: subscriptionDetail.current.createdBy,
+    remarks: subscriptionDetail.current.remarks,
+  };
+
+  const historyForClient = subscriptionDetail.history.map((row) => ({
+    ...row,
+    startDate: row.startDate.toISOString(),
+    endDate: row.endDate ? row.endDate.toISOString() : null,
+    createdAt: row.createdAt.toISOString(),
+  }));
+
+  const plansForClient = plans.map((plan) => ({
+    id: plan.id,
+    code: plan.code,
+    name: plan.name,
+    isActive: plan.isActive,
+  }));
 
   const info = [
     { label: "Business Name", value: business.businessName },
@@ -65,71 +100,72 @@ export default async function BusinessDetailPage({
         </div>
       )}
 
-      <div className="grid gap-4 sm:grid-cols-2">
-        {/* Stats */}
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base">Stats</CardTitle>
-          </CardHeader>
-          <CardContent className="grid grid-cols-3 gap-4">
-            <Stat label="Products" value={business._count.products} />
-            <Stat label="Categories" value={business._count.categories} />
-            <Stat label="Orders" value={business._count.orders} />
-          </CardContent>
-        </Card>
+      <Tabs defaultValue="overview">
+        <TabsList>
+          <TabsTrigger value="overview">Overview</TabsTrigger>
+          <TabsTrigger value="subscription">Subscription</TabsTrigger>
+          <TabsTrigger value="permissions">Feature Permissions</TabsTrigger>
+        </TabsList>
 
-        {/* Subscription */}
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base">Subscription</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-2 text-sm">
-            <Row label="Plan" value={plan} />
-            <Row label="Status" value={subStatus} />
-            {business.subscriptions[0]?.startDate && (
-              <Row label="Since" value={formatDate(business.subscriptions[0].startDate)} />
-            )}
-            {business.subscriptions[0]?.endDate && (
-              <Row label="Expires" value={formatDate(business.subscriptions[0].endDate)} />
-            )}
-          </CardContent>
-        </Card>
-      </div>
+        <TabsContent value="overview" className="space-y-4 pt-4">
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base">Stats</CardTitle>
+            </CardHeader>
+            <CardContent className="grid grid-cols-3 gap-4">
+              <Stat label="Products" value={business._count.products} />
+              <Stat label="Categories" value={business._count.categories} />
+              <Stat label="Orders" value={business._count.orders} />
+            </CardContent>
+          </Card>
 
-      {/* Business Info */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Business Info</CardTitle>
-          <CardDescription>Full details as provided by the business owner.</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <dl className="divide-y text-sm">
-            {info.map((item) => (
-              <div key={item.label} className="flex justify-between gap-4 py-2.5">
-                <dt className="text-muted-foreground shrink-0">{item.label}</dt>
-                <dd className="text-right break-all">{item.value}</dd>
-              </div>
-            ))}
-          </dl>
-        </CardContent>
-      </Card>
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Business Info</CardTitle>
+              <CardDescription>Full details as provided by the business owner.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <dl className="divide-y text-sm">
+                {info.map((item) => (
+                  <div key={item.label} className="flex justify-between gap-4 py-2.5">
+                    <dt className="text-muted-foreground shrink-0">{item.label}</dt>
+                    <dd className="text-right break-all">{item.value}</dd>
+                  </div>
+                ))}
+              </dl>
+            </CardContent>
+          </Card>
 
-      {/* Timestamps */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Activity</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <dl className="divide-y text-sm">
-            <Row label="Account created" value={formatDate(business.admin.createdAt)} />
-            <Row label="Shop created" value={formatDate(business.createdAt)} />
-            <Row
-              label="Last login"
-              value={business.lastLoginAt ? formatDate(business.lastLoginAt) : "Never"}
-            />
-          </dl>
-        </CardContent>
-      </Card>
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Activity</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <dl className="divide-y text-sm">
+                <Row label="Account created" value={formatDate(business.admin.createdAt)} />
+                <Row label="Shop created" value={formatDate(business.createdAt)} />
+                <Row
+                  label="Last login"
+                  value={business.lastLoginAt ? formatDate(business.lastLoginAt) : "Never"}
+                />
+              </dl>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="subscription" className="pt-4">
+          <SubscriptionManager
+            shopId={business.id}
+            current={currentForClient}
+            history={historyForClient}
+            plans={plansForClient}
+          />
+        </TabsContent>
+
+        <TabsContent value="permissions" className="pt-4">
+          <FeaturePermissionsPanel shopId={business.id} permissions={featurePermissions} />
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }

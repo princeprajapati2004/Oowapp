@@ -11,7 +11,8 @@
     "db:push": "prisma db push",
     "db:migrate": "prisma migrate dev",
     "db:studio": "prisma studio",
-    "db:seed": "npx tsx scripts/seed-super-admin.ts"
+    "db:seed": "npx tsx scripts/seed-super-admin.ts",
+    "db:seed:plans": "npx tsx scripts/seed-plans-features.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.6.0",

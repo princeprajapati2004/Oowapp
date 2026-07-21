@@ -5,20 +5,23 @@ import { getAdminSession } from "@/lib/session";
 import { getShopById } from "@/lib/services/shop";
 import { listCategories } from "@/lib/services/category";
 import { listProducts } from "@/lib/services/product";
+import { getSubscriptionSummaryForBusiness } from "@/lib/services/subscription";
 import { db } from "@/lib/db";
 import { formatCurrency } from "@/lib/utils/currency";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { SubscriptionCard } from "@/components/admin/subscription-card";
 
 export default async function AdminDashboardPage() {
   const session = await getAdminSession();
   if (!session) redirect("/login");
 
-  const [shop, categories, products] = await Promise.all([
+  const [shop, categories, products, subscription] = await Promise.all([
     getShopById(session.shopId),
     listCategories(session.shopId),
     listProducts(session.shopId),
+    getSubscriptionSummaryForBusiness(session.shopId),
   ]);
 
   const checklist = [
@@ -50,6 +53,8 @@ export default async function AdminDashboardPage() {
         <h1 className="text-2xl font-bold tracking-tight">Welcome back</h1>
         <p className="text-muted-foreground">{shop.businessName}</p>
       </div>
+
+      <SubscriptionCard subscription={subscription} />
 
       {todayStats ? (
         <div className="grid grid-cols-2 gap-3 sm:gap-4">

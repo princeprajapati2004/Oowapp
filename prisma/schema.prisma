@@ -57,7 +57,27 @@ enum SubscriptionStatus {
   TRIAL
   ACTIVE
   EXPIRED
+  SUSPENDED
   CANCELLED
+}
+
+enum SubscriptionDuration {
+  FIFTEEN_DAYS
+  ONE_MONTH
+  THREE_MONTHS
+  SIX_MONTHS
+  TWELVE_MONTHS
+  CUSTOM
+}
+
+enum SubscriptionActionType {
+  CREATED
+  RENEWED
+  EXTENDED
+  PLAN_CHANGED
+  SUSPENDED
+  RESUMED
+  EXPIRED
 }
 
 enum OrderStatus {
@@ -168,12 +188,13 @@ model Shop {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  categories        Category[]
-  products          Product[]
-  taxes             Tax[]
-  orders            Order[]
-  subscriptions     Subscription[]
-  pushSubscriptions PushSubscription[]
+  categories         Category[]
+  products           Product[]
+  taxes              Tax[]
+  orders             Order[]
+  subscriptions      Subscription[]
+  pushSubscriptions  PushSubscription[]
+  featurePermissions BusinessFeaturePermission[]
 
   @@map("shops")
 }
@@ -304,18 +325,93 @@ model SuperAdmin {
 }
 
 model Subscription {
-  id        String             @id @default(cuid())
+  id        String                 @id @default(cuid())
   shopId    String
-  shop      Shop               @relation(fields: [shopId], references: [id], onDelete: Cascade)
-  plan      SubscriptionPlan   @default(FREE)
-  status    SubscriptionStatus @default(TRIAL)
-  startDate DateTime           @default(now())
+  shop      Shop                   @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  plan      SubscriptionPlan       @default(FREE)
+  planId    String?
+  planRef   Plan?                  @relation(fields: [planId], references: [id], onDelete: SetNull)
+  status    SubscriptionStatus     @default(TRIAL)
+  duration  SubscriptionDuration   @default(ONE_MONTH)
+  action    SubscriptionActionType @default(CREATED)
+  startDate DateTime               @default(now())
   endDate   DateTime?
-  createdAt DateTime           @default(now())
-  updatedAt DateTime           @updatedAt
+  // Super admin actor id ("system" for auto-created trial subscriptions); nullable for
+  // rows created before this column existed.
+  createdBy String?
+  remarks   String?
+  createdAt DateTime               @default(now())
+  updatedAt DateTime               @updatedAt
 
   @@index([shopId])
+  @@index([shopId, createdAt])
   @@map("subscriptions")
+}
+
+// ─── Subscription Plans & Feature Permissions ─────────────────────────────────
+
+model Plan {
+  id          String   @id @default(cuid())
+  // Matches the legacy SubscriptionPlan enum value during the migration bridge period
+  // (see SUBSCRIPTION_POS_ARCHITECTURE.md, Decision A); free-form for plans created later.
+  code        String   @unique
+  name        String
+  description String?
+  isActive    Boolean  @default(true)
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  planFeatures  PlanFeature[]
+  subscriptions Subscription[]
+
+  @@map("plans")
+}
+
+model Feature {
+  id          String   @id @default(cuid())
+  key         String   @unique
+  label       String
+  description String?
+  category    String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+
+  planFeatures      PlanFeature[]
+  businessOverrides BusinessFeaturePermission[]
+
+  @@map("features")
+}
+
+model PlanFeature {
+  id        String  @id @default(cuid())
+  planId    String
+  plan      Plan    @relation(fields: [planId], references: [id], onDelete: Cascade)
+  featureId String
+  feature   Feature @relation(fields: [featureId], references: [id], onDelete: Cascade)
+  enabled   Boolean @default(true)
+
+  @@unique([planId, featureId])
+  @@map("plan_features")
+}
+
+// Per-business override layer resolved on top of the plan's defaults — see
+// src/lib/services/feature-permission.ts::resolveFeatures for resolution order.
+model BusinessFeaturePermission {
+  id        String   @id @default(cuid())
+  shopId    String
+  shop      Shop     @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  featureId String
+  feature   Feature  @relation(fields: [featureId], references: [id], onDelete: Cascade)
+  enabled   Boolean
+  reason    String?
+  updatedBy String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([shopId, featureId])
+  @@index([shopId])
+  @@map("business_feature_permissions")
 }
 
 model AuditLog {
