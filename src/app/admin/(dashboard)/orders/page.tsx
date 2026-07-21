@@ -39,6 +39,6 @@ export default async function OrdersPage() {
 
   return (
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    <OrdersManager initialOrders={serialized as any} currency={shop.currency} />
+    <OrdersManager initialOrders={serialized as any} currency={shop.currency} shopSlug={shop.slug} />
   );
 }

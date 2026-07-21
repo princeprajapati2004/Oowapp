@@ -1,6 +1,4 @@
-import Link from "next/link";
 import { redirect } from "next/navigation";
-import { CheckCircle2, Circle, ArrowRight, QrCode, ShoppingBag, TrendingUp, Sparkles } from "lucide-react";
 import { getAdminSession } from "@/lib/session";
 import { getShopById } from "@/lib/services/shop";
 import { listCategories } from "@/lib/services/category";
@@ -12,6 +10,8 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { SubscriptionCard } from "@/components/admin/subscription-card";
+import { getDashboardAnalytics } from "@/lib/services/analytics";
+import { DashboardClient } from "@/components/admin/dashboard/dashboard-client";
 
 export default async function AdminDashboardPage() {
   const session = await getAdminSession();
@@ -23,29 +23,19 @@ export default async function AdminDashboardPage() {
     listProducts(session.shopId),
     getSubscriptionSummaryForBusiness(session.shopId),
   ]);
+  const shop = await getShopById(session.shopId);
 
-  const checklist = [
-    { label: "Add your logo & business info", done: !!shop.logoUrl, href: "/admin/settings" },
-    { label: "Add a category", done: categories.length > 0, href: "/admin/categories" },
-    { label: "Add your first product", done: products.length > 0, href: "/admin/products" },
-    { label: "Set your WhatsApp number", done: !!shop.whatsappNumber, href: "/admin/settings" },
-  ];
+  // Load today's data for initial render
+  const now = new Date();
+  const todayStart = new Date(now);
+  todayStart.setHours(0, 0, 0, 0);
+  const todayEnd = new Date(now);
+  todayEnd.setHours(23, 59, 59, 999);
 
-  let todayStats: { count: number; revenue: number } | null = null;
-  if (shop.saveOrdersToDb) {
-    const startOfToday = new Date();
-    startOfToday.setHours(0, 0, 0, 0);
-    const todaysOrders = await db.order.findMany({
-      where: { shopId: shop.id, createdAt: { gte: startOfToday } },
-      select: { grandTotal: true },
-    });
-    todayStats = {
-      count: todaysOrders.length,
-      revenue: todaysOrders.reduce((sum, o) => sum + Number(o.grandTotal), 0),
-    };
-  }
+  const initialData = await getDashboardAnalytics(session.shopId, todayStart, todayEnd, "hour");
 
-  const doneCount = checklist.filter((item) => item.done).length;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const shopAny = shop as unknown as Record<string, unknown>;
 
   return (
     <div className="max-w-3xl space-y-6">
@@ -143,5 +133,13 @@ export default async function AdminDashboardPage() {
         </CardContent>
       </Card>
     </div>
+    <DashboardClient
+      initialData={initialData}
+      initialGranularity="hour"
+      currency={shop.currency}
+      shopName={shop.businessName}
+      shopSlug={shop.slug}
+      ownerName={(shopAny.ownerName as string | null) ?? null}
+    />
   );
 }
