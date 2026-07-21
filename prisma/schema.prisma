@@ -261,6 +261,8 @@ model Order {
   grandTotal      Decimal     @db.Decimal(10, 2)
   taxBreakdown    Json
   status          OrderStatus @default(PENDING)
+  paymentMethod   String?
+  source          String      @default("qr")
   // Discount (Feature 3)
   discountType    String?
   discountValue   Decimal?    @db.Decimal(10, 2)

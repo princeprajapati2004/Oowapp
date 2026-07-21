@@ -2,11 +2,13 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { ClipboardList, ExternalLink } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/shared/empty-state";
+import { CreateOrderDialog } from "@/components/admin/create-order-dialog";
 import { api, ApiError } from "@/lib/api-client";
 import { formatCurrency } from "@/lib/utils/currency";
 import {
@@ -39,6 +41,8 @@ type OrderRow = {
   grandTotal: number;
   createdAt: Date | string;
   status?: OrderStatus;
+  source?: string;
+  paymentMethod?: string | null;
   items: { id: string; name: string; quantity: number; price: number; lineTotal: number }[];
 };
 
@@ -65,10 +69,13 @@ const ALL_STATUSES: OrderStatus[] = ["PENDING", "CONFIRMED", "PREPARING", "READY
 export function OrdersManager({
   initialOrders,
   currency,
+  shopSlug,
 }: {
   initialOrders: OrderRow[];
   currency: string;
+  shopSlug?: string;
 }) {
+  const router = useRouter();
   const [orders, setOrders] = useState(initialOrders);
   const [statusFilter, setStatusFilter] = useState<OrderStatus | "ALL">("ALL");
   const [updatingId, setUpdatingId] = useState<string | null>(null);
@@ -94,22 +101,29 @@ export function OrdersManager({
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between gap-4">
+      <div className="flex items-center justify-between gap-4 flex-wrap">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Orders</h1>
           <p className="text-muted-foreground">Last {orders.length} orders placed through your menu.</p>
         </div>
-        <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as OrderStatus | "ALL")}>
-          <SelectTrigger className="w-36 h-9">
-            <SelectValue>{statusFilter === "ALL" ? "All statuses" : STATUS_LABELS[statusFilter]}</SelectValue>
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="ALL">All statuses</SelectItem>
-            {ALL_STATUSES.map((s) => (
-              <SelectItem key={s} value={s}>{STATUS_LABELS[s]}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <div className="flex items-center gap-2">
+          <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as OrderStatus | "ALL")}>
+            <SelectTrigger className="w-36 h-9">
+              <SelectValue>{statusFilter === "ALL" ? "All statuses" : STATUS_LABELS[statusFilter]}</SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="ALL">All statuses</SelectItem>
+              {ALL_STATUSES.map((s) => (
+                <SelectItem key={s} value={s}>{STATUS_LABELS[s]}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <CreateOrderDialog
+            currency={currency}
+            shopSlug={shopSlug ?? ""}
+            onCreated={() => router.refresh()}
+          />
+        </div>
       </div>
 
       {filtered.length === 0 ? (
@@ -139,7 +153,12 @@ export function OrdersManager({
                 return (
                   <TableRow key={order.id} className="hover:bg-muted/40">
                     <TableCell className="font-mono text-xs font-medium text-muted-foreground">
-                      {order.billNumber}
+                      <div>{order.billNumber}</div>
+                      {order.source === "manual" && (
+                        <Badge variant="outline" className="mt-0.5 text-[10px] px-1 py-0 h-3.5 border-blue-300 text-blue-600">
+                          Manual
+                        </Badge>
+                      )}
                     </TableCell>
                     <TableCell>
                       <div className="font-medium text-sm">{order.customerName || "—"}</div>
