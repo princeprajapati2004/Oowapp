@@ -18,7 +18,7 @@
 
 ---
 
-## 1. Current Architecture
+## 1. Current Oowapp Architecture
 
 ### What exists today
 

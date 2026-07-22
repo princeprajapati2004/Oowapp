@@ -126,7 +126,8 @@ export default async function SubscriptionsPage({
           className="rounded-lg border bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
           <option value="">All plans</option>
-          {plans.map((plan) => (
+          {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+          {(plans as any[]).map((plan) => (
             <option key={plan.id} value={plan.code}>
               {plan.name}
             </option>
@@ -180,7 +181,8 @@ export default async function SubscriptionsPage({
                   </tr>
                 </thead>
                 <tbody className="divide-y">
-                  {rows.map((row) => (
+                  {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+                  {(rows as any[]).map((row) => (
                     <tr key={row.shopId} className="hover:bg-muted/30 transition-colors">
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-2">
@@ -235,7 +237,7 @@ export default async function SubscriptionsPage({
                           {row.enabledFeatures.length === 0 ? (
                             <span className="text-xs text-muted-foreground">None</span>
                           ) : (
-                            row.enabledFeatures.slice(0, 3).map((key) => (
+                            row.enabledFeatures.slice(0, 3).map((key: string) => (
                               <Badge key={key} variant="outline" className="text-[10px]">
                                 {key}
                               </Badge>
