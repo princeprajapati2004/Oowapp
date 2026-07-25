@@ -15,6 +15,8 @@ import {
   Menu,
   LogOut,
   ExternalLink,
+  ChefHat,
+  Banknote,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger, SheetTitle } from "@/components/ui/sheet";
@@ -96,6 +98,24 @@ export function AdminShell({
         >
           <ExternalLink className="size-4 shrink-0" />
           Preview customer view
+        </Link>
+        <Link
+          href="/admin/kitchen"
+          target="_blank"
+          onClick={onNavigate}
+          className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-muted-foreground transition-all duration-150 hover:bg-muted hover:text-foreground"
+        >
+          <ChefHat className="size-4 shrink-0" />
+          Kitchen display
+        </Link>
+        <Link
+          href="/admin/counter"
+          target="_blank"
+          onClick={onNavigate}
+          className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-muted-foreground transition-all duration-150 hover:bg-muted hover:text-foreground"
+        >
+          <Banknote className="size-4 shrink-0" />
+          Cash counter
         </Link>
         <button
           onClick={() => { onNavigate?.(); handleLogout(); }}
