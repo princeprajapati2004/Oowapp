@@ -4,7 +4,18 @@
       "Bash(npx prisma *)",
       "Bash(command -v docker)",
       "Bash(command -v pg_ctl)",
-      "Bash(command -v postgres)"
+      "Bash(command -v postgres)",
+      "Bash(npx tsc *)",
+      "Bash(npx eslint *)",
+      "Bash(npx next *)",
+      "Bash(npm ls *)",
+      "Bash(npm install *)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git push *)",
+      "Bash(git fetch *)",
+      "Bash(git merge *)",
+      "Bash(git checkout *)"
     ]
   }
 }
