@@ -1,10 +1,26 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Image from "next/image";
-import { Clock, CircleCheck, ChefHat, PackageCheck, CircleX, MapPin, Hash, StickyNote, ReceiptText } from "lucide-react";
+import { toast } from "sonner";
+import {
+  Clock,
+  CircleCheck,
+  ChefHat,
+  PackageCheck,
+  CircleX,
+  MapPin,
+  Hash,
+  StickyNote,
+  ReceiptText,
+  Ban,
+} from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { QtyStepper } from "@/components/shared/qty-stepper";
+import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 import { formatCurrency } from "@/lib/utils/currency";
 import { cn } from "@/lib/utils";
+import { api, ApiError } from "@/lib/api-client";
 import { useOrderEvents, type OrderEventOrder } from "@/lib/hooks/use-order-events";
 
 type TaxLine = { id: string; name: string; amount: number };
@@ -34,13 +50,90 @@ const STATUS_LABELS: Record<string, string> = {
   CANCELLED: "Cancelled",
 };
 
+// Only orders the kitchen hasn't acted on yet can be self-edited or
+// self-cancelled — mirrors the same gate enforced server-side.
+const EDITABLE_STATUSES = new Set(["PENDING", "CONFIRMED"]);
+
+const QUANTITY_DEBOUNCE_MS = 500;
+
 export function OrderTracker({ order: initialOrder, shop }: { order: OrderEventOrder; shop: Shop }) {
   const [order, setOrder] = useState(initialOrder);
+  const [displayItems, setDisplayItems] = useState(initialOrder.items);
+  const [cancelOpen, setCancelOpen] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
+
+  const pendingChangesRef = useRef<Map<string, number>>(new Map());
+  const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const flushRef = useRef<() => void>(() => {});
 
   useOrderEvents(`/api/orders/${initialOrder.id}/stream`, {
-    onCreated: (updated) => setOrder(updated),
-    onUpdated: (updated) => setOrder(updated),
+    onCreated: (updated) => {
+      setOrder(updated);
+      setDisplayItems(updated.items);
+    },
+    onUpdated: (updated) => {
+      setOrder(updated);
+      setDisplayItems(updated.items);
+    },
   });
+
+  const isEditable = EDITABLE_STATUSES.has(order.status);
+
+  async function flushQuantityChanges() {
+    const changes = Array.from(pendingChangesRef.current.entries()).map(([itemId, quantity]) => ({
+      itemId,
+      quantity,
+    }));
+    pendingChangesRef.current.clear();
+    if (changes.length === 0) return;
+
+    try {
+      const res = await api.patch<{ ok: boolean; order: OrderEventOrder }>(`/api/orders/${order.id}`, {
+        action: "update_items",
+        items: changes,
+      });
+      setOrder(res.order);
+      setDisplayItems(res.order.items);
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Couldn't update quantity");
+      setDisplayItems(order.items); // revert to last confirmed state
+    }
+  }
+
+  // Reassigned every render (in an effect, not during render) so the debounce
+  // timer — scheduled from a possibly-earlier render — always calls the
+  // freshest closure instead of one holding stale `order`/`displayItems`.
+  useEffect(() => {
+    flushRef.current = flushQuantityChanges;
+  });
+
+  function handleQuantityChange(itemId: string, quantity: number) {
+    setDisplayItems((prev) =>
+      quantity <= 0
+        ? prev.filter((item) => item.id !== itemId)
+        : prev.map((item) => (item.id === itemId ? { ...item, quantity } : item))
+    );
+    pendingChangesRef.current.set(itemId, quantity);
+    if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+    debounceTimerRef.current = setTimeout(() => flushRef.current(), QUANTITY_DEBOUNCE_MS);
+  }
+
+  async function handleCancelOrder() {
+    setCancelling(true);
+    try {
+      const res = await api.patch<{ ok: boolean; order: OrderEventOrder }>(`/api/orders/${order.id}`, {
+        action: "cancel",
+      });
+      setOrder(res.order);
+      setDisplayItems(res.order.items);
+      toast.success("Order cancelled");
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Couldn't cancel the order");
+    } finally {
+      setCancelling(false);
+      setCancelOpen(false);
+    }
+  }
 
   const taxBreakdown = (order.taxBreakdown as TaxLine[] | null) ?? [];
   const base = order.subtotal + order.taxTotal;
@@ -185,15 +278,29 @@ export function OrderTracker({ order: initialOrder, shop }: { order: OrderEventO
             </div>
           )}
 
-          <div className="px-5 py-3 border-t space-y-2">
-            {order.items.map((item) => (
-              <div key={item.id} className="flex items-center justify-between gap-2 text-sm">
-                <span className="flex-1 min-w-0 truncate">
-                  {item.name} <span className="text-muted-foreground">× {item.quantity}</span>
-                </span>
-                <span className="font-medium shrink-0">{formatCurrency(item.lineTotal, shop.currency)}</span>
-              </div>
-            ))}
+          <div className="px-5 py-3 border-t space-y-2.5">
+            {displayItems.map((item) => {
+              const isOnlyItem = displayItems.length === 1;
+              return (
+                <div key={item.id} className="flex items-center justify-between gap-2 text-sm">
+                  <span className="flex-1 min-w-0 truncate">{item.name}</span>
+                  {isEditable ? (
+                    <QtyStepper
+                      size="sm"
+                      value={item.quantity}
+                      min={isOnlyItem ? 1 : 0}
+                      max={100_000}
+                      onChange={(q) => handleQuantityChange(item.id, q)}
+                    />
+                  ) : (
+                    <span className="text-muted-foreground shrink-0">× {item.quantity}</span>
+                  )}
+                  <span className="font-medium shrink-0 w-16 text-right">
+                    {formatCurrency(item.price * item.quantity, shop.currency)}
+                  </span>
+                </div>
+              );
+            })}
           </div>
 
           <div className="px-5 py-4 border-t bg-muted/20 space-y-1.5 text-sm">
@@ -222,12 +329,32 @@ export function OrderTracker({ order: initialOrder, shop }: { order: OrderEventO
           </div>
         </div>
 
+        {isEditable && (
+          <Button
+            variant="outline"
+            className="h-10 w-full gap-1.5 text-destructive border-destructive/30 hover:bg-destructive/10 hover:text-destructive"
+            onClick={() => setCancelOpen(true)}
+          >
+            <Ban className="size-4" /> Cancel order
+          </Button>
+        )}
+
         {shop.address || shop.phone ? (
           <p className="text-center text-xs text-muted-foreground">
             {[shop.address, shop.phone].filter(Boolean).join(" · ")}
           </p>
         ) : null}
       </div>
+
+      <ConfirmDialog
+        open={cancelOpen}
+        onOpenChange={setCancelOpen}
+        title="Cancel this order?"
+        description="This can't be undone. The business will be notified immediately."
+        confirmLabel={cancelling ? "Cancelling…" : "Yes, cancel it"}
+        destructive
+        onConfirm={handleCancelOrder}
+      />
     </div>
   );
 }
