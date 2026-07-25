@@ -5,7 +5,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import Image from "next/image";
 import Link from "next/link";
-import { Trash2, ArrowLeft, ShoppingBag, Download, CircleCheck, MapPinned } from "lucide-react";
+import { Trash2, ArrowLeft, ShoppingBag, Download, CircleCheck, MapPinned, History } from "lucide-react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetFooter } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -18,6 +18,7 @@ import { calculateBill } from "@/lib/services/billing";
 import { buildOrderMessage, buildWhatsAppUrl, generateBillNumber } from "@/lib/services/whatsapp";
 import { buildCheckoutSchema, type CheckoutInput } from "@/lib/validation/checkout";
 import { api } from "@/lib/api-client";
+import { addStoredOrder } from "@/lib/order-history-storage";
 import type { CartItem } from "@/lib/hooks/use-cart";
 import type { CustomerShop, CustomerTax } from "@/lib/types/customer";
 
@@ -139,7 +140,11 @@ export function OrderSheet({
         notes: checkoutValues.notes,
         items,
       })
-      .then((res) => setPlacedOrderId(res.saved && res.orderId ? res.orderId : false))
+      .then((res) => {
+        const id = res.saved && res.orderId ? res.orderId : false;
+        setPlacedOrderId(id);
+        if (id) addStoredOrder(shop.slug, { orderId: id, billNumber, placedAt: new Date().toISOString() });
+      })
       .catch(() => setPlacedOrderId(false));
 
     onOrderPlaced();
@@ -639,9 +644,18 @@ export function OrderSheet({
                 )}
               </div>
             </div>
-            <div className="border-t bg-background px-5 py-4">
+            <div className="border-t bg-background px-5 py-4 space-y-2">
               <Button variant="outline" size="lg" className="h-11 w-full" onClick={() => onOpenChange(false)}>
                 Continue browsing
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-9 w-full gap-1.5 text-muted-foreground"
+                render={<Link href={`/order/${shop.slug}/orders`} />}
+                nativeButton={false}
+              >
+                <History className="size-3.5" /> View my orders
               </Button>
             </div>
           </>

@@ -14,6 +14,8 @@ import {
   StickyNote,
   ReceiptText,
   Ban,
+  User,
+  Printer,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { QtyStepper } from "@/components/shared/qty-stepper";
@@ -61,6 +63,7 @@ export function OrderTracker({ order: initialOrder, shop }: { order: OrderEventO
   const [displayItems, setDisplayItems] = useState(initialOrder.items);
   const [cancelOpen, setCancelOpen] = useState(false);
   const [cancelling, setCancelling] = useState(false);
+  const [confirming, setConfirming] = useState(false);
 
   const pendingChangesRef = useRef<Map<string, number>>(new Map());
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -118,6 +121,22 @@ export function OrderTracker({ order: initialOrder, shop }: { order: OrderEventO
     debounceTimerRef.current = setTimeout(() => flushRef.current(), QUANTITY_DEBOUNCE_MS);
   }
 
+  async function handleConfirmOrder() {
+    setConfirming(true);
+    try {
+      const res = await api.patch<{ ok: boolean; order: OrderEventOrder }>(`/api/orders/${order.id}`, {
+        action: "confirm",
+      });
+      setOrder(res.order);
+      setDisplayItems(res.order.items);
+      toast.success("Order confirmed");
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Couldn't confirm the order");
+    } finally {
+      setConfirming(false);
+    }
+  }
+
   async function handleCancelOrder() {
     setCancelling(true);
     try {
@@ -140,9 +159,14 @@ export function OrderTracker({ order: initialOrder, shop }: { order: OrderEventO
   const finalTotal = order.discountedTotal ?? base;
   const isCancelled = order.status === "CANCELLED";
   const stepIndex = STEPS.findIndex((s) => s.status === order.status);
+  // A "bill" implies a settled order — once confirmed, show the bill-specific
+  // fields (customer name, payment status, thank-you, print) alongside the
+  // still-live status stepper, rather than replacing it.
+  const isConfirmedOrLater = !isCancelled && order.status !== "PENDING";
+  const isPaid = order.status === "COMPLETED";
 
   return (
-    <div className="min-h-screen bg-muted/20 px-4 py-8">
+    <div className="min-h-screen bg-muted/20 px-4 py-8 print:bg-white print:py-0">
       <div className="mx-auto max-w-md space-y-4">
         <div className="flex flex-col items-center gap-2 text-center">
           {shop.logoUrl ? (
@@ -156,7 +180,7 @@ export function OrderTracker({ order: initialOrder, shop }: { order: OrderEventO
             />
           ) : null}
           <p className="font-bold text-lg">{shop.businessName}</p>
-          <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+          <div className="flex items-center gap-1.5 text-xs text-muted-foreground print:hidden">
             <span className="relative flex size-2">
               <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
               <span className="relative inline-flex size-2 rounded-full bg-emerald-500" />
@@ -165,7 +189,7 @@ export function OrderTracker({ order: initialOrder, shop }: { order: OrderEventO
           </div>
         </div>
 
-        <div className="rounded-2xl border bg-card overflow-hidden">
+        <div className="rounded-2xl border bg-card overflow-hidden print:border-0 print:shadow-none">
           <div className="px-5 py-4 border-b flex items-center justify-between gap-2">
             <div>
               <p className="text-xs text-muted-foreground uppercase tracking-wide">Bill No.</p>
@@ -255,8 +279,14 @@ export function OrderTracker({ order: initialOrder, shop }: { order: OrderEventO
             </span>
           </div>
 
-          {(order.tableNumber || order.deliveryAddress || order.notes) && (
+          {(order.customerName || order.tableNumber || order.deliveryAddress || order.notes) && (
             <div className="px-5 py-3 border-t space-y-1.5 text-sm">
+              {order.customerName && (
+                <div className="flex items-center gap-2 text-muted-foreground">
+                  <User className="size-3.5 shrink-0" />
+                  <span>{order.customerName}</span>
+                </div>
+              )}
               {order.tableNumber && (
                 <div className="flex items-center gap-2 text-muted-foreground">
                   <Hash className="size-3.5 shrink-0" />
@@ -285,13 +315,18 @@ export function OrderTracker({ order: initialOrder, shop }: { order: OrderEventO
                 <div key={item.id} className="flex items-center justify-between gap-2 text-sm">
                   <span className="flex-1 min-w-0 truncate">{item.name}</span>
                   {isEditable ? (
-                    <QtyStepper
-                      size="sm"
-                      value={item.quantity}
-                      min={isOnlyItem ? 1 : 0}
-                      max={100_000}
-                      onChange={(q) => handleQuantityChange(item.id, q)}
-                    />
+                    <>
+                      <span className="print:hidden">
+                        <QtyStepper
+                          size="sm"
+                          value={item.quantity}
+                          min={isOnlyItem ? 1 : 0}
+                          max={100_000}
+                          onChange={(q) => handleQuantityChange(item.id, q)}
+                        />
+                      </span>
+                      <span className="hidden print:inline text-muted-foreground shrink-0">× {item.quantity}</span>
+                    </>
                   ) : (
                     <span className="text-muted-foreground shrink-0">× {item.quantity}</span>
                   )}
@@ -329,14 +364,41 @@ export function OrderTracker({ order: initialOrder, shop }: { order: OrderEventO
           </div>
         </div>
 
+        {isConfirmedOrLater && (
+          <div className="rounded-2xl border bg-card overflow-hidden print:border-0 print:shadow-none">
+            <div className="px-5 py-3 flex items-center justify-between text-sm">
+              <span className="text-muted-foreground">Payment status</span>
+              <span className={cn("font-semibold", isPaid ? "text-emerald-600 dark:text-emerald-400" : "text-amber-600 dark:text-amber-400")}>
+                {isPaid ? "Paid" : "Unpaid"}
+              </span>
+            </div>
+            <div className="px-5 py-4 border-t text-center">
+              <p className="text-sm font-medium">Thank you for your order!</p>
+              <p className="text-xs text-muted-foreground mt-0.5">We hope to see you again soon.</p>
+            </div>
+            <div className="px-5 pb-4 print:hidden">
+              <Button variant="outline" className="h-9 w-full gap-1.5" onClick={() => window.print()}>
+                <Printer className="size-4" /> Print bill
+              </Button>
+            </div>
+          </div>
+        )}
+
         {isEditable && (
-          <Button
-            variant="outline"
-            className="h-10 w-full gap-1.5 text-destructive border-destructive/30 hover:bg-destructive/10 hover:text-destructive"
-            onClick={() => setCancelOpen(true)}
-          >
-            <Ban className="size-4" /> Cancel order
-          </Button>
+          <div className="flex gap-2 print:hidden">
+            {order.status === "PENDING" && (
+              <Button className="h-10 flex-1 gap-1.5" disabled={confirming} onClick={handleConfirmOrder}>
+                <CircleCheck className="size-4" /> {confirming ? "Confirming…" : "Confirm order"}
+              </Button>
+            )}
+            <Button
+              variant="outline"
+              className="h-10 flex-1 gap-1.5 text-destructive border-destructive/30 hover:bg-destructive/10 hover:text-destructive"
+              onClick={() => setCancelOpen(true)}
+            >
+              <Ban className="size-4" /> Cancel order
+            </Button>
+          </div>
         )}
 
         {shop.address || shop.phone ? (

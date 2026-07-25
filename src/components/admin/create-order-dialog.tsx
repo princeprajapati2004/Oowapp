@@ -33,6 +33,23 @@ interface CartItem {
   categoryId: string;
 }
 
+interface Tax {
+  id: string;
+  name: string;
+  type: "PERCENTAGE" | "FIXED";
+  value: number;
+  appliesTo: "ENTIRE_BILL" | "CATEGORY";
+  categoryId: string | null;
+  isEnabled: boolean;
+}
+
+// There's no separate Customer model — this is the most recent order per
+// distinct phone number, standing in for a lightweight customer directory.
+interface PastCustomer {
+  customerName: string | null;
+  customerPhone: string | null;
+}
+
 interface Props {
   currency: string;
   shopSlug: string;
@@ -50,6 +67,8 @@ const PAYMENT_METHODS: { value: PaymentMethod; label: string }[] = [
 export function CreateOrderDialog({ currency, onCreated }: Props) {
   const [open, setOpen] = useState(false);
   const [products, setProducts] = useState<Product[]>([]);
+  const [taxes, setTaxes] = useState<Tax[]>([]);
+  const [customers, setCustomers] = useState<PastCustomer[]>([]);
   const [loadingProducts, setLoadingProducts] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
@@ -58,6 +77,7 @@ export function CreateOrderDialog({ currency, onCreated }: Props) {
   const [cart, setCart] = useState<CartItem[]>([]);
   const [customerName, setCustomerName] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
+  const [showCustomerSuggestions, setShowCustomerSuggestions] = useState(false);
   const [tableNumber, setTableNumber] = useState("");
   const [notes, setNotes] = useState("");
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("CASH");
@@ -72,6 +92,15 @@ export function CreateOrderDialog({ currency, onCreated }: Props) {
       .then((data) => setProducts(data.filter((p) => p.isAvailable && p.isVisible)))
       .catch(() => toast.error("Failed to load products"))
       .finally(() => setLoadingProducts(false));
+    api
+      .get<Tax[]>("/api/admin/taxes")
+      // Decimal fields serialize as strings over JSON — convert before use.
+      .then((data) => setTaxes(data.filter((t) => t.isEnabled).map((t) => ({ ...t, value: Number(t.value) }))))
+      .catch(() => {});
+    api
+      .get<PastCustomer[]>("/api/admin/customers")
+      .then(setCustomers)
+      .catch(() => {});
   }, [open]);
 
   function resetForm() {
@@ -85,6 +114,14 @@ export function CreateOrderDialog({ currency, onCreated }: Props) {
     setDiscountType("");
     setDiscountValue("");
   }
+
+  const customerMatches = useMemo(() => {
+    const q = customerName.trim().toLowerCase();
+    if (!q) return [];
+    return customers
+      .filter((c) => (c.customerName ?? "").toLowerCase().includes(q) || (c.customerPhone ?? "").includes(q))
+      .slice(0, 6);
+  }, [customers, customerName]);
 
   function handleClose() {
     setOpen(false);
@@ -120,16 +157,19 @@ export function CreateOrderDialog({ currency, onCreated }: Props) {
   }
 
   const billItems = cart.map((i) => ({ id: i.productId, name: i.name, price: i.price, quantity: i.quantity, categoryId: i.categoryId }));
-  const bill = calculateBill(billItems, []); // taxes handled server-side on creation
+  const bill = calculateBill(billItems, taxes);
   const subtotal = cart.reduce((sum, i) => sum + i.price * i.quantity, 0);
 
+  // Matches the server's discount base (subtotal + tax) — see the discount
+  // calculation in /api/admin/orders/route.ts — so this preview never
+  // disagrees with what actually gets saved.
   const discountAmount = useMemo(() => {
     const v = parseFloat(discountValue);
     if (!discountType || isNaN(v) || v <= 0) return 0;
-    return discountType === "PERCENTAGE" ? (subtotal * v) / 100 : v;
-  }, [discountType, discountValue, subtotal]);
+    return discountType === "PERCENTAGE" ? (bill.grandTotal * v) / 100 : v;
+  }, [discountType, discountValue, bill.grandTotal]);
 
-  const estimatedTotal = Math.max(0, subtotal - discountAmount);
+  const estimatedTotal = Math.max(0, bill.grandTotal - discountAmount);
 
   async function handleSubmit() {
     if (cart.length === 0) {
@@ -267,6 +307,12 @@ export function CreateOrderDialog({ currency, onCreated }: Props) {
                       <span>Subtotal</span>
                       <span>{formatCurrency(subtotal, currency)}</span>
                     </div>
+                    {bill.taxLines.map((line) => (
+                      <div key={line.id} className="flex justify-between text-sm text-muted-foreground">
+                        <span>{line.name}</span>
+                        <span>{formatCurrency(line.amount, currency)}</span>
+                      </div>
+                    ))}
                     {discountAmount > 0 && (
                       <div className="flex justify-between text-sm text-emerald-600">
                         <span>Discount</span>
@@ -285,9 +331,37 @@ export function CreateOrderDialog({ currency, onCreated }: Props) {
                 {/* Customer + Order Details */}
                 <div className="space-y-3">
                   <div className="grid grid-cols-2 gap-2">
-                    <div className="space-y-1">
+                    <div className="relative space-y-1">
                       <Label className="text-xs">Customer Name</Label>
-                      <Input value={customerName} onChange={(e) => setCustomerName(e.target.value)} placeholder="Walk-in" className="h-8 text-sm" />
+                      <Input
+                        value={customerName}
+                        onChange={(e) => setCustomerName(e.target.value)}
+                        onFocus={() => setShowCustomerSuggestions(true)}
+                        onBlur={() => setShowCustomerSuggestions(false)}
+                        placeholder="Walk-in or search…"
+                        className="h-8 text-sm"
+                        autoComplete="off"
+                      />
+                      {showCustomerSuggestions && customerMatches.length > 0 && (
+                        <div className="absolute top-full left-0 z-10 mt-1 w-56 rounded-lg border bg-popover shadow-md overflow-hidden">
+                          {customerMatches.map((c, i) => (
+                            <button
+                              key={`${c.customerPhone}-${i}`}
+                              type="button"
+                              onMouseDown={(e) => {
+                                e.preventDefault();
+                                setCustomerName(c.customerName || "");
+                                setCustomerPhone(c.customerPhone || "");
+                                setShowCustomerSuggestions(false);
+                              }}
+                              className="flex w-full flex-col items-start px-3 py-1.5 text-left text-xs hover:bg-muted transition-colors"
+                            >
+                              <span className="font-medium">{c.customerName || "Unnamed"}</span>
+                              {c.customerPhone && <span className="text-muted-foreground">{c.customerPhone}</span>}
+                            </button>
+                          ))}
+                        </div>
+                      )}
                     </div>
                     <div className="space-y-1">
                       <Label className="text-xs">Phone</Label>

@@ -2,7 +2,8 @@
 
 import { useMemo, useState } from "react";
 import Image from "next/image";
-import { Search, ShoppingCart, PackageSearch } from "lucide-react";
+import Link from "next/link";
+import { Search, ShoppingCart, PackageSearch, History } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/shared/empty-state";
@@ -96,6 +97,9 @@ export function CustomerMenu({
             <h1 className="truncate font-bold leading-tight text-base">{shop.businessName}</h1>
             <p className="text-xs text-muted-foreground">Scan, order, done.</p>
           </div>
+          <Button variant="ghost" size="icon" aria-label="Your orders" render={<Link href={`/order/${shop.slug}/orders`} />} nativeButton={false}>
+            <History className="size-4.5" />
+          </Button>
           <InstallApp className="hidden sm:flex" />
           <ThemeToggle />
         </div>
