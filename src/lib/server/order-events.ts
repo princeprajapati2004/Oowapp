@@ -32,6 +32,7 @@ export type OrderEventOrder = {
   discountReason: string | null;
   discountedTotal: number | null;
   createdAt: string;
+  taxBreakdown: unknown;
   items: OrderEventItem[];
 };
 
@@ -59,6 +60,7 @@ type RawOrderForEvent = {
   discountReason: string | null;
   discountedTotal: unknown;
   createdAt: unknown;
+  taxBreakdown: unknown;
   items: {
     id: string;
     productId: string | null;
@@ -94,6 +96,7 @@ export function toOrderEvent(order: RawOrderForEvent): OrderEventOrder {
     discountReason: order.discountReason,
     discountedTotal: order.discountedTotal == null ? null : Number(order.discountedTotal),
     createdAt: (order.createdAt as Date).toISOString(),
+    taxBreakdown: order.taxBreakdown,
     items: order.items.map((item) => ({
       id: item.id,
       productId: item.productId,
@@ -136,4 +139,74 @@ export function subscribeOrderEvents(shopId: string, listener: (event: OrderEven
   return () => {
     orderEventBus.off(channel, listener);
   };
+}
+
+const HEARTBEAT_INTERVAL_MS = 20_000;
+
+// Shared by every SSE route (admin dashboard, public order tracking): opens a
+// ReadableStream subscribed to one shop's channel, optionally narrowed with
+// `filter` — the public per-order route uses this to make sure a customer
+// only ever receives events for their own order, never a shop-mate's.
+export function createOrderEventStream(
+  request: Request,
+  shopId: string,
+  filter?: (event: OrderEvent) => boolean
+): Response {
+  const encoder = new TextEncoder();
+
+  const stream = new ReadableStream({
+    start(controller) {
+      let closed = false;
+
+      const send = (event: string, data: unknown) => {
+        if (closed) return;
+        try {
+          controller.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`));
+        } catch {
+          // Controller already closed by the time this event fired — ignore.
+        }
+      };
+
+      send("connected", { ok: true });
+
+      const unsubscribe = subscribeOrderEvents(shopId, (event) => {
+        if (filter && !filter(event)) return;
+        send(event.type, event);
+      });
+
+      const heartbeat = setInterval(() => {
+        if (closed) return;
+        try {
+          controller.enqueue(encoder.encode(`: ping\n\n`));
+        } catch {
+          // ignore — cleanup happens on abort
+        }
+      }, HEARTBEAT_INTERVAL_MS);
+
+      const cleanup = () => {
+        if (closed) return;
+        closed = true;
+        clearInterval(heartbeat);
+        unsubscribe();
+        try {
+          controller.close();
+        } catch {
+          // already closed
+        }
+      };
+
+      request.signal.addEventListener("abort", cleanup);
+    },
+  });
+
+  return new Response(stream, {
+    headers: {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache, no-transform",
+      Connection: "keep-alive",
+      // Reverse proxies (nginx) buffer streamed responses by default, which
+      // would delay every event until the buffer fills — disable it.
+      "X-Accel-Buffering": "no",
+    },
+  });
 }

@@ -4,7 +4,8 @@ import { useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import Image from "next/image";
-import { Trash2, ArrowLeft, ShoppingBag, Download } from "lucide-react";
+import Link from "next/link";
+import { Trash2, ArrowLeft, ShoppingBag, Download, CircleCheck, MapPinned } from "lucide-react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetFooter } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -20,7 +21,7 @@ import { api } from "@/lib/api-client";
 import type { CartItem } from "@/lib/hooks/use-cart";
 import type { CustomerShop, CustomerTax } from "@/lib/types/customer";
 
-type Step = "cart" | "checkout" | "bill";
+type Step = "cart" | "checkout" | "bill" | "placed";
 
 export function OrderSheet({
   open,
@@ -48,6 +49,9 @@ export function OrderSheet({
   const [billNumber, setBillNumber] = useState<string>("");
   const [placing, setPlacing] = useState(false);
   const [downloadingPdf, setDownloadingPdf] = useState(false);
+  // null = still waiting on the persistence call; a string once it resolves
+  // with an orderId; false if the shop doesn't save orders (nothing to track).
+  const [placedOrderId, setPlacedOrderId] = useState<string | null | false>(null);
 
   // Reset to the cart step whenever the sheet transitions from closed to open.
   // Adjusting state during render (rather than in an effect) avoids an extra render pass —
@@ -55,7 +59,10 @@ export function OrderSheet({
   const [wasOpen, setWasOpen] = useState(open);
   if (open !== wasOpen) {
     setWasOpen(open);
-    if (open) setStep("cart");
+    if (open) {
+      setStep("cart");
+      setPlacedOrderId(null);
+    }
   }
 
   const schema = useMemo(
@@ -118,9 +125,11 @@ export function OrderSheet({
     });
     const url = buildWhatsAppUrl(shop.whatsappNumber, message);
 
-    // Fire-and-forget persistence — the WhatsApp handoff never waits on this.
+    // The WhatsApp handoff never waits on this — it still fires immediately
+    // below regardless of how (or whether) persistence resolves. The result
+    // only controls whether a "Track your order" link appears afterward.
     api
-      .post("/api/orders", {
+      .post<{ ok: boolean; saved: boolean; orderId?: string }>("/api/orders", {
         shopSlug: shop.slug,
         billNumber,
         customerName: checkoutValues.customerName,
@@ -130,12 +139,12 @@ export function OrderSheet({
         notes: checkoutValues.notes,
         items,
       })
-      .catch(() => {
-        // Non-critical — the order still goes out via WhatsApp regardless.
-      });
+      .then((res) => setPlacedOrderId(res.saved && res.orderId ? res.orderId : false))
+      .catch(() => setPlacedOrderId(false));
 
     onOrderPlaced();
     setPlacing(false);
+    setStep("placed");
     // Open WhatsApp in a new tab so the customer stays on the menu page.
     // On mobile the OS intercepts the wa.me URL and opens the WhatsApp app directly
     // without any visible tab switch.
@@ -590,6 +599,49 @@ export function OrderSheet({
               >
                 <Download className="size-3.5" />
                 {downloadingPdf ? "Generating PDF…" : "Download bill PDF"}
+              </Button>
+            </div>
+          </>
+        )}
+
+        {step === "placed" && (
+          <>
+            <SheetHeader className="px-5 pt-5 pb-0">
+              <SheetTitle className="text-lg">Order placed!</SheetTitle>
+            </SheetHeader>
+            <div className="flex-1 overflow-y-auto px-5 pb-2 pt-4">
+              <div className="flex flex-col items-center gap-3 rounded-2xl border bg-card px-5 py-8 text-center">
+                <CircleCheck className="size-12 text-emerald-500" />
+                <div>
+                  <p className="font-semibold">Sent to {shop.businessName} via WhatsApp</p>
+                  <p className="text-sm text-muted-foreground mt-0.5">Bill #{billNumber}</p>
+                </div>
+
+                {placedOrderId === null && (
+                  <p className="text-xs text-muted-foreground">Setting up live order tracking…</p>
+                )}
+
+                {typeof placedOrderId === "string" && (
+                  <Button
+                    size="lg"
+                    className="h-11 w-full gap-1.5 bg-primary text-primary-foreground hover:bg-primary/90"
+                    render={
+                      <Link
+                        href={`/order/${shop.slug}/track/${placedOrderId}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      />
+                    }
+                    nativeButton={false}
+                  >
+                    <MapPinned className="size-4" /> Track your order live
+                  </Button>
+                )}
+              </div>
+            </div>
+            <div className="border-t bg-background px-5 py-4">
+              <Button variant="outline" size="lg" className="h-11 w-full" onClick={() => onOpenChange(false)}>
+                Continue browsing
               </Button>
             </div>
           </>

@@ -347,7 +347,7 @@ export function BillDetail({
     setOrder((prev) => ({ ...prev, ...patch }));
   }
 
-  useOrderEvents({
+  useOrderEvents("/api/admin/orders/stream", {
     onUpdated: (updated) => {
       if (updated.id !== order.id) return;
       updateOrder({

@@ -14,11 +14,11 @@ const INITIAL_RETRY_MS = 1000;
 const MAX_RETRY_MS = 15_000;
 
 /**
- * Subscribes to the admin's live order stream for as long as the calling
- * component is mounted. Reconnects with backoff on drop — EventSource's own
+ * Subscribes to a live order SSE stream for as long as the calling component
+ * is mounted. Reconnects with backoff on drop — EventSource's own
  * auto-reconnect is disabled once we call close(), so backoff is manual.
  */
-export function useOrderEvents({ onCreated, onUpdated }: OrderEventHandlers) {
+export function useOrderEvents(endpoint: string, { onCreated, onUpdated }: OrderEventHandlers) {
   const onCreatedRef = useRef(onCreated);
   const onUpdatedRef = useRef(onUpdated);
 
@@ -46,7 +46,7 @@ export function useOrderEvents({ onCreated, onUpdated }: OrderEventHandlers) {
 
     function connect() {
       if (stopped) return;
-      source = new EventSource("/api/admin/orders/stream");
+      source = new EventSource(endpoint);
 
       source.addEventListener("open", () => {
         retryDelay = INITIAL_RETRY_MS;
@@ -77,5 +77,5 @@ export function useOrderEvents({ onCreated, onUpdated }: OrderEventHandlers) {
       if (retryTimer) clearTimeout(retryTimer);
       source?.close();
     };
-  }, []);
+  }, [endpoint]);
 }

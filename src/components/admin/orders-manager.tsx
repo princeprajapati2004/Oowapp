@@ -109,7 +109,7 @@ export function OrdersManager({
 
   const filtered = statusFilter === "ALL" ? orders : orders.filter((o) => (o.status ?? "PENDING") === statusFilter);
 
-  useOrderEvents({
+  useOrderEvents("/api/admin/orders/stream", {
     onCreated: (order) => {
       setOrders((prev) => (prev.some((o) => o.id === order.id) ? prev : [toOrderRow(order), ...prev]));
       toast.success(`New order — #${order.billNumber}`);

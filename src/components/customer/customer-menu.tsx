@@ -201,7 +201,6 @@ export function CustomerMenu({
         onRemove={cart.removeItem}
         onOrderPlaced={() => {
           cart.clear();
-          setOrderSheetOpen(false);
         }}
         shop={shop}
         taxes={taxes}
