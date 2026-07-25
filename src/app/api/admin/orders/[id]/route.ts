@@ -4,6 +4,7 @@ import { requireAdminSession } from "@/lib/session";
 import { handleApiError, NotFoundError } from "@/lib/api-utils";
 import { db } from "@/lib/db";
 import { sendOrderStatusNotification } from "@/lib/services/push";
+import { publishOrderEvent, toOrderEvent } from "@/lib/server/order-events";
 
 const ORDER_STATUSES = ["PENDING", "CONFIRMED", "PREPARING", "READY", "COMPLETED", "CANCELLED"] as const;
 
@@ -97,7 +98,7 @@ export async function PATCH(
     }
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const updated = await (db.order as any).update({ where: { id }, data });
+    const updated = await (db.order as any).update({ where: { id }, data, include: { items: true } });
 
     // Fire-and-forget push notification on status change
     if ("status" in data && typeof data.status === "string") {
@@ -107,6 +108,8 @@ export async function PATCH(
         orderId: id,
       }).catch(() => {});
     }
+
+    publishOrderEvent(existing.shopId, { type: "order.updated", order: toOrderEvent(updated) });
 
     return NextResponse.json(updated);
   } catch (error) {

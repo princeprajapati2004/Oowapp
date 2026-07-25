@@ -19,23 +19,47 @@ export function serializeTaxes<T extends { value: unknown }>(taxes: T[]) {
 }
 
 export function serializeOrder<
-  T extends { subtotal: unknown; taxTotal: unknown; grandTotal: unknown; items: { price: unknown; lineTotal: unknown }[] },
+  T extends {
+    subtotal: unknown;
+    taxTotal: unknown;
+    grandTotal: unknown;
+    discountValue: unknown;
+    discountedTotal: unknown;
+    createdAt: unknown;
+    items: { price: unknown; lineTotal: unknown }[];
+  },
 >(order: T) {
+  // Destructuring (rather than `{ ...order, key: newValue }`) is required here:
+  // spreading a naked generic type parameter and overriding a key produces an
+  // intersection of old and new key types instead of replacing it, which lets
+  // the original Decimal types leak back into the result — see
+  // https://github.com/microsoft/TypeScript/issues/48486.
+  const { subtotal, taxTotal, grandTotal, discountValue, discountedTotal, createdAt, items, ...rest } = order;
   return {
-    ...order,
-    subtotal: Number(order.subtotal),
-    taxTotal: Number(order.taxTotal),
-    grandTotal: Number(order.grandTotal),
-    items: order.items.map((item) => ({
-      ...item,
-      price: Number(item.price),
-      lineTotal: Number(item.lineTotal),
-    })),
+    ...rest,
+    subtotal: Number(subtotal),
+    taxTotal: Number(taxTotal),
+    grandTotal: Number(grandTotal),
+    discountValue: discountValue == null ? null : Number(discountValue),
+    discountedTotal: discountedTotal == null ? null : Number(discountedTotal),
+    createdAt: (createdAt as Date).toISOString(),
+    items: items.map((item) => {
+      const { price, lineTotal, ...itemRest } = item;
+      return { ...itemRest, price: Number(price), lineTotal: Number(lineTotal) };
+    }),
   };
 }
 
 export function serializeOrders<
-  T extends { subtotal: unknown; taxTotal: unknown; grandTotal: unknown; items: { price: unknown; lineTotal: unknown }[] },
+  T extends {
+    subtotal: unknown;
+    taxTotal: unknown;
+    grandTotal: unknown;
+    discountValue: unknown;
+    discountedTotal: unknown;
+    createdAt: unknown;
+    items: { price: unknown; lineTotal: unknown }[];
+  },
 >(orders: T[]) {
   return orders.map(serializeOrder);
 }

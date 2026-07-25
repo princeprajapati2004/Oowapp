@@ -11,6 +11,7 @@ import { EmptyState } from "@/components/shared/empty-state";
 import { CreateOrderDialog } from "@/components/admin/create-order-dialog";
 import { api, ApiError } from "@/lib/api-client";
 import { formatCurrency } from "@/lib/utils/currency";
+import { useOrderEvents, type OrderEventOrder } from "@/lib/hooks/use-order-events";
 import {
   Table,
   TableBody,
@@ -66,6 +67,32 @@ const STATUS_COLORS: Record<OrderStatus, string> = {
 
 const ALL_STATUSES: OrderStatus[] = ["PENDING", "CONFIRMED", "PREPARING", "READY", "COMPLETED", "CANCELLED"];
 
+function toOrderRow(order: OrderEventOrder): OrderRow {
+  return {
+    id: order.id,
+    billNumber: order.billNumber,
+    customerName: order.customerName,
+    customerPhone: order.customerPhone,
+    tableNumber: order.tableNumber,
+    deliveryAddress: order.deliveryAddress,
+    notes: order.notes,
+    subtotal: order.subtotal,
+    taxTotal: order.taxTotal,
+    grandTotal: order.grandTotal,
+    createdAt: order.createdAt,
+    status: order.status as OrderStatus,
+    source: order.source,
+    paymentMethod: order.paymentMethod,
+    items: order.items.map((item) => ({
+      id: item.id,
+      name: item.name,
+      quantity: item.quantity,
+      price: item.price,
+      lineTotal: item.lineTotal,
+    })),
+  };
+}
+
 export function OrdersManager({
   initialOrders,
   currency,
@@ -81,6 +108,16 @@ export function OrdersManager({
   const [updatingId, setUpdatingId] = useState<string | null>(null);
 
   const filtered = statusFilter === "ALL" ? orders : orders.filter((o) => (o.status ?? "PENDING") === statusFilter);
+
+  useOrderEvents({
+    onCreated: (order) => {
+      setOrders((prev) => (prev.some((o) => o.id === order.id) ? prev : [toOrderRow(order), ...prev]));
+      toast.success(`New order — #${order.billNumber}`);
+    },
+    onUpdated: (order) => {
+      setOrders((prev) => prev.map((o) => (o.id === order.id ? toOrderRow(order) : o)));
+    },
+  });
 
   async function updateStatus(orderId: string, status: OrderStatus) {
     const prevOrders = orders;

@@ -11,6 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { api, ApiError } from "@/lib/api-client";
 import { formatCurrency } from "@/lib/utils/currency";
 import { cn } from "@/lib/utils";
+import { useOrderEvents } from "@/lib/hooks/use-order-events";
 
 type OrderStatus =
   | "PENDING"
@@ -345,6 +346,29 @@ export function BillDetail({
   function updateOrder(patch: Partial<BillOrderData>) {
     setOrder((prev) => ({ ...prev, ...patch }));
   }
+
+  useOrderEvents({
+    onUpdated: (updated) => {
+      if (updated.id !== order.id) return;
+      updateOrder({
+        status: updated.status as OrderStatus,
+        subtotal: updated.subtotal,
+        taxTotal: updated.taxTotal,
+        grandTotal: updated.grandTotal,
+        discountType: updated.discountType,
+        discountValue: updated.discountValue,
+        discountReason: updated.discountReason,
+        discountedTotal: updated.discountedTotal,
+        items: updated.items.map((item) => ({
+          id: item.id,
+          name: item.name,
+          price: item.price,
+          quantity: item.quantity,
+          lineTotal: item.lineTotal,
+        })),
+      });
+    },
+  });
 
   async function handleDownloadPdf() {
     setDownloadingPdf(true);

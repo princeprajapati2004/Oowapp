@@ -5,6 +5,7 @@ import { handleApiError, NotFoundError } from "@/lib/api-utils";
 import { calculateBill } from "@/lib/services/billing";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { sendNewOrderNotification } from "@/lib/services/push";
+import { publishOrderEvent, toOrderEvent } from "@/lib/server/order-events";
 import type { Prisma } from "@/generated/prisma/client";
 
 const orderItemSchema = z.object({
@@ -76,6 +77,7 @@ export async function POST(request: Request) {
           })),
         },
       },
+      include: { items: true },
     });
 
     // Fire-and-forget push notification — never blocks the response.
@@ -86,6 +88,8 @@ export async function POST(request: Request) {
       currency: shop.currency,
       orderId: order.id,
     }).catch(() => {});
+
+    publishOrderEvent(shop.id, { type: "order.created", order: toOrderEvent(order) });
 
     return NextResponse.json({ ok: true, saved: true, orderId: order.id, billNumber: order.billNumber });
   } catch (error) {

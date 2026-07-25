@@ -5,6 +5,7 @@ import { handleApiError } from "@/lib/api-utils";
 import { db } from "@/lib/db";
 import { calculateBill } from "@/lib/services/billing";
 import { sendNewOrderNotification } from "@/lib/services/push";
+import { publishOrderEvent, toOrderEvent } from "@/lib/server/order-events";
 import type { Prisma } from "@/generated/prisma/client";
 
 const orderItemSchema = z.object({
@@ -105,6 +106,8 @@ export async function POST(request: Request) {
       currency: shop.currency,
       orderId: order.id,
     }).catch(() => {});
+
+    publishOrderEvent(shop.id, { type: "order.created", order: toOrderEvent(order) });
 
     return NextResponse.json({ ok: true, orderId: order.id, billNumber: order.billNumber }, { status: 201 });
   } catch (error) {
