@@ -192,11 +192,32 @@ model Shop {
   products           Product[]
   taxes              Tax[]
   orders             Order[]
+  customers          Customer[]
   subscriptions      Subscription[]
   pushSubscriptions  PushSubscription[]
   featurePermissions BusinessFeaturePermission[]
 
   @@map("shops")
+}
+
+// Customer accounts (Feature: customer login) — scoped per shop, mirrors how
+// every other entity here belongs to a single shop rather than a global
+// platform-wide identity.
+model Customer {
+  id           String   @id @default(cuid())
+  shopId       String
+  shop         Shop     @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  name         String
+  phone        String
+  passwordHash String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  orders Order[]
+
+  @@unique([shopId, phone])
+  @@index([shopId])
+  @@map("customers")
 }
 
 model Category {
@@ -274,6 +295,10 @@ model Order {
   billNumber      String
   customerName    String?
   customerPhone   String?
+  // Set when the order was placed by a logged-in customer account — orders
+  // from guests (the common case) leave this null.
+  customerId      String?
+  customer        Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
   tableNumber     String?
   deliveryAddress String?
   notes           String?
@@ -294,6 +319,7 @@ model Order {
   items OrderItem[]
 
   @@index([shopId])
+  @@index([customerId])
   @@map("orders")
 }
 

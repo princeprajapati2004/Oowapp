@@ -34,6 +34,7 @@ export function OrderSheet({
   shop,
   taxes,
   prefilledTable,
+  customer,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -44,6 +45,7 @@ export function OrderSheet({
   shop: CustomerShop;
   taxes: CustomerTax[];
   prefilledTable?: string;
+  customer?: { name: string; phone: string } | null;
 }) {
   const [step, setStep] = useState<Step>("cart");
   const [checkoutValues, setCheckoutValues] = useState<CheckoutInput | null>(null);
@@ -82,7 +84,10 @@ export function OrderSheet({
     register,
     handleSubmit,
     formState: { errors },
-  } = useForm<CheckoutInput>({ resolver: zodResolver(schema) });
+  } = useForm<CheckoutInput>({
+    resolver: zodResolver(schema),
+    defaultValues: { customerName: customer?.name, customerPhone: customer?.phone },
+  });
 
   const bill = useMemo(
     () =>

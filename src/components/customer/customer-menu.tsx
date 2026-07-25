@@ -3,7 +3,8 @@
 import { useMemo, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
-import { Search, ShoppingCart, PackageSearch, History } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { Search, ShoppingCart, PackageSearch, History, LogIn, LogOut } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/shared/empty-state";
@@ -15,6 +16,7 @@ import { OrderSheet } from "@/components/customer/order-sheet";
 import { useCart } from "@/lib/hooks/use-cart";
 import { formatCurrency } from "@/lib/utils/currency";
 import { cn } from "@/lib/utils";
+import { api } from "@/lib/api-client";
 import type {
   CustomerCategory,
   CustomerProduct,
@@ -28,13 +30,16 @@ export function CustomerMenu({
   products,
   taxes,
   prefilledTable,
+  customer,
 }: {
   shop: CustomerShop;
   categories: CustomerCategory[];
   products: CustomerProduct[];
   taxes: CustomerTax[];
   prefilledTable?: string;
+  customer?: { name: string; phone: string } | null;
 }) {
+  const router = useRouter();
   const cart = useCart(shop.slug);
   const [search, setSearch] = useState("");
   const [activeCategory, setActiveCategory] = useState<string>("all");
@@ -75,6 +80,11 @@ export function CustomerMenu({
     setSelectedProduct(null);
   }
 
+  async function handleLogout() {
+    await api.post("/api/customer/auth/logout");
+    router.refresh();
+  }
+
   return (
     <div className="min-h-screen bg-muted/20 pb-32" style={{ paddingBottom: 'calc(8rem + env(safe-area-inset-bottom))' }}>
       <header className="sticky top-0 z-30 border-b bg-background/98 backdrop-blur-sm">
@@ -100,6 +110,15 @@ export function CustomerMenu({
           <Button variant="ghost" size="icon" aria-label="Your orders" render={<Link href={`/order/${shop.slug}/orders`} />} nativeButton={false}>
             <History className="size-4.5" />
           </Button>
+          {customer ? (
+            <Button variant="ghost" size="icon" aria-label={`Log out (${customer.name})`} onClick={handleLogout}>
+              <LogOut className="size-4.5" />
+            </Button>
+          ) : (
+            <Button variant="ghost" size="icon" aria-label="Log in" render={<Link href={`/order/${shop.slug}/login`} />} nativeButton={false}>
+              <LogIn className="size-4.5" />
+            </Button>
+          )}
           <InstallApp className="hidden sm:flex" />
           <ThemeToggle />
         </div>
@@ -209,6 +228,7 @@ export function CustomerMenu({
         shop={shop}
         taxes={taxes}
         prefilledTable={prefilledTable}
+        customer={customer}
       />
     </div>
   );

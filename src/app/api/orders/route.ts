@@ -6,6 +6,7 @@ import { calculateBill } from "@/lib/services/billing";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { sendNewOrderNotification } from "@/lib/services/push";
 import { publishOrderEvent, toOrderEvent } from "@/lib/server/order-events";
+import { getCustomerSession } from "@/lib/customer-session";
 import type { Prisma } from "@/generated/prisma/client";
 
 const orderItemSchema = z.object({
@@ -54,10 +55,18 @@ export async function POST(request: Request) {
     );
     const billNumber = input.billNumber ?? `${shop.slug.slice(0, 4).toUpperCase()}-${Date.now()}`;
 
+    // Link the order to the account if the customer is logged in — derived
+    // from the session cookie server-side, never trusted from client input.
+    // A session scoped to a different shop doesn't count here.
+    const customerSession = await getCustomerSession();
+    const customerId =
+      customerSession && customerSession.shopId === shop.id ? customerSession.customerId : null;
+
     const order = await db.order.create({
       data: {
         shopId: shop.id,
         billNumber,
+        customerId,
         customerName: input.customerName || null,
         customerPhone: input.customerPhone || null,
         tableNumber: input.tableNumber || null,

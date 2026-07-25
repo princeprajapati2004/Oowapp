@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { Search, ClipboardList, LoaderCircle } from "lucide-react";
+import { Search, ClipboardList, LoaderCircle, LogIn } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { EmptyState } from "@/components/shared/empty-state";
 import { formatCurrency } from "@/lib/utils/currency";
@@ -42,16 +42,29 @@ export function OrderHistory({
   slug,
   businessName,
   currency,
+  isLoggedIn,
 }: {
   slug: string;
   businessName: string;
   currency: string;
+  isLoggedIn: boolean;
 }) {
   const [orders, setOrders] = useState<OrderEventOrder[] | null>(null);
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<Filter>("ALL");
 
   useEffect(() => {
+    // Logged in: server-side history tied to the account, authoritative
+    // across devices. Guest: whatever this browser has placed, from
+    // localStorage — see order-history-storage.ts.
+    if (isLoggedIn) {
+      fetch("/api/customer/orders")
+        .then((res) => (res.ok ? res.json() : null))
+        .then((data: { orders?: OrderEventOrder[] } | null) => setOrders(data?.orders ?? []))
+        .catch(() => setOrders([]));
+      return;
+    }
+
     const refs = getStoredOrders(slug);
     // Promise.all([]) still resolves asynchronously via .then(), so this
     // stays a single code path instead of an early synchronous setState.
@@ -67,7 +80,7 @@ export function OrderHistory({
       valid.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
       setOrders(valid);
     });
-  }, [slug]);
+  }, [slug, isLoggedIn]);
 
   const filtered = useMemo(() => {
     if (!orders) return [];
@@ -82,6 +95,16 @@ export function OrderHistory({
           <h1 className="text-xl font-bold tracking-tight">Your orders</h1>
           <p className="text-sm text-muted-foreground">{businessName}</p>
         </div>
+
+        {!isLoggedIn && (
+          <Link
+            href={`/order/${slug}/login`}
+            className="flex items-center gap-2 rounded-xl border bg-card px-4 py-2.5 text-sm text-muted-foreground hover:bg-muted/50 transition-colors"
+          >
+            <LogIn className="size-4 shrink-0 text-primary" />
+            Log in to see your orders from any device
+          </Link>
+        )}
 
         <div className="relative">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
@@ -119,7 +142,11 @@ export function OrderHistory({
           <EmptyState
             icon={ClipboardList}
             title="No orders yet"
-            description="Orders you place from this device will show up here."
+            description={
+              isLoggedIn
+                ? "Orders placed with your account will show up here."
+                : "Orders you place from this device will show up here."
+            }
           />
         ) : (
           <div className="space-y-2">
