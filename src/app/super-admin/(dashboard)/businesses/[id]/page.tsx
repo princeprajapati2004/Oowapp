@@ -42,14 +42,16 @@ export default async function BusinessDetailPage({
     remarks: subscriptionDetail.current.remarks,
   };
 
-  const historyForClient = subscriptionDetail.history.map((row) => ({
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const historyForClient = subscriptionDetail.history.map((row: any) => ({
     ...row,
     startDate: row.startDate.toISOString(),
     endDate: row.endDate ? row.endDate.toISOString() : null,
     createdAt: row.createdAt.toISOString(),
   }));
 
-  const plansForClient = plans.map((plan) => ({
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const plansForClient = plans.map((plan: any) => ({
     id: plan.id,
     code: plan.code,
     name: plan.name,
