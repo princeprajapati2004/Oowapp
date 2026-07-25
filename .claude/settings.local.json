@@ -15,7 +15,10 @@
       "Bash(git push *)",
       "Bash(git fetch *)",
       "Bash(git merge *)",
-      "Bash(git checkout *)"
+      "Bash(git checkout *)",
+      "Read(//c/Users/user/AppData/Local/Temp/claude/C--Users-user-Desktop-Oowapp/db0d6771-5c65-46f8-9796-7ea35e9f1788/scratchpad/pw/**)",
+      "Bash(node test-tracking.js)",
+      "Bash(npx tsx *)"
     ]
   }
 }
