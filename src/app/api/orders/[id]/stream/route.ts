@@ -17,5 +17,9 @@ export async function GET(
 
   // Public route (no session) — the shop channel carries every customer's
   // orders, so this must only ever forward events for this specific order.
-  return createOrderEventStream(request, order.shopId, (event) => event.order.id === id);
+  return createOrderEventStream(
+    request,
+    order.shopId,
+    (event) => (event.type === "order.created" || event.type === "order.updated") && event.order.id === id
+  );
 }

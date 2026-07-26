@@ -120,6 +120,21 @@ export async function PATCH(
       if (!knownItemIds.has(change.itemId)) throw new NotFoundError("Item not found on this order");
     }
 
+    // Table-session orders are permanent once submitted — the customer can
+    // only add more via a new order against the same session, never shrink
+    // or remove what's already been sent to the kitchen.
+    if (order.tableSessionId) {
+      for (const change of input.items) {
+        const item = order.items.find((i) => i.id === change.itemId)!;
+        if (change.quantity < item.quantity) {
+          return NextResponse.json(
+            { error: "Items already sent for a table order can't be reduced or removed — you can only add more." },
+            { status: 400 }
+          );
+        }
+      }
+    }
+
     const remainingCount = order.items.filter((item) => {
       const change = input.items.find((c) => c.itemId === item.id);
       return change ? change.quantity > 0 : true;

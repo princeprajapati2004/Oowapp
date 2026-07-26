@@ -52,6 +52,39 @@ export function buildOrderMessage(input: OrderMessageInput) {
   return lines.join("\n");
 }
 
+export interface IncrementalOrderMessageInput {
+  tableNumber: string;
+  roundNumber: number;
+  deltaItems: CartItem[];
+  deltaBill: BillTotals;
+  sessionBill: BillTotals;
+  currency: string;
+  notes?: string;
+}
+
+/** WhatsApp message for the 2nd+ order against an already-active table session — lists only the newly added items, never the full prior order. */
+export function buildIncrementalOrderMessage(input: IncrementalOrderMessageInput) {
+  const lines: string[] = [`*Additional Order — Table ${input.tableNumber} (Round ${input.roundNumber})*`, ""];
+
+  lines.push("Items added:", "");
+  for (const item of input.deltaItems) {
+    lines.push(`${item.quantity} x ${item.name} = ${formatCurrency(item.price * item.quantity, input.currency)}`);
+  }
+  lines.push("");
+
+  lines.push("This round total:", formatCurrency(input.deltaBill.grandTotal, input.currency));
+  lines.push("");
+  lines.push("Table running total:", formatCurrency(input.sessionBill.grandTotal, input.currency));
+
+  if (input.notes) {
+    lines.push("", "Notes:", input.notes);
+  }
+
+  lines.push("", "Thank You");
+
+  return lines.join("\n");
+}
+
 export function buildWhatsAppUrl(phoneNumber: string, message: string) {
   // wa.me requires digits only — no leading +, spaces, or dashes.
   const digits = phoneNumber.replace(/\D/g, "");

@@ -33,6 +33,26 @@ function round2(value: number) {
   return Math.round(value * 100) / 100;
 }
 
+/**
+ * Merges line items by (id, name, price), summing quantity — used to combine
+ * a table session's multiple order rounds into one bill before running
+ * calculateBill, so tax math runs once on the true combined subtotal instead
+ * of being summed from already-rounded per-round totals.
+ */
+export function mergeLineItems(items: BillLineItem[]): BillLineItem[] {
+  const merged = new Map<string, BillLineItem>();
+  for (const item of items) {
+    const key = `${item.id}::${item.name}::${item.price}`;
+    const existing = merged.get(key);
+    if (existing) {
+      existing.quantity += item.quantity;
+    } else {
+      merged.set(key, { ...item });
+    }
+  }
+  return Array.from(merged.values());
+}
+
 /** Single source of truth for bill math — used by the admin tax preview, the customer bill screen, and the WhatsApp message. */
 export function calculateBill(items: BillLineItem[], taxes: BillTax[]): BillTotals {
   const subtotal = items.reduce((sum, item) => sum + item.price * item.quantity, 0);

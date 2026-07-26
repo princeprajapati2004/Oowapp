@@ -109,6 +109,7 @@ export async function getPublicShopBundle(slug: string) {
       requireTableNumber: true,
       requireDeliveryAddress: true,
       allowNotes: true,
+      enableTableQr: true,
       // Payment display (intentionally shown to customers)
       upiId: true,
       acceptCash: true,

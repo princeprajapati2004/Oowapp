@@ -16,6 +16,7 @@ import {
   Ban,
   User,
   Printer,
+  Receipt,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { QtyStepper } from "@/components/shared/qty-stepper";
@@ -23,7 +24,8 @@ import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 import { formatCurrency } from "@/lib/utils/currency";
 import { cn } from "@/lib/utils";
 import { api, ApiError } from "@/lib/api-client";
-import { useOrderEvents, type OrderEventOrder } from "@/lib/hooks/use-order-events";
+import { useOrderEvents, type OrderEventOrder, type TableSessionEventPayload } from "@/lib/hooks/use-order-events";
+import type { BillTotals } from "@/lib/services/billing";
 
 type TaxLine = { id: string; name: string; amount: number };
 
@@ -58,12 +60,25 @@ const EDITABLE_STATUSES = new Set(["PENDING", "CONFIRMED"]);
 
 const QUANTITY_DEBOUNCE_MS = 500;
 
-export function OrderTracker({ order: initialOrder, shop }: { order: OrderEventOrder; shop: Shop }) {
+export function OrderTracker({
+  order: initialOrder,
+  shop,
+  session: initialSession,
+  sessionBill: initialSessionBill,
+}: {
+  order: OrderEventOrder;
+  shop: Shop;
+  session?: TableSessionEventPayload | null;
+  sessionBill?: BillTotals | null;
+}) {
   const [order, setOrder] = useState(initialOrder);
   const [displayItems, setDisplayItems] = useState(initialOrder.items);
   const [cancelOpen, setCancelOpen] = useState(false);
   const [cancelling, setCancelling] = useState(false);
   const [confirming, setConfirming] = useState(false);
+  const [session, setSession] = useState(initialSession ?? null);
+  const [sessionBill, setSessionBill] = useState(initialSessionBill ?? null);
+  const [requestingBill, setRequestingBill] = useState(false);
 
   const pendingChangesRef = useRef<Map<string, number>>(new Map());
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -80,6 +95,22 @@ export function OrderTracker({ order: initialOrder, shop }: { order: OrderEventO
     },
   });
 
+  const sessionId = session?.id ?? null;
+  useOrderEvents(sessionId ? `/api/table-sessions/${sessionId}/stream` : "", {
+    onSessionUpdated: (updated) => setSession(updated),
+    onUpdated: () => {
+      // An order in this session changed (e.g. quantity added, status moved) —
+      // re-fetch the session's cumulative bill rather than trying to
+      // reconstruct it from a single event.
+      if (!sessionId) return;
+      api
+        .get<{ bill: BillTotals }>(`/api/table-sessions/${sessionId}`)
+        .then((res) => setSessionBill(res.bill))
+        .catch(() => {});
+    },
+  });
+
+  const isTableOrder = !!order.tableSessionId;
   const isEditable = EDITABLE_STATUSES.has(order.status);
 
   async function flushQuantityChanges() {
@@ -154,6 +185,23 @@ export function OrderTracker({ order: initialOrder, shop }: { order: OrderEventO
     }
   }
 
+  async function handleRequestBill() {
+    if (!sessionId) return;
+    setRequestingBill(true);
+    try {
+      const res = await api.patch<{ ok: boolean; session: TableSessionEventPayload }>(
+        `/api/table-sessions/${sessionId}`,
+        { action: "request_bill" }
+      );
+      setSession(res.session);
+      toast.success("Bill requested — staff has been notified.");
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Couldn't request the bill");
+    } finally {
+      setRequestingBill(false);
+    }
+  }
+
   const taxBreakdown = (order.taxBreakdown as TaxLine[] | null) ?? [];
   const base = order.subtotal + order.taxTotal;
   const finalTotal = order.discountedTotal ?? base;
@@ -163,7 +211,7 @@ export function OrderTracker({ order: initialOrder, shop }: { order: OrderEventO
   // fields (customer name, payment status, thank-you, print) alongside the
   // still-live status stepper, rather than replacing it.
   const isConfirmedOrLater = !isCancelled && order.status !== "PENDING";
-  const isPaid = order.status === "COMPLETED";
+  const isPaid = session ? session.status === "PAID" : order.status === "COMPLETED";
 
   return (
     <div className="min-h-screen bg-muted/20 px-4 py-8 print:bg-white print:py-0">
@@ -311,6 +359,9 @@ export function OrderTracker({ order: initialOrder, shop }: { order: OrderEventO
           <div className="px-5 py-3 border-t space-y-2.5">
             {displayItems.map((item) => {
               const isOnlyItem = displayItems.length === 1;
+              // Table orders are permanent once submitted — the stepper can
+              // only go up from here, never down or to zero (no remove).
+              const min = isTableOrder ? item.quantity : isOnlyItem ? 1 : 0;
               return (
                 <div key={item.id} className="flex items-center justify-between gap-2 text-sm">
                   <span className="flex-1 min-w-0 truncate">{item.name}</span>
@@ -320,7 +371,7 @@ export function OrderTracker({ order: initialOrder, shop }: { order: OrderEventO
                         <QtyStepper
                           size="sm"
                           value={item.quantity}
-                          min={isOnlyItem ? 1 : 0}
+                          min={min}
                           max={100_000}
                           onChange={(q) => handleQuantityChange(item.id, q)}
                         />
@@ -337,6 +388,15 @@ export function OrderTracker({ order: initialOrder, shop }: { order: OrderEventO
               );
             })}
           </div>
+
+          {session && sessionBill && (
+            <div className="px-5 py-3 border-t bg-primary/5 flex items-center justify-between text-sm">
+              <span className="font-medium flex items-center gap-1.5">
+                <Receipt className="size-3.5 text-primary" /> Table running total
+              </span>
+              <span className="font-bold text-primary">{formatCurrency(sessionBill.grandTotal, shop.currency)}</span>
+            </div>
+          )}
 
           <div className="px-5 py-4 border-t bg-muted/20 space-y-1.5 text-sm">
             <div className="flex justify-between text-muted-foreground">
@@ -391,14 +451,36 @@ export function OrderTracker({ order: initialOrder, shop }: { order: OrderEventO
                 <CircleCheck className="size-4" /> {confirming ? "Confirming…" : "Confirm order"}
               </Button>
             )}
-            <Button
-              variant="outline"
-              className="h-10 flex-1 gap-1.5 text-destructive border-destructive/30 hover:bg-destructive/10 hover:text-destructive"
-              onClick={() => setCancelOpen(true)}
-            >
-              <Ban className="size-4" /> Cancel order
-            </Button>
+            {/* Self-cancelling a submitted table round would defeat "items can
+                never be removed" — staff can still correct it via the admin
+                order actions if needed. */}
+            {!isTableOrder && (
+              <Button
+                variant="outline"
+                className="h-10 flex-1 gap-1.5 text-destructive border-destructive/30 hover:bg-destructive/10 hover:text-destructive"
+                onClick={() => setCancelOpen(true)}
+              >
+                <Ban className="size-4" /> Cancel order
+              </Button>
+            )}
           </div>
+        )}
+
+        {session && session.status === "ACTIVE" && (
+          <Button
+            variant="outline"
+            className="h-10 w-full gap-1.5 print:hidden"
+            disabled={requestingBill}
+            onClick={handleRequestBill}
+          >
+            <Receipt className="size-4" /> {requestingBill ? "Requesting…" : "Request bill"}
+          </Button>
+        )}
+
+        {session && session.status === "AWAITING_PAYMENT" && (
+          <p className="text-center text-xs text-muted-foreground print:hidden">
+            Bill requested — staff has been notified.
+          </p>
         )}
 
         {shop.address || shop.phone ? (

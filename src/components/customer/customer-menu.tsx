@@ -18,6 +18,7 @@ import { formatCurrency } from "@/lib/utils/currency";
 import { cn } from "@/lib/utils";
 import { api } from "@/lib/api-client";
 import type {
+  ActiveSession,
   CustomerCategory,
   CustomerProduct,
   CustomerShop,
@@ -31,6 +32,7 @@ export function CustomerMenu({
   taxes,
   prefilledTable,
   customer,
+  activeSession,
 }: {
   shop: CustomerShop;
   categories: CustomerCategory[];
@@ -38,6 +40,7 @@ export function CustomerMenu({
   taxes: CustomerTax[];
   prefilledTable?: string;
   customer?: { name: string; phone: string } | null;
+  activeSession?: ActiveSession;
 }) {
   const router = useRouter();
   const cart = useCart(shop.slug);
@@ -229,6 +232,7 @@ export function CustomerMenu({
         taxes={taxes}
         prefilledTable={prefilledTable}
         customer={customer}
+        activeSession={activeSession}
       />
     </div>
   );
