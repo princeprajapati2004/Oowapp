@@ -4,12 +4,12 @@ import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { ClipboardList, ExternalLink, Search, X, Copy } from "lucide-react";
+import { ClipboardList, ExternalLink, Search, X, Copy, Plus } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { EmptyState } from "@/components/shared/empty-state";
-import { CreateOrderDialog, type DuplicateOrderData } from "@/components/admin/create-order-dialog";
+import type { DuplicateOrderData } from "@/components/admin/create-order-page";
 import { api, ApiError } from "@/lib/api-client";
 import { formatCurrency } from "@/lib/utils/currency";
 import { useOrderEvents, type OrderEventOrder } from "@/lib/hooks/use-order-events";
@@ -95,10 +95,11 @@ function toOrderRow(order: OrderEventOrder): OrderRow {
   };
 }
 
+const DUPLICATE_HANDOFF_KEY = "oowapp:duplicateOrder";
+
 export function OrdersManager({
   initialOrders,
   currency,
-  shopSlug,
   initialQuery,
 }: {
   initialOrders: OrderRow[];
@@ -110,11 +111,9 @@ export function OrdersManager({
   const [orders, setOrders] = useState(initialOrders);
   const [statusFilter, setStatusFilter] = useState<OrderStatus | "ALL">("ALL");
   const [updatingId, setUpdatingId] = useState<string | null>(null);
-  // Deep-linked from the create-order dialog's "Order history" button
+  // Deep-linked from the create-order page's "Order history" button
   // (?q=<phone>) as well as manual typing here.
   const [query, setQuery] = useState(initialQuery ?? "");
-  const [duplicateData, setDuplicateData] = useState<DuplicateOrderData | null>(null);
-  const [duplicateSignal, setDuplicateSignal] = useState(0);
 
   const filtered = orders
     .filter((o) => statusFilter === "ALL" || (o.status ?? "PENDING") === statusFilter)
@@ -132,13 +131,18 @@ export function OrdersManager({
     const items = order.items
       .filter((item): item is typeof item & { productId: string } => !!item.productId)
       .map((item) => ({ productId: item.productId, quantity: item.quantity }));
-    setDuplicateData({
+    const payload: DuplicateOrderData = {
       items,
       customerName: order.customerName ?? undefined,
       customerPhone: order.customerPhone ?? undefined,
       tableNumber: order.tableNumber ?? undefined,
-    });
-    setDuplicateSignal((n) => n + 1);
+    };
+    // One-shot hand-off — the create-order page reads and immediately
+    // clears this on mount (see create-order-page.tsx). sessionStorage
+    // rather than a prop since it's now a real page navigation, not a
+    // dialog within this same component tree.
+    sessionStorage.setItem(DUPLICATE_HANDOFF_KEY, JSON.stringify(payload));
+    router.push("/admin/orders/create");
   }
 
   useOrderEvents("/api/admin/orders/stream", {
@@ -206,13 +210,13 @@ export function OrdersManager({
               ))}
             </SelectContent>
           </Select>
-          <CreateOrderDialog
-            currency={currency}
-            shopSlug={shopSlug ?? ""}
-            onCreated={() => router.refresh()}
-            initialData={duplicateData}
-            openSignal={duplicateSignal}
-          />
+          <Button
+            onClick={() => router.push("/admin/orders/create")}
+            className="max-sm:fixed max-sm:right-5 max-sm:bottom-5 max-sm:z-40 max-sm:size-14 max-sm:rounded-full max-sm:p-0 max-sm:shadow-lg"
+            aria-label="Create Order"
+          >
+            <Plus className="size-4 max-sm:size-6" /> <span className="max-sm:hidden" aria-hidden="true">Create Order</span>
+          </Button>
         </div>
       </div>
 

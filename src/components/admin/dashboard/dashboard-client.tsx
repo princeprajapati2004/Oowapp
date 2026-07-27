@@ -14,7 +14,6 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { RevenueChart } from "./revenue-chart";
-import { CreateOrderDialog } from "@/components/admin/create-order-dialog";
 import { formatCurrency } from "@/lib/utils/currency";
 import { api } from "@/lib/api-client";
 import type { DashboardData, RevenuePoint } from "@/lib/services/analytics";
@@ -91,7 +90,7 @@ interface Props {
   ownerName: string | null;
 }
 
-export function DashboardClient({ initialData, initialGranularity, currency, shopName, shopSlug, ownerName }: Props) {
+export function DashboardClient({ initialData, initialGranularity, currency, shopName, ownerName }: Props) {
   const router = useRouter();
   const [period, setPeriod] = useState<Period>("today");
   const [data, setData] = useState<DashboardData>(initialData);
@@ -141,7 +140,9 @@ export function DashboardClient({ initialData, initialGranularity, currency, sho
             <p className="text-sm text-muted-foreground mt-0.5">No orders yet in this period.</p>
           )}
         </div>
-        <CreateOrderDialog currency={currency} shopSlug={shopSlug} onCreated={() => router.refresh()} />
+        <Button onClick={() => router.push("/admin/orders/create")}>
+          <Plus className="size-4" /> Create Order
+        </Button>
       </div>
 
       {/* Period Tabs */}
