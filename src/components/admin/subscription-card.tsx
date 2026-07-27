@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { formatDate } from "@/lib/utils/date";
 import type { SubscriptionSummary } from "@/lib/services/subscription";
 
-const STATUS_STYLES: Record<string, string> = {
+export const STATUS_STYLES: Record<string, string> = {
   ACTIVE: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400",
   TRIAL: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400",
   EXPIRING_SOON: "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400",
@@ -12,7 +12,7 @@ const STATUS_STYLES: Record<string, string> = {
   CANCELLED: "bg-muted text-muted-foreground",
 };
 
-const STATUS_LABELS: Record<string, string> = {
+export const STATUS_LABELS: Record<string, string> = {
   ACTIVE: "Active",
   TRIAL: "Trial",
   EXPIRING_SOON: "Expiring Soon",
