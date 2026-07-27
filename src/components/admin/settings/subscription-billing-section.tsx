@@ -1,8 +1,12 @@
 "use client";
 
 import { useState } from "react";
+import { toast } from "sonner";
 import { AlertTriangle, Check, Copy } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { formatDate } from "@/lib/utils/date";
 import { cn } from "@/lib/utils";
 import { STATUS_STYLES, STATUS_LABELS } from "@/components/admin/subscription-card";
@@ -27,31 +31,65 @@ function DetailRow({ label, value }: { label: string; value: React.ReactNode }) 
   );
 }
 
+// Displays a full-length ID (a raw cuid, ~25 chars) without breaking its
+// layout: the value is truncated with an ellipsis on a single line, the full
+// value shows in a tooltip on hover, and tapping it (touch has no hover)
+// opens a small dialog with the full value plus its own copy button — the
+// same "reveal on demand" pattern Stripe/AWS/Firebase use for long IDs.
 function CopyableId({ label, value }: { label: string; value: string }) {
   const [copied, setCopied] = useState(false);
+  const [detailsOpen, setDetailsOpen] = useState(false);
 
   async function handleCopy() {
     try {
       await navigator.clipboard.writeText(value);
       setCopied(true);
+      toast.success("Copied successfully.");
       setTimeout(() => setCopied(false), 1500);
     } catch {
-      // clipboard API unavailable — silently ignore, copying is a convenience only
+      toast.error("Couldn't copy — clipboard access was blocked.");
     }
   }
 
   return (
-    <div>
+    <div className="min-w-0">
       <p className="text-xs tracking-wide text-muted-foreground uppercase">{label}</p>
-      <button
-        type="button"
-        onClick={handleCopy}
-        className="mt-0.5 flex items-center gap-1.5 font-mono text-xs font-medium text-foreground hover:text-primary"
-        title="Copy"
-      >
-        <span className="truncate">{value}</span>
-        {copied ? <Check className="size-3 shrink-0 text-emerald-600" /> : <Copy className="size-3 shrink-0 text-muted-foreground" />}
-      </button>
+      <div className="mt-0.5 flex min-w-0 items-center gap-1">
+        <Tooltip>
+          <TooltipTrigger
+            type="button"
+            onClick={() => setDetailsOpen(true)}
+            className="min-w-0 flex-1 truncate rounded text-left font-mono text-xs font-medium text-foreground hover:text-primary"
+          >
+            {value}
+          </TooltipTrigger>
+          <TooltipContent side="bottom" className="font-mono">
+            {value}
+          </TooltipContent>
+        </Tooltip>
+        <button
+          type="button"
+          onClick={handleCopy}
+          aria-label={`Copy ${label}`}
+          title="Copy"
+          className="flex size-6 shrink-0 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+        >
+          {copied ? <Check className="size-3.5 text-emerald-600" /> : <Copy className="size-3.5" />}
+        </button>
+      </div>
+
+      <Dialog open={detailsOpen} onOpenChange={setDetailsOpen}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>{label}</DialogTitle>
+          </DialogHeader>
+          <p className="rounded-lg bg-muted px-3 py-2.5 font-mono text-sm break-all">{value}</p>
+          <Button onClick={handleCopy} className="w-full">
+            {copied ? <Check className="size-4" /> : <Copy className="size-4" />}
+            {copied ? "Copied" : "Copy to clipboard"}
+          </Button>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -135,9 +173,14 @@ export function SubscriptionBillingSection({
 
       <div className="border-t pt-4">
         <p className="mb-3 text-xs font-semibold tracking-wide text-muted-foreground uppercase">Account</p>
-        <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+        {/* IDs get their own row with real room to breathe — squeezing a
+            ~25-char cuid into the same narrow track as a short date is what
+            caused the overflow this section previously had. */}
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <CopyableId label="Account ID" value={accountId} />
           <CopyableId label="Business ID" value={businessId} />
+        </div>
+        <div className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-4">
           <DetailRow label="Registered on" value={formatDate(registeredOn)} />
           <DetailRow label="Last login" value={lastLogin ? formatDate(lastLogin) : "—"} />
         </div>
