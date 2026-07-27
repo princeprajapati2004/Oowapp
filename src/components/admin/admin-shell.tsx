@@ -17,6 +17,7 @@ import {
   ExternalLink,
   ChefHat,
   Banknote,
+  Table2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger, SheetTitle } from "@/components/ui/sheet";
@@ -33,6 +34,7 @@ const NAV_ITEMS = [
   { href: "/admin/taxes", label: "Taxes", icon: Percent },
   { href: "/admin/qr", label: "QR Code", icon: QrCode },
   { href: "/admin/orders", label: "Orders", icon: ClipboardList },
+  { href: "/admin/tables", label: "Tables", icon: Table2 },
 ];
 
 function NavLinks({ pathname, onNavigate }: { pathname: string; onNavigate?: () => void }) {

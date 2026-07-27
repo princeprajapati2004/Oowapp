@@ -92,6 +92,25 @@ export async function sendNewOrderNotification(
   });
 }
 
+export async function sendBillRequestNotification(
+  shopId: string,
+  opts: { tableNumber: string; sessionId: string }
+) {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const prefs = await (db.shop as any).findUnique({
+    where: { id: shopId },
+    select: { notifyOrderUpdates: true },
+  });
+  if (prefs?.notifyOrderUpdates === false) return;
+
+  await sendPushToShop(shopId, {
+    title: `Bill requested — Table ${opts.tableNumber}`,
+    body: "Customer is ready to pay.",
+    url: `/admin/tables`,
+    tag: `table-session-${opts.sessionId}`,
+  });
+}
+
 export async function sendOrderStatusNotification(
   shopId: string,
   opts: { billNumber: string; status: string; orderId: string }

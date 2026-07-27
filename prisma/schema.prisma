@@ -89,6 +89,12 @@ enum OrderStatus {
   CANCELLED
 }
 
+enum TableSessionStatus {
+  ACTIVE
+  AWAITING_PAYMENT
+  PAID
+}
+
 enum AuditAction {
   // Auth
   ADMIN_SIGNUP
@@ -113,6 +119,7 @@ enum AuditAction {
   TAX_DELETED
   // Orders
   ORDER_CREATED
+  TABLE_SESSION_MARKED_PAID
   // Platform
   PLATFORM_SETTINGS_UPDATED
   SUBSCRIPTION_CHANGED
@@ -193,6 +200,7 @@ model Shop {
   taxes              Tax[]
   orders             Order[]
   customers          Customer[]
+  tableSessions      TableSession[]
   subscriptions      Subscription[]
   pushSubscriptions  PushSubscription[]
   featurePermissions BusinessFeaturePermission[]
@@ -213,7 +221,8 @@ model Customer {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  orders Order[]
+  orders        Order[]
+  tableSessions TableSession[]
 
   @@unique([shopId, phone])
   @@index([shopId])
@@ -314,13 +323,56 @@ model Order {
   discountValue   Decimal?    @db.Decimal(10, 2)
   discountReason  String?
   discountedTotal Decimal?    @db.Decimal(10, 2)
+  // Table order lifecycle — set only when this order was placed against an
+  // active table session (see TableSession); null for pickup/delivery/manual
+  // orders, which are unaffected by session grouping or the "no decrease" rule.
+  tableSessionId  String?
+  tableSession    TableSession? @relation(fields: [tableSessionId], references: [id], onDelete: SetNull)
+  // Client-generated idempotency key — dedupes retries/double WhatsApp sends
+  // (see resolveOrCreateSession / POST /api/orders).
+  clientRequestId String?
   createdAt       DateTime    @default(now())
 
   items OrderItem[]
 
+  @@unique([shopId, clientRequestId])
   @@index([shopId])
   @@index([customerId])
+  @@index([tableSessionId])
   @@map("orders")
+}
+
+// Groups a table's orders into one running tab from the first QR/WhatsApp
+// order until payment is confirmed. One non-PAID session per (shopId,
+// tableNumber) is enforced by a partial unique index added by hand to the
+// generated migration (Prisma has no partial-unique-index syntax) — see
+// prisma/migrations/*_add_table_sessions/migration.sql.
+model TableSession {
+  id              String              @id @default(cuid())
+  shopId          String
+  shop            Shop                @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  tableNumber     String
+  status          TableSessionStatus  @default(ACTIVE)
+  customerName    String?
+  customerPhone   String?
+  customerId      String?
+  customer        Customer?           @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  billRequestedAt DateTime?
+  // Informational only — there is no payment gateway integration. Admin
+  // records what they observed being paid (cash/UPI/card/etc.), or "VOID" to
+  // free a mis-scanned/abandoned table without a real payment.
+  paymentMethod   String?
+  paymentNote     String?
+  paidAt          DateTime?
+  paidBy          String?
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+
+  orders Order[]
+
+  @@index([shopId])
+  @@index([shopId, tableNumber])
+  @@map("table_sessions")
 }
 
 model OrderItem {

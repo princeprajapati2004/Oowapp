@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { ZodError } from "zod";
 import { UnauthorizedError, ForbiddenError } from "@/lib/session";
+import { BillAlreadyRequestedError } from "@/lib/services/table-session";
 
 export class NotFoundError extends Error {
   constructor(message = "Not found") {
@@ -18,6 +19,9 @@ export function handleApiError(error: unknown) {
   }
   if (error instanceof NotFoundError) {
     return NextResponse.json({ error: error.message }, { status: 404 });
+  }
+  if (error instanceof BillAlreadyRequestedError) {
+    return NextResponse.json({ error: error.message }, { status: 409 });
   }
   if (error instanceof ZodError) {
     return NextResponse.json(

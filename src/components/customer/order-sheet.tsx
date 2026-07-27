@@ -5,6 +5,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import Image from "next/image";
 import Link from "next/link";
+import { toast } from "sonner";
 import { Trash2, ArrowLeft, ShoppingBag, Download, CircleCheck, MapPinned, History } from "lucide-react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetFooter } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
@@ -14,13 +15,18 @@ import { QtyStepper } from "@/components/shared/qty-stepper";
 import { FormRow } from "@/components/shared/form-row";
 import { EmptyState } from "@/components/shared/empty-state";
 import { formatCurrency } from "@/lib/utils/currency";
-import { calculateBill } from "@/lib/services/billing";
-import { buildOrderMessage, buildWhatsAppUrl, generateBillNumber } from "@/lib/services/whatsapp";
+import { calculateBill, mergeLineItems } from "@/lib/services/billing";
+import {
+  buildOrderMessage,
+  buildIncrementalOrderMessage,
+  buildWhatsAppUrl,
+  generateBillNumber,
+} from "@/lib/services/whatsapp";
 import { buildCheckoutSchema, type CheckoutInput } from "@/lib/validation/checkout";
-import { api } from "@/lib/api-client";
+import { api, ApiError } from "@/lib/api-client";
 import { addStoredOrder } from "@/lib/order-history-storage";
 import type { CartItem } from "@/lib/hooks/use-cart";
-import type { CustomerShop, CustomerTax } from "@/lib/types/customer";
+import type { ActiveSession, CustomerShop, CustomerTax } from "@/lib/types/customer";
 
 type Step = "cart" | "checkout" | "bill" | "placed";
 
@@ -35,6 +41,7 @@ export function OrderSheet({
   taxes,
   prefilledTable,
   customer,
+  activeSession,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -46,15 +53,22 @@ export function OrderSheet({
   taxes: CustomerTax[];
   prefilledTable?: string;
   customer?: { name: string; phone: string } | null;
+  activeSession?: ActiveSession;
 }) {
   const [step, setStep] = useState<Step>("cart");
   const [checkoutValues, setCheckoutValues] = useState<CheckoutInput | null>(null);
   const [billNumber, setBillNumber] = useState<string>("");
+  const [clientRequestId, setClientRequestId] = useState<string>("");
   const [placing, setPlacing] = useState(false);
   const [downloadingPdf, setDownloadingPdf] = useState(false);
   // null = still waiting on the persistence call; a string once it resolves
   // with an orderId; false if the shop doesn't save orders (nothing to track).
   const [placedOrderId, setPlacedOrderId] = useState<string | null | false>(null);
+  // Local copy of the table session, kept in sync from the POST /api/orders
+  // response after each placed order — the server prop is only fresh as of
+  // page load, so a second order placed in the same sitting (no reload)
+  // needs this to correctly treat itself as incremental.
+  const [session, setSession] = useState<ActiveSession>(activeSession ?? null);
 
   // Reset to the cart step whenever the sheet transitions from closed to open.
   // Adjusting state during render (rather than in an effect) avoids an extra render pass —
@@ -104,6 +118,39 @@ export function OrderSheet({
     [items, taxes]
   );
 
+  // Items already submitted for this table's active session — locked,
+  // read-only, never merged into the editable cart. `items`/`bill` above
+  // always represent only the new stuff being added this round.
+  const alreadyOrderedItems = useMemo(() => {
+    if (!session) return [];
+    return mergeLineItems(
+      session.orders
+        .filter((o) => o.status !== "CANCELLED")
+        .flatMap((o) =>
+          o.items.map((item) => ({
+            id: item.productId ?? item.name,
+            name: item.name,
+            price: item.price,
+            quantity: item.quantity,
+            categoryId: item.categoryId ?? "",
+          }))
+        )
+    );
+  }, [session]);
+
+  const isIncremental = alreadyOrderedItems.length > 0;
+
+  const sessionRunningBill = useMemo(() => {
+    if (!isIncremental) return null;
+    const merged = mergeLineItems([
+      ...alreadyOrderedItems,
+      ...items.map((i) => ({ id: i.productId, name: i.name, price: i.price, quantity: i.quantity, categoryId: i.categoryId })),
+    ]);
+    return calculateBill(merged, taxes);
+  }, [isIncremental, alreadyOrderedItems, items, taxes]);
+
+  const billAlreadyRequested = session?.status === "AWAITING_PAYMENT";
+
   function handleGenerateBill(values: CheckoutInput) {
     setCheckoutValues({
       ...values,
@@ -112,32 +159,52 @@ export function OrderSheet({
         : "",
     });
     setBillNumber(generateBillNumber(shop.slug));
+    setClientRequestId(crypto.randomUUID());
     setStep("bill");
   }
 
   async function handlePlaceOrder() {
-    if (!checkoutValues) return;
+    if (!checkoutValues || billAlreadyRequested) return;
     setPlacing(true);
 
-    const message = buildOrderMessage({
-      customerName: checkoutValues.customerName || undefined,
-      customerPhone: checkoutValues.customerPhone || undefined,
-      tableNumber: checkoutValues.tableNumber || undefined,
-      deliveryAddress: checkoutValues.deliveryAddress || undefined,
-      notes: checkoutValues.notes || undefined,
-      items,
-      bill,
-      currency: shop.currency,
-    });
+    const message =
+      isIncremental && sessionRunningBill
+        ? buildIncrementalOrderMessage({
+            tableNumber: checkoutValues.tableNumber || "",
+            roundNumber: (session?.orders.length ?? 0) + 1,
+            deltaItems: items,
+            deltaBill: bill,
+            sessionBill: sessionRunningBill,
+            currency: shop.currency,
+            notes: checkoutValues.notes || undefined,
+          })
+        : buildOrderMessage({
+            customerName: checkoutValues.customerName || undefined,
+            customerPhone: checkoutValues.customerPhone || undefined,
+            tableNumber: checkoutValues.tableNumber || undefined,
+            deliveryAddress: checkoutValues.deliveryAddress || undefined,
+            notes: checkoutValues.notes || undefined,
+            items,
+            bill,
+            currency: shop.currency,
+          });
     const url = buildWhatsAppUrl(shop.whatsappNumber, message);
 
     // The WhatsApp handoff never waits on this — it still fires immediately
     // below regardless of how (or whether) persistence resolves. The result
     // only controls whether a "Track your order" link appears afterward.
     api
-      .post<{ ok: boolean; saved: boolean; orderId?: string }>("/api/orders", {
+      .post<{
+        ok: boolean;
+        saved: boolean;
+        orderId?: string;
+        tableSessionId?: string | null;
+        sessionStatus?: string | null;
+        sessionOrders?: { status: string; items: { productId: string | null; name: string; price: number; quantity: number; categoryId?: string }[] }[];
+      }>("/api/orders", {
         shopSlug: shop.slug,
         billNumber,
+        clientRequestId,
         customerName: checkoutValues.customerName,
         customerPhone: checkoutValues.customerPhone,
         tableNumber: checkoutValues.tableNumber,
@@ -149,8 +216,17 @@ export function OrderSheet({
         const id = res.saved && res.orderId ? res.orderId : false;
         setPlacedOrderId(id);
         if (id) addStoredOrder(shop.slug, { orderId: id, billNumber, placedAt: new Date().toISOString() });
+        if (res.tableSessionId && res.sessionOrders) {
+          setSession({ id: res.tableSessionId, status: res.sessionStatus ?? "ACTIVE", orders: res.sessionOrders });
+        }
       })
-      .catch(() => setPlacedOrderId(false));
+      .catch((err) => {
+        setPlacedOrderId(false);
+        if (err instanceof ApiError && err.status === 409) {
+          toast.error("Bill was just requested for this table — please check with staff before ordering more.");
+          setSession((prev) => (prev ? { ...prev, status: "AWAITING_PAYMENT" } : prev));
+        }
+      });
 
     onOrderPlaced();
     setPlacing(false);
@@ -352,6 +428,22 @@ export function OrderSheet({
               <SheetTitle className="text-lg">Your cart</SheetTitle>
             </SheetHeader>
             <div className="flex-1 overflow-y-auto px-5 pb-2 space-y-2 pt-4">
+              {alreadyOrderedItems.length > 0 && (
+                <div className="rounded-xl border border-dashed bg-muted/30 px-3 py-2.5 space-y-1.5">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                    Already on this table
+                  </p>
+                  {alreadyOrderedItems.map((item) => (
+                    <div key={item.id} className="flex items-center justify-between text-sm text-muted-foreground">
+                      <span className="truncate">{item.name} × {item.quantity}</span>
+                      <span className="shrink-0">{formatCurrency(item.price * item.quantity, shop.currency)}</span>
+                    </div>
+                  ))}
+                  <p className="text-[11px] text-muted-foreground pt-0.5">
+                    Already sent to the kitchen — add more below.
+                  </p>
+                </div>
+              )}
               {items.length === 0 ? (
                 <EmptyState
                   icon={ShoppingBag}
@@ -528,11 +620,26 @@ export function OrderSheet({
                     </div>
                   ))}
                   <div className="flex justify-between border-t pt-2 mt-1 font-bold text-base">
-                    <span>Grand total</span>
+                    <span>{isIncremental ? "This round" : "Grand total"}</span>
                     <span className="text-primary">{formatCurrency(bill.grandTotal, shop.currency)}</span>
                   </div>
                 </div>
               </div>
+
+              {isIncremental && sessionRunningBill && (
+                <div className="rounded-xl border bg-primary/5 px-4 py-3 flex items-center justify-between text-sm">
+                  <span className="font-medium">Table running total</span>
+                  <span className="font-bold text-primary">
+                    {formatCurrency(sessionRunningBill.grandTotal, shop.currency)}
+                  </span>
+                </div>
+              )}
+
+              {billAlreadyRequested && (
+                <div className="rounded-xl border border-amber-300 bg-amber-50 dark:bg-amber-900/20 dark:border-amber-800 px-4 py-3 text-sm text-amber-800 dark:text-amber-400">
+                  Bill already requested for this table — please check with staff before ordering more.
+                </div>
+              )}
 
               {(shop.upiId || shop.paymentQrImageUrl || shop.acceptCash || shop.bankAccountNumber) && (
                 <div className="rounded-xl border bg-card overflow-hidden">
@@ -595,7 +702,7 @@ export function OrderSheet({
               <Button
                 size="lg"
                 className="h-12 w-full bg-primary text-primary-foreground hover:bg-primary/90 shadow-sm shadow-primary/20"
-                disabled={placing}
+                disabled={placing || billAlreadyRequested}
                 onClick={handlePlaceOrder}
               >
                 {placing ? "Opening WhatsApp…" : "Place order via WhatsApp"}

@@ -1,13 +1,14 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import type { OrderEventOrder } from "@/lib/server/order-events";
+import type { OrderEventOrder, TableSessionEventPayload } from "@/lib/server/order-events";
 
-export type { OrderEventOrder };
+export type { OrderEventOrder, TableSessionEventPayload };
 
 type OrderEventHandlers = {
   onCreated?: (order: OrderEventOrder) => void;
   onUpdated?: (order: OrderEventOrder) => void;
+  onSessionUpdated?: (session: TableSessionEventPayload) => void;
 };
 
 const INITIAL_RETRY_MS = 1000;
@@ -18,9 +19,10 @@ const MAX_RETRY_MS = 15_000;
  * is mounted. Reconnects with backoff on drop — EventSource's own
  * auto-reconnect is disabled once we call close(), so backoff is manual.
  */
-export function useOrderEvents(endpoint: string, { onCreated, onUpdated }: OrderEventHandlers) {
+export function useOrderEvents(endpoint: string, { onCreated, onUpdated, onSessionUpdated }: OrderEventHandlers) {
   const onCreatedRef = useRef(onCreated);
   const onUpdatedRef = useRef(onUpdated);
+  const onSessionUpdatedRef = useRef(onSessionUpdated);
 
   // Runs after every render (no deps) so the refs never go stale, without
   // reconnecting the EventSource whenever the caller passes new inline
@@ -28,9 +30,15 @@ export function useOrderEvents(endpoint: string, { onCreated, onUpdated }: Order
   useEffect(() => {
     onCreatedRef.current = onCreated;
     onUpdatedRef.current = onUpdated;
+    onSessionUpdatedRef.current = onSessionUpdated;
   });
 
   useEffect(() => {
+    // Empty endpoint means "nothing to subscribe to yet" (e.g. a table
+    // session id that hasn't loaded) — skip connecting rather than opening
+    // an EventSource against the current page URL.
+    if (!endpoint) return;
+
     let source: EventSource | null = null;
     let retryTimer: ReturnType<typeof setTimeout> | null = null;
     let retryDelay = INITIAL_RETRY_MS;
@@ -39,6 +47,14 @@ export function useOrderEvents(endpoint: string, { onCreated, onUpdated }: Order
     function parseOrder(event: Event): OrderEventOrder | null {
       try {
         return JSON.parse((event as MessageEvent).data).order as OrderEventOrder;
+      } catch {
+        return null;
+      }
+    }
+
+    function parseSession(event: Event): TableSessionEventPayload | null {
+      try {
+        return JSON.parse((event as MessageEvent).data).session as TableSessionEventPayload;
       } catch {
         return null;
       }
@@ -60,6 +76,16 @@ export function useOrderEvents(endpoint: string, { onCreated, onUpdated }: Order
       source.addEventListener("order.updated", (event) => {
         const order = parseOrder(event);
         if (order) onUpdatedRef.current?.(order);
+      });
+
+      source.addEventListener("session.created", (event) => {
+        const session = parseSession(event);
+        if (session) onSessionUpdatedRef.current?.(session);
+      });
+
+      source.addEventListener("session.updated", (event) => {
+        const session = parseSession(event);
+        if (session) onSessionUpdatedRef.current?.(session);
       });
 
       source.onerror = () => {

@@ -66,8 +66,21 @@ export function CashCounter({
   });
 
   const filtered = useMemo(() => orders.filter((o) => matchesQuery(o, query)), [orders, query]);
+  // Table orders are settled as a whole tab via the Tables board's "Mark as
+  // Paid" (which also bulk-completes their tickets) — showing them here too
+  // would let staff double-book the same payment through two different flows.
   const ready = useMemo(
-    () => filtered.filter((o) => o.status === "READY").sort((a, b) => a.createdAt.localeCompare(b.createdAt)),
+    () =>
+      filtered
+        .filter((o) => o.status === "READY" && !o.tableSessionId)
+        .sort((a, b) => a.createdAt.localeCompare(b.createdAt)),
+    [filtered]
+  );
+  const readyTableOrders = useMemo(
+    () =>
+      filtered
+        .filter((o) => o.status === "READY" && o.tableSessionId)
+        .sort((a, b) => a.createdAt.localeCompare(b.createdAt)),
     [filtered]
   );
   const inProgress = useMemo(
@@ -172,6 +185,27 @@ export function CashCounter({
             </div>
           )}
         </section>
+
+        {readyTableOrders.length > 0 && (
+          <section className="space-y-2">
+            <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
+              Table orders ready — {readyTableOrders.length}
+            </h2>
+            <div className="rounded-xl border bg-card divide-y overflow-hidden">
+              {readyTableOrders.map((order) => (
+                <div key={order.id} className="flex items-center justify-between gap-3 px-4 py-2.5 text-sm">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <span className="font-mono text-xs text-muted-foreground shrink-0">{order.billNumber}</span>
+                    <span className="truncate">Table {order.tableNumber}</span>
+                  </div>
+                  <Link href="/admin/tables" className="shrink-0 text-xs text-primary hover:underline">
+                    Managed via Tables board
+                  </Link>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
 
         <section className="space-y-2">
           <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">

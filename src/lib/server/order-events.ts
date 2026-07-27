@@ -16,6 +16,7 @@ export type OrderEventOrder = {
   customerName: string | null;
   customerPhone: string | null;
   tableNumber: string | null;
+  tableSessionId: string | null;
   deliveryAddress: string | null;
   notes: string | null;
   subtotal: number;
@@ -36,9 +37,49 @@ export type OrderEventOrder = {
   items: OrderEventItem[];
 };
 
+export type TableSessionEventPayload = {
+  id: string;
+  shopId: string;
+  tableNumber: string;
+  status: string;
+  customerName: string | null;
+  billRequestedAt: string | null;
+  paidAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type OrderEvent =
   | { type: "order.created"; order: OrderEventOrder }
-  | { type: "order.updated"; order: OrderEventOrder };
+  | { type: "order.updated"; order: OrderEventOrder }
+  | { type: "session.created"; session: TableSessionEventPayload }
+  | { type: "session.updated"; session: TableSessionEventPayload };
+
+type RawSessionForEvent = {
+  id: string;
+  shopId: string;
+  tableNumber: string;
+  status: string;
+  customerName: string | null;
+  billRequestedAt: unknown;
+  paidAt: unknown;
+  createdAt: unknown;
+  updatedAt: unknown;
+};
+
+export function toTableSessionEvent(session: RawSessionForEvent): TableSessionEventPayload {
+  return {
+    id: session.id,
+    shopId: session.shopId,
+    tableNumber: session.tableNumber,
+    status: session.status,
+    customerName: session.customerName,
+    billRequestedAt: session.billRequestedAt ? (session.billRequestedAt as Date).toISOString() : null,
+    paidAt: session.paidAt ? (session.paidAt as Date).toISOString() : null,
+    createdAt: (session.createdAt as Date).toISOString(),
+    updatedAt: (session.updatedAt as Date).toISOString(),
+  };
+}
 
 type RawOrderForEvent = {
   id: string;
@@ -47,6 +88,7 @@ type RawOrderForEvent = {
   customerName: string | null;
   customerPhone: string | null;
   tableNumber: string | null;
+  tableSessionId: string | null;
   deliveryAddress: string | null;
   notes: string | null;
   subtotal: unknown;
@@ -83,6 +125,7 @@ export function toOrderEvent(order: RawOrderForEvent): OrderEventOrder {
     customerName: order.customerName,
     customerPhone: order.customerPhone,
     tableNumber: order.tableNumber,
+    tableSessionId: order.tableSessionId,
     deliveryAddress: order.deliveryAddress,
     notes: order.notes,
     subtotal: Number(order.subtotal),
