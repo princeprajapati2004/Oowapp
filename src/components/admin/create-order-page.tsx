@@ -489,7 +489,11 @@ export function CreateOrderPage({ currency, shopSlug }: { currency: string; shop
 
       const res = await api.post<{ billNumber: string; orderId: string }>("/api/admin/orders", body);
       toast.success(`Order ${res.billNumber} created — ${totalQty} item(s)`);
-      handleLeave({ skipDraftSave: true });
+      clearLocalStore(shopSlug, "draftOrder");
+      // Straight to the invoice preview (the bill-detail page) instead of
+      // back to the list — that page already renders the full invoice and
+      // now carries Print/Share/Complete actions for this exact moment.
+      router.push(`/admin/orders/${res.orderId}?created=1`);
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : "Failed to create order");
     } finally {

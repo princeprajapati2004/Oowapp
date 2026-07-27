@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import QRCode from "qrcode";
-import { ArrowLeft, Download, Tag, X, ReceiptText, QrCode as QrCodeIcon } from "lucide-react";
+import { ArrowLeft, Download, Tag, X, ReceiptText, QrCode as QrCodeIcon, Printer, Share2, CheckCircle2, PartyPopper } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -334,12 +334,16 @@ function DiscountSection({
 export function BillDetail({
   order: initialOrder,
   shop,
+  justCreated,
 }: {
   order: BillOrderData;
   shop: BillShopData;
+  justCreated?: boolean;
 }) {
   const [order, setOrder] = useState(initialOrder);
   const [downloadingPdf, setDownloadingPdf] = useState(false);
+  const [completingOrder, setCompletingOrder] = useState(false);
+  const [showCreatedBanner, setShowCreatedBanner] = useState(!!justCreated);
   const [trackingQr, setTrackingQr] = useState<string | null>(null);
 
   useEffect(() => {
@@ -357,6 +361,45 @@ export function BillDetail({
 
   function updateOrder(patch: Partial<BillOrderData>) {
     setOrder((prev) => ({ ...prev, ...patch }));
+  }
+
+  // Neither is a stored field — both are honestly derived from data that
+  // already exists: table vs. delivery address tells us the order type the
+  // same way create-order-page.tsx captured it, and paymentMethod already
+  // doubles as the paid/pending signal (see the header badge below).
+  const orderType =
+    shop.enableTableNumber && order.tableNumber ? "Dine-in" : order.deliveryAddress ? "Delivery" : "Takeaway";
+  const isPaid = !!order.paymentMethod && order.paymentMethod !== "PENDING";
+
+  async function handleCompleteOrder() {
+    setCompletingOrder(true);
+    try {
+      await api.patch(`/api/admin/orders/${order.id}`, { status: "COMPLETED" });
+      updateOrder({ status: "COMPLETED" });
+      toast.success("Order marked as completed");
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Failed to update order");
+    } finally {
+      setCompletingOrder(false);
+    }
+  }
+
+  async function handleShare() {
+    const summary = `Invoice ${order.billNumber} — ${shop.businessName}\nTotal: ${formatCurrency(finalTotal, shop.currency)}\nThank you for your business!`;
+    if (typeof navigator !== "undefined" && navigator.share) {
+      try {
+        await navigator.share({ title: `Invoice ${order.billNumber}`, text: summary });
+      } catch {
+        // user cancelled the native share sheet — not an error
+      }
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(summary);
+      toast.success("Invoice summary copied to clipboard");
+    } catch {
+      toast.error("Sharing isn't supported on this browser");
+    }
   }
 
   useOrderEvents("/api/admin/orders/stream", {
@@ -499,6 +542,11 @@ export function BillDetail({
         doc.text(`Table: ${order.tableNumber}`, rightX, y);
       }
       y += 12;
+      doc.text(`Order type: ${orderType}`, leftX, y);
+      if (order.paymentMethod) {
+        doc.text(isPaid ? "Paid" : "Payment pending", rightX, y);
+      }
+      y += 12;
       if (!shop.enableTableNumber && order.deliveryAddress) {
         doc.text(`Address: ${order.deliveryAddress}`, leftX, y);
         y += 12;
@@ -589,6 +637,13 @@ export function BillDetail({
 
       totalRow("Grand Total", formatCurrency(finalTotal, shop.currency), true, [20, 20, 20]);
 
+      if (order.paymentMethod) {
+        totalRow("Amount Paid", formatCurrency(isPaid ? finalTotal : 0, shop.currency));
+        if (!isPaid) {
+          totalRow("Balance Due", formatCurrency(finalTotal, shop.currency), false, [180, 120, 10]);
+        }
+      }
+
       y += 10;
       doc.setDrawColor(200, 200, 200);
       doc.line(margin, y, pageW - margin, y);
@@ -666,9 +721,25 @@ export function BillDetail({
   }
 
   return (
-    <div className="max-w-3xl space-y-6">
+    <div className="max-w-3xl space-y-6 print:max-w-none print:space-y-0">
+      {showCreatedBanner && (
+        <div className="flex items-center justify-between gap-3 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-emerald-800 print:hidden dark:border-emerald-900/50 dark:bg-emerald-900/20 dark:text-emerald-400">
+          <div className="flex items-center gap-2">
+            <PartyPopper className="size-5 shrink-0" />
+            <p className="text-sm font-medium">Order created — here&apos;s the invoice to review, print, or share.</p>
+          </div>
+          <button
+            onClick={() => setShowCreatedBanner(false)}
+            aria-label="Dismiss"
+            className="shrink-0 text-emerald-700 hover:text-emerald-900 dark:text-emerald-400 dark:hover:text-emerald-300"
+          >
+            <X className="size-4" />
+          </button>
+        </div>
+      )}
+
       {/* Header */}
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-3 print:hidden">
         <Button variant="ghost" size="icon" className="shrink-0" render={<Link href="/admin/orders" />}>
           <ArrowLeft className="size-4" />
         </Button>
@@ -702,20 +773,29 @@ export function BillDetail({
             {new Date(order.createdAt).toLocaleString()}
           </p>
         </div>
-        <Button
-          variant="outline"
-          size="sm"
-          className="h-9 gap-1.5 shrink-0"
-          disabled={downloadingPdf}
-          onClick={handleDownloadPdf}
-        >
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2 print:hidden">
+        <Button variant="outline" size="sm" className="h-9 gap-1.5" onClick={() => window.print()}>
+          <Printer className="size-4" /> Print
+        </Button>
+        <Button variant="outline" size="sm" className="h-9 gap-1.5" onClick={handleShare}>
+          <Share2 className="size-4" /> Share
+        </Button>
+        <Button variant="outline" size="sm" className="h-9 gap-1.5" disabled={downloadingPdf} onClick={handleDownloadPdf}>
           <Download className="size-4" />
           {downloadingPdf ? "Generating…" : "Download PDF"}
         </Button>
+        {order.status !== "COMPLETED" && order.status !== "CANCELLED" && (
+          <Button size="sm" className="h-9 gap-1.5" disabled={completingOrder} onClick={handleCompleteOrder}>
+            <CheckCircle2 className="size-4" />
+            {completingOrder ? "Completing…" : "Complete Order"}
+          </Button>
+        )}
       </div>
 
       {/* Bill Card */}
-      <div className="rounded-2xl border bg-card overflow-hidden">
+      <div className="rounded-2xl border bg-card overflow-hidden print:rounded-none print:border-0">
         {/* Business header */}
         <div className="px-5 py-5 text-center border-b bg-muted/30">
           {shop.logoUrl ? (
@@ -749,6 +829,10 @@ export function BillDetail({
           <div>
             <span className="text-muted-foreground text-xs uppercase tracking-wide">Date</span>
             <p className="font-medium">{new Date(order.createdAt).toLocaleDateString()}</p>
+          </div>
+          <div>
+            <span className="text-muted-foreground text-xs uppercase tracking-wide">Order type</span>
+            <p className="font-medium">{orderType}</p>
           </div>
           {order.customerName ? (
             <div>
@@ -818,6 +902,20 @@ export function BillDetail({
             <span>Grand Total</span>
             <span className="text-primary">{formatCurrency(finalTotal, shop.currency)}</span>
           </div>
+          {order.paymentMethod ? (
+            <>
+              <div className="flex justify-between text-muted-foreground">
+                <span>Amount paid</span>
+                <span>{formatCurrency(isPaid ? finalTotal : 0, shop.currency)}</span>
+              </div>
+              {!isPaid && (
+                <div className="flex justify-between font-medium text-amber-600 dark:text-amber-400">
+                  <span>Balance due</span>
+                  <span>{formatCurrency(finalTotal, shop.currency)}</span>
+                </div>
+              )}
+            </>
+          ) : null}
         </div>
 
         {/* Notes */}
@@ -829,6 +927,9 @@ export function BillDetail({
         ) : null}
       </div>
 
+      {/* Everything below is editing UI / supplementary info, not part of
+          the receipt itself — hidden when printing. */}
+      <div className="space-y-6 print:hidden">
       {/* Discount Section */}
       <DiscountSection
         order={order}
@@ -898,6 +999,7 @@ export function BillDetail({
       <Badge variant="secondary" className="text-xs">
         Order ID: {order.id}
       </Badge>
+      </div>
     </div>
   );
 }

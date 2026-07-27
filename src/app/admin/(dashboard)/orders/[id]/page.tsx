@@ -6,13 +6,16 @@ import { BillDetail } from "@/components/admin/bill-detail";
 
 export default async function BillDetailPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ created?: string }>;
 }) {
   const session = await getAdminSession();
   if (!session) redirect("/login");
 
   const { id } = await params;
+  const { created } = await searchParams;
   const shop = await getShopById(session.shopId);
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -44,6 +47,7 @@ export default async function BillDetailPage({
   return (
     <BillDetail
       order={serializedOrder}
+      justCreated={created === "1"}
       shop={{
         slug: shop.slug,
         businessName: shop.businessName,
