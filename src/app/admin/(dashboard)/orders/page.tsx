@@ -7,9 +7,14 @@ import { serializeOrders } from "@/lib/serialize";
 import { EmptyState } from "@/components/shared/empty-state";
 import { OrdersManager } from "@/components/admin/orders-manager";
 
-export default async function OrdersPage() {
+export default async function OrdersPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ q?: string }>;
+}) {
   const session = await getAdminSession();
   if (!session) redirect("/login");
+  const { q } = await searchParams;
 
   const shop = await getShopById(session.shopId);
 
@@ -39,6 +44,6 @@ export default async function OrdersPage() {
 
   return (
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    <OrdersManager initialOrders={serialized as any} currency={shop.currency} shopSlug={shop.slug} />
+    <OrdersManager initialOrders={serialized as any} currency={shop.currency} shopSlug={shop.slug} initialQuery={q} />
   );
 }

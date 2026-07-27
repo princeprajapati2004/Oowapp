@@ -1,9 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import Image from "next/image";
-import { ArrowLeft, Download, Tag, X, ReceiptText } from "lucide-react";
+import QRCode from "qrcode";
+import { ArrowLeft, Download, Tag, X, ReceiptText, QrCode as QrCodeIcon } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -44,6 +45,7 @@ export type BillOrderData = {
   grandTotal: number;
   taxBreakdown: TaxLine[];
   status: OrderStatus;
+  paymentMethod?: string | null;
   discountType: string | null;
   discountValue: number | null;
   discountReason: string | null;
@@ -53,6 +55,7 @@ export type BillOrderData = {
 };
 
 export type BillShopData = {
+  slug?: string;
   businessName: string;
   logoUrl: string | null;
   address: string | null;
@@ -337,6 +340,15 @@ export function BillDetail({
 }) {
   const [order, setOrder] = useState(initialOrder);
   const [downloadingPdf, setDownloadingPdf] = useState(false);
+  const [trackingQr, setTrackingQr] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!shop.slug) return;
+    const base = process.env.NEXT_PUBLIC_APP_URL || window.location.origin;
+    QRCode.toDataURL(`${base}/order/${shop.slug}/track/${order.id}`, { width: 200, margin: 1 })
+      .then(setTrackingQr)
+      .catch(() => {});
+  }, [shop.slug, order.id]);
 
   const taxBreakdown = order.taxBreakdown as TaxLine[];
   const base = order.subtotal + order.taxTotal;
@@ -671,6 +683,20 @@ export function BillDetail({
             >
               {STATUS_LABELS[order.status as OrderStatus] ?? order.status}
             </span>
+            <span
+              className={cn(
+                "inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium",
+                order.paymentMethod === "PENDING"
+                  ? "bg-amber-100 text-amber-700 border-amber-200 dark:bg-amber-900/30 dark:text-amber-400"
+                  : "bg-emerald-100 text-emerald-700 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-400"
+              )}
+            >
+              {order.paymentMethod === "PENDING"
+                ? "Payment pending"
+                : order.paymentMethod
+                  ? `Paid via ${order.paymentMethod.charAt(0) + order.paymentMethod.slice(1).toLowerCase()}`
+                  : "Payment recorded"}
+            </span>
           </div>
           <p className="text-sm text-muted-foreground">
             {new Date(order.createdAt).toLocaleString()}
@@ -839,9 +865,35 @@ export function BillDetail({
                 <span>Cash accepted</span>
               </div>
             )}
+            {shop.paymentQrImageUrl && (
+              <div className="flex items-center gap-3 rounded-lg bg-muted/40 px-3 py-2">
+                <Image
+                  src={shop.paymentQrImageUrl}
+                  alt="Scan to pay"
+                  width={64}
+                  height={64}
+                  unoptimized
+                  className="rounded-md border bg-white object-contain p-1"
+                />
+                <p className="text-xs text-muted-foreground">Scan to pay via {shop.businessName}</p>
+              </div>
+            )}
           </div>
         </div>
       ) : null}
+
+      {trackingQr && (
+        <div className="flex items-center gap-3 rounded-xl border bg-card px-4 py-3">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={trackingQr} alt="Order tracking QR code" className="size-16 rounded-md border bg-white p-1" />
+          <div className="text-xs text-muted-foreground">
+            <p className="flex items-center gap-1 font-medium text-foreground">
+              <QrCodeIcon className="size-3.5" /> Scan to track this order live
+            </p>
+            <p className="mt-0.5">Customers can follow status updates without asking at the counter.</p>
+          </div>
+        </div>
+      )}
 
       <Badge variant="secondary" className="text-xs">
         Order ID: {order.id}

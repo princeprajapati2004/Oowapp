@@ -45,6 +45,7 @@ export default async function BillDetailPage({
     <BillDetail
       order={serializedOrder}
       shop={{
+        slug: shop.slug,
         businessName: shop.businessName,
         logoUrl: shop.logoUrl,
         address: shop.address,

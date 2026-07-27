@@ -22,7 +22,7 @@ const createManualOrderSchema = z.object({
   tableNumber: z.string().trim().max(50).optional(),
   deliveryAddress: z.string().trim().max(300).optional(),
   notes: z.string().trim().max(500).optional(),
-  paymentMethod: z.enum(["CASH", "UPI", "CARD", "ONLINE", "PENDING"]).default("CASH"),
+  paymentMethod: z.enum(["CASH", "UPI", "CARD", "ONLINE", "WALLET", "SPLIT", "PENDING"]).default("CASH"),
   items: z.array(orderItemSchema).min(1, "At least one item is required"),
   discountType: z.enum(["PERCENTAGE", "FIXED"]).optional(),
   discountValue: z.number().positive().max(100_000).optional(),

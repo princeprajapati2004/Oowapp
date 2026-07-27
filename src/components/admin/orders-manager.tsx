@@ -4,11 +4,12 @@ import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { ClipboardList, ExternalLink } from "lucide-react";
+import { ClipboardList, ExternalLink, Search, X, Copy } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { EmptyState } from "@/components/shared/empty-state";
-import { CreateOrderDialog } from "@/components/admin/create-order-dialog";
+import { CreateOrderDialog, type DuplicateOrderData } from "@/components/admin/create-order-dialog";
 import { api, ApiError } from "@/lib/api-client";
 import { formatCurrency } from "@/lib/utils/currency";
 import { useOrderEvents, type OrderEventOrder } from "@/lib/hooks/use-order-events";
@@ -44,7 +45,7 @@ type OrderRow = {
   status?: OrderStatus;
   source?: string;
   paymentMethod?: string | null;
-  items: { id: string; name: string; quantity: number; price: number; lineTotal: number }[];
+  items: { id: string; name: string; quantity: number; price: number; lineTotal: number; productId?: string | null }[];
 };
 
 const STATUS_LABELS: Record<OrderStatus, string> = {
@@ -89,6 +90,7 @@ function toOrderRow(order: OrderEventOrder): OrderRow {
       quantity: item.quantity,
       price: item.price,
       lineTotal: item.lineTotal,
+      productId: item.productId,
     })),
   };
 }
@@ -97,17 +99,47 @@ export function OrdersManager({
   initialOrders,
   currency,
   shopSlug,
+  initialQuery,
 }: {
   initialOrders: OrderRow[];
   currency: string;
   shopSlug?: string;
+  initialQuery?: string;
 }) {
   const router = useRouter();
   const [orders, setOrders] = useState(initialOrders);
   const [statusFilter, setStatusFilter] = useState<OrderStatus | "ALL">("ALL");
   const [updatingId, setUpdatingId] = useState<string | null>(null);
+  // Deep-linked from the create-order dialog's "Order history" button
+  // (?q=<phone>) as well as manual typing here.
+  const [query, setQuery] = useState(initialQuery ?? "");
+  const [duplicateData, setDuplicateData] = useState<DuplicateOrderData | null>(null);
+  const [duplicateSignal, setDuplicateSignal] = useState(0);
 
-  const filtered = statusFilter === "ALL" ? orders : orders.filter((o) => (o.status ?? "PENDING") === statusFilter);
+  const filtered = orders
+    .filter((o) => statusFilter === "ALL" || (o.status ?? "PENDING") === statusFilter)
+    .filter((o) => {
+      const q = query.trim().toLowerCase();
+      if (!q) return true;
+      return (
+        (o.customerName ?? "").toLowerCase().includes(q) ||
+        (o.customerPhone ?? "").toLowerCase().includes(q) ||
+        o.billNumber.toLowerCase().includes(q)
+      );
+    });
+
+  function handleDuplicate(order: OrderRow) {
+    const items = order.items
+      .filter((item): item is typeof item & { productId: string } => !!item.productId)
+      .map((item) => ({ productId: item.productId, quantity: item.quantity }));
+    setDuplicateData({
+      items,
+      customerName: order.customerName ?? undefined,
+      customerPhone: order.customerPhone ?? undefined,
+      tableNumber: order.tableNumber ?? undefined,
+    });
+    setDuplicateSignal((n) => n + 1);
+  }
 
   useOrderEvents("/api/admin/orders/stream", {
     onCreated: (order) => {
@@ -143,7 +175,26 @@ export function OrdersManager({
           <h1 className="text-2xl font-bold tracking-tight">Orders</h1>
           <p className="text-muted-foreground">Last {orders.length} orders placed through your menu.</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="relative">
+            <Search className="absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search name, phone, bill no."
+              className="h-9 w-52 pl-8 pr-7"
+              aria-label="Search orders"
+            />
+            {query && (
+              <button
+                onClick={() => setQuery("")}
+                aria-label="Clear search"
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+              >
+                <X className="size-3.5" />
+              </button>
+            )}
+          </div>
           <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as OrderStatus | "ALL")}>
             <SelectTrigger className="w-36 h-9">
               <SelectValue>{statusFilter === "ALL" ? "All statuses" : STATUS_LABELS[statusFilter]}</SelectValue>
@@ -159,6 +210,8 @@ export function OrdersManager({
             currency={currency}
             shopSlug={shopSlug ?? ""}
             onCreated={() => router.refresh()}
+            initialData={duplicateData}
+            openSignal={duplicateSignal}
           />
         </div>
       </div>
@@ -167,7 +220,13 @@ export function OrdersManager({
         <EmptyState
           icon={ClipboardList}
           title="No orders found"
-          description={statusFilter === "ALL" ? "Orders placed by customers will show up here." : `No orders with status "${STATUS_LABELS[statusFilter]}".`}
+          description={
+            query.trim()
+              ? `No orders match "${query.trim()}".`
+              : statusFilter === "ALL"
+                ? "Orders placed by customers will show up here."
+                : `No orders with status "${STATUS_LABELS[statusFilter]}".`
+          }
         />
       ) : (
         <div className="overflow-x-auto rounded-xl border bg-card">
@@ -181,7 +240,7 @@ export function OrdersManager({
                 <TableHead>Status</TableHead>
                 <TableHead className="text-right">Total</TableHead>
                 <TableHead className="hidden lg:table-cell text-right">Date</TableHead>
-                <TableHead className="w-8" />
+                <TableHead className="w-16" />
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -247,15 +306,27 @@ export function OrdersManager({
                       </div>
                     </TableCell>
                     <TableCell className="p-1">
-                      <Button
-                        variant="ghost"
-                        size="icon-sm"
-                        className="text-muted-foreground hover:text-foreground"
-                        render={<Link href={`/admin/orders/${order.id}`} />}
-                        aria-label="View bill"
-                      >
-                        <ExternalLink className="size-3.5" />
-                      </Button>
+                      <div className="flex items-center justify-end gap-0.5">
+                        <Button
+                          variant="ghost"
+                          size="icon-sm"
+                          className="text-muted-foreground hover:text-foreground"
+                          onClick={() => handleDuplicate(order)}
+                          aria-label="Duplicate order"
+                          title="Duplicate order"
+                        >
+                          <Copy className="size-3.5" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon-sm"
+                          className="text-muted-foreground hover:text-foreground"
+                          render={<Link href={`/admin/orders/${order.id}`} />}
+                          aria-label="View bill"
+                        >
+                          <ExternalLink className="size-3.5" />
+                        </Button>
+                      </div>
                     </TableCell>
                   </TableRow>
                 );
