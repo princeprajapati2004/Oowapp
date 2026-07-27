@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -47,6 +47,36 @@ export function CustomerMenu({
   const [activeCategory, setActiveCategory] = useState<string>("all");
   const [orderSheetOpen, setOrderSheetOpen] = useState(false);
 
+  // Drives the sticky bottom panel's mount/unmount so it can slide+fade+scale
+  // out smoothly instead of vanishing the instant the cart empties — plain
+  // conditional rendering has no exit transition, so the panel stays mounted
+  // through a "leaving" phase (via the render-phase state adjustment below,
+  // https://react.dev/learn/you-might-not-need-an-effect#adjusting-some-state-when-a-prop-changes)
+  // before a single effect unmounts it once the exit animation finishes.
+  const hasItems = cart.totalQuantity > 0;
+  const [phase, setPhase] = useState<"hidden" | "visible" | "leaving">(hasItems ? "visible" : "hidden");
+  const [prevHasItems, setPrevHasItems] = useState(hasItems);
+  // "Add to Cart" the first time this session's cart fills up, "View Cart"
+  // once they've already opened the review sheet — resets once the cart
+  // empties so starting fresh reads "Add to Cart" again.
+  const [hasOpenedCart, setHasOpenedCart] = useState(false);
+
+  if (hasItems !== prevHasItems) {
+    setPrevHasItems(hasItems);
+    if (hasItems) {
+      setPhase("visible");
+    } else {
+      setPhase("leaving");
+      setHasOpenedCart(false);
+    }
+  }
+
+  useEffect(() => {
+    if (phase !== "leaving") return;
+    const timer = setTimeout(() => setPhase("hidden"), 260);
+    return () => clearTimeout(timer);
+  }, [phase]);
+
   const visibleProducts = useMemo(() => products.filter((p) => p.isVisible), [products]);
 
   const filtered = useMemo(() => {
@@ -66,6 +96,15 @@ export function CustomerMenu({
   );
 
   const subtotal = cart.items.reduce((sum, i) => sum + i.price * i.quantity, 0);
+
+  // Snapshot of the last non-empty cart so the panel keeps showing real
+  // numbers while it plays its exit animation, instead of flashing to 0.
+  const [displayTotals, setDisplayTotals] = useState({ qty: cart.totalQuantity, total: subtotal });
+  if (hasItems && (displayTotals.qty !== cart.totalQuantity || displayTotals.total !== subtotal)) {
+    setDisplayTotals({ qty: cart.totalQuantity, total: subtotal });
+  }
+  const displayQty = displayTotals.qty;
+  const displayTotal = displayTotals.total;
 
   // The cart only ever holds items with quantity > 0 (see use-cart.ts), so a
   // product not yet in the cart needs addItem (which creates the entry) for
@@ -88,7 +127,7 @@ export function CustomerMenu({
   }
 
   return (
-    <div className="min-h-screen bg-muted/20 pb-32" style={{ paddingBottom: 'calc(8rem + env(safe-area-inset-bottom))' }}>
+    <div className="min-h-screen bg-muted/20 pb-40" style={{ paddingBottom: 'calc(10rem + env(safe-area-inset-bottom))' }}>
       <header className="sticky top-0 z-30 border-b bg-background/98 backdrop-blur-sm">
         <div className="mx-auto flex max-w-3xl items-center gap-3 px-4 py-3">
           {shop.logoUrl ? (
@@ -192,21 +231,35 @@ export function CustomerMenu({
         )}
       </main>
 
-      {cart.totalQuantity > 0 ? (
+      {phase !== "hidden" ? (
         <div
-          className="fixed inset-x-0 z-40 flex justify-center px-4 animate-in slide-in-from-bottom-3 fade-in-0 duration-300"
+          className="fixed inset-x-0 z-40 flex justify-center px-4"
           style={{ bottom: 'calc(1rem + env(safe-area-inset-bottom))' }}
         >
-          <Button
-            onClick={() => setOrderSheetOpen(true)}
-            className="flex h-12 w-full max-w-sm items-center justify-between gap-3 bg-primary px-5 text-primary-foreground shadow-lg shadow-primary/25 hover:bg-primary/90 transition-all"
+          <div
+            className={cn(
+              "w-full max-w-sm rounded-2xl border bg-card p-3 shadow-lg shadow-black/10",
+              phase === "visible" && "animate-in slide-in-from-bottom-4 fade-in-0 zoom-in-95 duration-300",
+              phase === "leaving" && "animate-out slide-out-to-bottom-4 fade-out-0 zoom-out-95 duration-300"
+            )}
           >
-            <span className="flex items-center gap-2">
-              <ShoppingCart className="size-4" />
-              <span className="font-semibold">{cart.totalQuantity} item{cart.totalQuantity > 1 ? "s" : ""}</span>
-            </span>
-            <span className="font-semibold">{formatCurrency(subtotal, shop.currency)}</span>
-          </Button>
+            <div className="flex items-center justify-between px-1 pb-2">
+              <span className="flex items-center gap-1.5 text-sm font-medium">
+                <ShoppingCart className="size-4 text-primary" />
+                {displayQty} item{displayQty !== 1 ? "s" : ""}
+              </span>
+              <span className="text-sm font-semibold">{formatCurrency(displayTotal, shop.currency)} Total</span>
+            </div>
+            <Button
+              onClick={() => {
+                setOrderSheetOpen(true);
+                setHasOpenedCart(true);
+              }}
+              className="h-12 w-full justify-center bg-primary text-primary-foreground shadow-none hover:bg-primary/90"
+            >
+              {hasOpenedCart ? "View Cart" : "Add to Cart"} • {formatCurrency(displayTotal, shop.currency)}
+            </Button>
+          </div>
         </div>
       ) : null}
 
