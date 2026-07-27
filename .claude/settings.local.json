@@ -20,7 +20,17 @@
       "Bash(node test-tracking.js)",
       "Bash(npx tsx *)",
       "Bash(curl -sf http://localhost:3000)",
-      "Bash(node test-kitchen-counter.js)"
+      "Bash(node test-kitchen-counter.js)",
+      "Bash(npm run *)",
+      "Bash(break)",
+      "Bash(node test-inline-cart.js)",
+      "Bash(curl -sf http://localhost:3000/admin/signup)",
+      "Bash(node \"C:\\\\Users\\\\user\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\C--Users-user-Desktop-Oowapp\\\\db0d6771-5c65-46f8-9796-7ea35e9f1788\\\\scratchpad\\\\pw\\\\test-postmerge-smoke.js\")",
+      "Bash(taskkill *)",
+      "Bash(node \"C:\\\\Users\\\\user\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\C--Users-user-Desktop-Oowapp\\\\db0d6771-5c65-46f8-9796-7ea35e9f1788\\\\scratchpad\\\\pw\\\\test-create-order-features.js\")",
+      "Bash(node \"C:\\\\Users\\\\user\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\C--Users-user-Desktop-Oowapp\\\\db0d6771-5c65-46f8-9796-7ea35e9f1788\\\\scratchpad\\\\pw\\\\test-measure-dialog.js\")",
+      "Bash(node \"C:\\\\Users\\\\user\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\C--Users-user-Desktop-Oowapp\\\\db0d6771-5c65-46f8-9796-7ea35e9f1788\\\\scratchpad\\\\pw\\\\test-mobile-fab.js\")",
+      "Bash(powershell -Command \"Get-NetTCPConnection -LocalPort 3000 -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess\" 2>&1)"
     ]
   }
 }
