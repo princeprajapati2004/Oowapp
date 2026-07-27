@@ -1,29 +1,31 @@
 "use client";
 
 import Image from "next/image";
-import { ImageOff, Plus } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
+import { ImageOff } from "lucide-react";
+import { QtyStepper } from "@/components/shared/qty-stepper";
 import { formatCurrency } from "@/lib/utils/currency";
 import { cn } from "@/lib/utils";
 import type { CustomerProduct } from "@/lib/types/customer";
+
+// No artificial ceiling on quantity — QtyStepper defaults to max=99, which
+// would silently cap orders; override it the same way order-tracker.tsx does.
+const MAX_QUANTITY = 100_000;
 
 export function ProductCard({
   product,
   currency,
   quantityInCart,
-  onOpen,
+  onQuantityChange,
 }: {
   product: CustomerProduct;
   currency: string;
   quantityInCart: number;
-  onOpen: () => void;
+  onQuantityChange: (quantity: number) => void;
 }) {
   return (
-    <button
-      type="button"
-      onClick={onOpen}
+    <div
       className={cn(
-        "group relative flex flex-col overflow-hidden rounded-2xl border bg-card text-left shadow-sm transition-all duration-200 hover:shadow-md hover:-translate-y-0.5 active:translate-y-0 active:shadow-sm",
+        "flex flex-col overflow-hidden rounded-2xl border bg-card shadow-sm",
         !product.isAvailable && "opacity-60"
       )}
     >
@@ -33,7 +35,7 @@ export function ProductCard({
             src={product.imageUrl}
             alt={product.name}
             fill
-            className="object-cover transition-transform duration-300 group-hover:scale-105"
+            className="object-cover"
             unoptimized
           />
         ) : (
@@ -58,18 +60,6 @@ export function ProductCard({
           </span>
         )}
 
-        {quantityInCart > 0 ? (
-          <div className="absolute right-2 top-2 flex size-6 items-center justify-center rounded-full bg-primary text-primary-foreground text-xs font-bold shadow-sm">
-            {quantityInCart}
-          </div>
-        ) : (
-          product.isAvailable && (
-            <div className="absolute right-2 bottom-2 flex size-7 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-md opacity-0 translate-y-1 transition-all duration-200 group-hover:opacity-100 group-hover:translate-y-0">
-              <Plus className="size-3.5" />
-            </div>
-          )
-        )}
-
         {!product.isAvailable && (
           <div className="absolute inset-0 flex items-end justify-center bg-background/40 pb-2">
             <span className="rounded-full bg-destructive/90 px-2.5 py-0.5 text-xs font-medium text-white">
@@ -84,11 +74,22 @@ export function ProductCard({
         {product.description ? (
           <p className="line-clamp-2 text-xs text-muted-foreground leading-relaxed">{product.description}</p>
         ) : null}
-        <div className="mt-auto flex items-center justify-between pt-1.5">
-          <span className="text-sm font-bold">{formatCurrency(product.price, currency)}</span>
-          {product.unit ? <span className="text-xs text-muted-foreground">/{product.unit}</span> : null}
+        <div className="mt-auto flex items-center justify-between gap-2 pt-1.5">
+          <div className="flex items-baseline gap-1">
+            <span className="text-sm font-bold">{formatCurrency(product.price, currency)}</span>
+            {product.unit ? <span className="text-xs text-muted-foreground">/{product.unit}</span> : null}
+          </div>
+          {product.isAvailable && (
+            <QtyStepper
+              size="sm"
+              value={quantityInCart}
+              min={0}
+              max={MAX_QUANTITY}
+              onChange={onQuantityChange}
+            />
+          )}
         </div>
       </div>
-    </button>
+    </div>
   );
 }

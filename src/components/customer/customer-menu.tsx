@@ -11,7 +11,6 @@ import { EmptyState } from "@/components/shared/empty-state";
 import { ThemeToggle } from "@/components/shared/theme-toggle";
 import { InstallApp } from "@/components/shared/install-app";
 import { ProductCard } from "@/components/customer/product-card";
-import { ItemDetailSheet } from "@/components/customer/item-detail-sheet";
 import { OrderSheet } from "@/components/customer/order-sheet";
 import { useCart } from "@/lib/hooks/use-cart";
 import { formatCurrency } from "@/lib/utils/currency";
@@ -43,7 +42,6 @@ export function CustomerMenu({
   const cart = useCart(shop.slug);
   const [search, setSearch] = useState("");
   const [activeCategory, setActiveCategory] = useState<string>("all");
-  const [selectedProduct, setSelectedProduct] = useState<CustomerProduct | null>(null);
   const [orderSheetOpen, setOrderSheetOpen] = useState(false);
 
   const visibleProducts = useMemo(() => products.filter((p) => p.isVisible), [products]);
@@ -66,18 +64,19 @@ export function CustomerMenu({
 
   const subtotal = cart.items.reduce((sum, i) => sum + i.price * i.quantity, 0);
 
-  function handleAddToCart(quantity: number) {
-    if (!selectedProduct) return;
-    cart.addItem(
-      {
-        productId: selectedProduct.id,
-        name: selectedProduct.name,
-        price: selectedProduct.price,
-        categoryId: selectedProduct.categoryId,
-      },
-      quantity
-    );
-    setSelectedProduct(null);
+  // The cart only ever holds items with quantity > 0 (see use-cart.ts), so a
+  // product not yet in the cart needs addItem (which creates the entry) for
+  // its first "+"; every change after that is a plain setQuantity, which
+  // already removes the item once quantity drops to 0.
+  function handleQuantityChange(product: CustomerProduct, quantity: number) {
+    if (cart.quantityOf(product.id) === 0 && quantity > 0) {
+      cart.addItem(
+        { productId: product.id, name: product.name, price: product.price, categoryId: product.categoryId },
+        quantity
+      );
+    } else {
+      cart.setQuantity(product.id, quantity);
+    }
   }
 
   async function handleLogout() {
@@ -183,7 +182,7 @@ export function CustomerMenu({
                 product={product}
                 currency={shop.currency}
                 quantityInCart={cart.quantityOf(product.id)}
-                onOpen={() => setSelectedProduct(product)}
+                onQuantityChange={(quantity) => handleQuantityChange(product, quantity)}
               />
             ))}
           </div>
@@ -207,14 +206,6 @@ export function CustomerMenu({
           </Button>
         </div>
       ) : null}
-
-      <ItemDetailSheet
-        product={selectedProduct}
-        currency={shop.currency}
-        initialQuantity={selectedProduct ? cart.quantityOf(selectedProduct.id) : 1}
-        onClose={() => setSelectedProduct(null)}
-        onAddToCart={handleAddToCart}
-      />
 
       <OrderSheet
         open={orderSheetOpen}
