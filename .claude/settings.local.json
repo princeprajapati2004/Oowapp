@@ -30,7 +30,17 @@
       "Bash(node \"C:\\\\Users\\\\user\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\C--Users-user-Desktop-Oowapp\\\\db0d6771-5c65-46f8-9796-7ea35e9f1788\\\\scratchpad\\\\pw\\\\test-create-order-features.js\")",
       "Bash(node \"C:\\\\Users\\\\user\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\C--Users-user-Desktop-Oowapp\\\\db0d6771-5c65-46f8-9796-7ea35e9f1788\\\\scratchpad\\\\pw\\\\test-measure-dialog.js\")",
       "Bash(node \"C:\\\\Users\\\\user\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\C--Users-user-Desktop-Oowapp\\\\db0d6771-5c65-46f8-9796-7ea35e9f1788\\\\scratchpad\\\\pw\\\\test-mobile-fab.js\")",
-      "Bash(powershell -Command \"Get-NetTCPConnection -LocalPort 3000 -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess\" 2>&1)"
+      "Bash(powershell -Command \"Get-NetTCPConnection -LocalPort 3000 -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess\" 2>&1)",
+      "Bash(grep -n \"totalQuantity\\\\|items?\\\\\\\\\\\\\\\\b\\\\|OrderSheet\\\\|sticky\\\\|fixed bottom\\\\|bottom-0\" src/components/customer/customer-menu.tsx)",
+      "Bash(echo \"EXIT=$?\")",
+      "Bash(echo \"TSC_EXIT=$?\")",
+      "Bash(node \"C:\\\\Users\\\\user\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\C--Users-user-Desktop-Oowapp\\\\db0d6771-5c65-46f8-9796-7ea35e9f1788\\\\scratchpad\\\\pw\\\\test-sticky-cart-panel.js\")",
+      "Bash(node \"C:\\\\Users\\\\user\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\C--Users-user-Desktop-Oowapp\\\\db0d6771-5c65-46f8-9796-7ea35e9f1788\\\\scratchpad\\\\pw\\\\test-exit-animation-timing.js\")",
+      "Bash(echo \"TSC=$?\")",
+      "Bash(node \"C:\\\\Users\\\\user\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\C--Users-user-Desktop-Oowapp\\\\db0d6771-5c65-46f8-9796-7ea35e9f1788\\\\scratchpad\\\\pw\\\\test-manual-order-page.js\")",
+      "Bash(node \"C:\\\\Users\\\\user\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\C--Users-user-Desktop-Oowapp\\\\db0d6771-5c65-46f8-9796-7ea35e9f1788\\\\scratchpad\\\\pw\\\\test-subscription-move.js\")",
+      "Bash(node \"C:\\\\Users\\\\user\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\C--Users-user-Desktop-Oowapp\\\\db0d6771-5c65-46f8-9796-7ea35e9f1788\\\\scratchpad\\\\pw\\\\test-id-display.js\")",
+      "Bash(node \"C:\\\\Users\\\\user\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\C--Users-user-Desktop-Oowapp\\\\db0d6771-5c65-46f8-9796-7ea35e9f1788\\\\scratchpad\\\\pw\\\\test-tooltip-isolated.js\")"
     ]
   }
 }
