@@ -9,6 +9,7 @@ import {
   BellRing,
   ChefHat,
   ClipboardCheck,
+  Clock,
   Crown,
   Flame,
   MoreVertical,
@@ -70,15 +71,6 @@ const STATUS_BADGE: Record<KitchenStatus, string> = {
   READY: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400",
 };
 
-// Elapsed-time urgency bands, independent of status color — a "New" order
-// sitting for 20 minutes is still red-bordered even though its badge is amber.
-const AGE_BAND_CLASS: Record<"green" | "yellow" | "orange" | "red", string> = {
-  green: "border-border bg-card",
-  yellow: "border-amber-300 dark:border-amber-800 bg-amber-50/60 dark:bg-amber-900/10",
-  orange: "border-orange-400 dark:border-orange-700 bg-orange-50/70 dark:bg-orange-900/15",
-  red: "border-red-400 dark:border-red-700 bg-red-50/70 dark:bg-red-900/15",
-};
-
 const DELAYED_MINUTES = 15;
 const LARGE_ORDER_QTY = 8;
 const SOUND_PREF_KEY = "kds-sound-enabled";
@@ -106,13 +98,6 @@ function orderType(order: OrderEventOrder): OrderType {
 
 function isLargeOrder(order: OrderEventOrder) {
   return order.items.reduce((sum, item) => sum + item.quantity, 0) >= LARGE_ORDER_QTY;
-}
-
-function ageBand(minutes: number): "green" | "yellow" | "orange" | "red" {
-  if (minutes < 5) return "green";
-  if (minutes < 10) return "yellow";
-  if (minutes < 20) return "orange";
-  return "red";
 }
 
 function formatElapsed(ms: number) {
@@ -188,7 +173,7 @@ function playChime(ctx: AudioContext) {
 
 function StatTile({ label, value }: { label: string; value: number | string }) {
   return (
-    <div className="rounded-xl border bg-card px-3 py-2.5">
+    <div className="rounded-xl border border-border bg-card px-3 py-2.5 shadow-sm">
       <p className="text-2xl font-bold tabular-nums">{value}</p>
       <p className="text-xs font-medium text-muted-foreground">{label}</p>
     </div>
@@ -217,19 +202,13 @@ const OrderCard = memo(function OrderCard({
   const isReady = status === "READY";
   const elapsedMs = now - new Date(order.createdAt).getTime();
   const minutes = elapsedMs / 60_000;
-  const band = ageBand(minutes);
   const type = orderType(order);
   const TypeIcon = ORDER_TYPE_ICON[type];
   const large = isLargeOrder(order);
   const delayed = !isReady && minutes >= DELAYED_MINUTES;
 
   return (
-    <div
-      className={cn(
-        "animate-in fade-in slide-in-from-top-2 duration-300 space-y-3 rounded-2xl border-2 p-4 transition-colors",
-        isReady ? "border-emerald-300 bg-emerald-50/50 dark:border-emerald-800 dark:bg-emerald-900/10" : AGE_BAND_CLASS[band]
-      )}
-    >
+    <div className="animate-in fade-in slide-in-from-top-2 duration-300 space-y-3 rounded-2xl border border-border bg-card p-4 shadow-sm transition-shadow hover:shadow-md">
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0 space-y-0.5">
           <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
@@ -286,7 +265,7 @@ const OrderCard = memo(function OrderCard({
             </Badge>
           )}
           {large && <Badge variant="outline">Large order</Badge>}
-          {delayed && <Badge variant="destructive">Delayed</Badge>}
+          {delayed && <Badge variant="destructive">Delayed · {Math.floor(minutes)}m</Badge>}
         </div>
       )}
 
@@ -294,13 +273,8 @@ const OrderCard = memo(function OrderCard({
         <span className="text-sm font-medium text-muted-foreground">
           {new Date(order.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
         </span>
-        <div className="flex items-center gap-1.5">
-          {band === "red" && !isReady && (
-            <span className="relative flex size-2">
-              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-75" />
-              <span className="relative inline-flex size-2 rounded-full bg-red-500" />
-            </span>
-          )}
+        <div className="flex items-center gap-1.5 text-foreground">
+          <Clock className="size-4 text-muted-foreground" />
           <span className="text-lg font-bold tabular-nums">{formatElapsed(elapsedMs)}</span>
         </div>
       </div>
@@ -327,14 +301,19 @@ const OrderCard = memo(function OrderCard({
             Sent to counter
           </div>
         ) : (
-          <Button size="lg" className="h-11 flex-1 text-base" disabled={updating} onClick={() => onAdvance(order)}>
+          <Button
+            size="lg"
+            className="h-11 flex-1 text-base transition-transform active:scale-[0.98]"
+            disabled={updating}
+            onClick={() => onAdvance(order)}
+          >
             {updating ? "Updating…" : ACTION_LABEL[status]}
           </Button>
         )}
         <Button
           size="lg"
           variant="outline"
-          className="h-11 w-11 shrink-0 px-0"
+          className="h-11 w-11 shrink-0 px-0 transition-transform active:scale-[0.98]"
           onClick={() => printTicket(order)}
           aria-label="Print kitchen ticket"
         >
@@ -511,7 +490,7 @@ export function KitchenDisplay({
 
   return (
     <div className="min-h-screen bg-muted/10">
-      <header className="sticky top-0 z-10 flex flex-wrap items-center justify-between gap-3 border-b bg-background px-4 py-3 sm:px-6">
+      <header className="sticky top-0 z-10 flex flex-wrap items-center justify-between gap-3 border-b bg-background px-4 py-3 shadow-sm sm:px-6">
         <div className="flex items-center gap-2.5">
           <Link
             href="/admin/orders"
@@ -600,7 +579,7 @@ export function KitchenDisplay({
             />
           </div>
         ) : statusFilter === "COMPLETED" ? (
-          <div className="divide-y overflow-hidden rounded-xl border bg-card">
+          <div className="divide-y overflow-hidden rounded-xl border border-border bg-card shadow-sm">
             {visibleOrders.map((order) => (
               <div key={order.id} className="flex items-center justify-between gap-3 px-4 py-2.5 text-sm">
                 <div className="flex min-w-0 items-center gap-3">
