@@ -25,11 +25,28 @@ export default async function KitchenPage() {
     );
   }
 
-  const orders = await db.order.findMany({
-    where: { shopId: session.shopId, status: { in: ["PENDING", "CONFIRMED", "PREPARING"] } },
-    orderBy: { createdAt: "asc" },
-    include: { items: true },
-  });
+  const startOfToday = new Date();
+  startOfToday.setHours(0, 0, 0, 0);
 
-  return <KitchenDisplay initialOrders={orders.map(toOrderEvent)} shopName={shop.businessName} />;
+  const [orders, completedToday] = await Promise.all([
+    db.order.findMany({
+      where: { shopId: session.shopId, status: { in: ["PENDING", "CONFIRMED", "PREPARING", "READY"] } },
+      orderBy: { createdAt: "asc" },
+      include: { items: true },
+    }),
+    db.order.findMany({
+      where: { shopId: session.shopId, status: "COMPLETED", createdAt: { gte: startOfToday } },
+      orderBy: { createdAt: "desc" },
+      include: { items: true },
+      take: 100,
+    }),
+  ]);
+
+  return (
+    <KitchenDisplay
+      initialOrders={orders.map(toOrderEvent)}
+      completedToday={completedToday.map(toOrderEvent)}
+      shopName={shop.businessName}
+    />
+  );
 }

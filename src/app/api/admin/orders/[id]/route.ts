@@ -17,6 +17,7 @@ const updateOrderSchema = z.discriminatedUnion("action", [
     discountReason: z.string().trim().max(200).optional(),
   }),
   z.object({ action: z.literal("remove_discount") }),
+  z.object({ action: z.literal("priority"), priorityFlag: z.enum(["VIP", "RUSH"]).nullable() }),
 ]);
 
 export async function GET(
@@ -81,14 +82,16 @@ export async function PATCH(
           discountReason: parsed.discountReason ?? null,
           discountedTotal: Math.max(0, base - discount),
         };
-      } else {
-        // remove_discount
+      } else if (parsed.action === "remove_discount") {
         data = {
           discountType: null,
           discountValue: null,
           discountReason: null,
           discountedTotal: null,
         };
+      } else {
+        // priority
+        data = { priorityFlag: parsed.priorityFlag };
       }
     } else {
       // Legacy format: { status }

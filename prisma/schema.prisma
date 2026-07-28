@@ -331,6 +331,9 @@ model Order {
   // Client-generated idempotency key — dedupes retries/double WhatsApp sends
   // (see resolveOrCreateSession / POST /api/orders).
   clientRequestId String?
+  // Manual priority marker for Kitchen Display badges ("VIP" | "RUSH"), set by
+  // staff via a quick toggle — not derived from any other data. Null = no marker.
+  priorityFlag    String?
   createdAt       DateTime    @default(now())
 
   items OrderItem[]

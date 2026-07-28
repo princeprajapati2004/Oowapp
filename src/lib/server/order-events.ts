@@ -32,6 +32,8 @@ export type OrderEventOrder = {
   discountValue: number | null;
   discountReason: string | null;
   discountedTotal: number | null;
+  // Manual Kitchen Display marker ("VIP" | "RUSH"), set via PATCH .../orders/[id] {action:"priority"}.
+  priorityFlag: string | null;
   createdAt: string;
   taxBreakdown: unknown;
   items: OrderEventItem[];
@@ -101,6 +103,7 @@ type RawOrderForEvent = {
   discountValue: unknown;
   discountReason: string | null;
   discountedTotal: unknown;
+  priorityFlag: string | null;
   createdAt: unknown;
   taxBreakdown: unknown;
   items: {
@@ -138,6 +141,7 @@ export function toOrderEvent(order: RawOrderForEvent): OrderEventOrder {
     discountValue: order.discountValue == null ? null : Number(order.discountValue),
     discountReason: order.discountReason,
     discountedTotal: order.discountedTotal == null ? null : Number(order.discountedTotal),
+    priorityFlag: order.priorityFlag ?? null,
     createdAt: (order.createdAt as Date).toISOString(),
     taxBreakdown: order.taxBreakdown,
     items: order.items.map((item) => ({
