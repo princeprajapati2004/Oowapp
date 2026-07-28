@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { getPublicShopBundle } from "@/lib/services/shop";
 import { serializeProducts, serializeTaxes } from "@/lib/serialize";
 import { getCustomerSession } from "@/lib/customer-session";
+import { getVerifiedPhone } from "@/lib/phone-verify-auth";
 import { db } from "@/lib/db";
 import { CustomerMenu } from "@/components/customer/customer-menu";
 import type { ActiveSession } from "@/lib/types/customer";
@@ -35,6 +36,10 @@ export default async function OrderPage({
       select: { name: true, phone: true },
     });
   }
+
+  // A phone verified via OTP earlier in the same sitting (see phone-verification.tsx) —
+  // separate from the password-based Customer account above, so guests never need one.
+  const verifiedPhone = shopRow ? await getVerifiedPhone(shopRow.id) : null;
 
   // A QR-scanned table with an already-active session gets its prior orders
   // shown as a locked "already on this table" panel and its next submission
@@ -80,6 +85,7 @@ export default async function OrderPage({
       prefilledTable={prefilledTable}
       customer={customer}
       activeSession={activeSession}
+      verifiedPhone={verifiedPhone}
     />
   );
 }

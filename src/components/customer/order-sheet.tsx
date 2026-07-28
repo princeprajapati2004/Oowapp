@@ -6,7 +6,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import Image from "next/image";
 import Link from "next/link";
 import { toast } from "sonner";
-import { Trash2, ArrowLeft, ShoppingBag, Download, CircleCheck, MapPinned, History } from "lucide-react";
+import { Trash2, ArrowLeft, ShoppingBag, Download, CircleCheck, MapPinned, History, Table2 } from "lucide-react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetFooter } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,6 +14,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { QtyStepper } from "@/components/shared/qty-stepper";
 import { FormRow } from "@/components/shared/form-row";
 import { EmptyState } from "@/components/shared/empty-state";
+import { PhoneVerification } from "@/components/customer/phone-verification";
 import { formatCurrency } from "@/lib/utils/currency";
 import { calculateBill, mergeLineItems } from "@/lib/services/billing";
 import {
@@ -42,6 +43,7 @@ export function OrderSheet({
   prefilledTable,
   customer,
   activeSession,
+  verifiedPhone,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -54,6 +56,7 @@ export function OrderSheet({
   prefilledTable?: string;
   customer?: { name: string; phone: string } | null;
   activeSession?: ActiveSession;
+  verifiedPhone?: string | null;
 }) {
   const [step, setStep] = useState<Step>("cart");
   const [checkoutValues, setCheckoutValues] = useState<CheckoutInput | null>(null);
@@ -87,21 +90,35 @@ export function OrderSheet({
       buildCheckoutSchema({
         requireCustomerName: shop.requireCustomerName,
         requirePhone: shop.requirePhone,
-        // Table number is only required when the feature is enabled AND there's no prefilled value.
-        requireTableNumber: shop.enableTableNumber && shop.requireTableNumber && !prefilledTable,
+        // Customers never type a table number themselves (see the read-only
+        // table display below) — nothing to require here.
+        requireTableNumber: false,
         requireDeliveryAddress: shop.requireDeliveryAddress,
       }),
-    [shop, prefilledTable]
+    [shop]
   );
 
   const {
     register,
     handleSubmit,
+    watch,
+    setValue,
     formState: { errors },
   } = useForm<CheckoutInput>({
     resolver: zodResolver(schema),
-    defaultValues: { customerName: customer?.name, customerPhone: customer?.phone },
+    defaultValues: {
+      customerName: customer?.name,
+      customerPhone: customer?.phone ?? verifiedPhone ?? undefined,
+    },
   });
+
+  const phoneValue = watch("customerPhone") ?? "";
+  // A logged-in Customer account is already a stronger guarantee than phone
+  // OTP, and a phone that matches an existing OTP-verified cookie doesn't
+  // need re-verifying this sitting — see phone-verification.tsx.
+  const [phoneVerified, setPhoneVerified] = useState(
+    !!customer || (!!verifiedPhone && verifiedPhone === phoneValue)
+  );
 
   const bill = useMemo(
     () =>
@@ -152,6 +169,10 @@ export function OrderSheet({
   const billAlreadyRequested = session?.status === "AWAITING_PAYMENT";
 
   function handleGenerateBill(values: CheckoutInput) {
+    if (shop.requirePhone && !phoneVerified) {
+      toast.error("Please verify your phone number before continuing.");
+      return;
+    }
     setCheckoutValues({
       ...values,
       tableNumber: shop.enableTableNumber
@@ -507,33 +528,30 @@ export function OrderSheet({
               </button>
               <SheetTitle className="text-lg">Your details</SheetTitle>
             </SheetHeader>
-            <form onSubmit={handleSubmit(handleGenerateBill)} className="flex-1 overflow-y-auto px-5 pb-4 space-y-4 pt-4">
+            <form onSubmit={handleSubmit(handleGenerateBill)} className="flex-1 overflow-y-auto px-5 pb-4 space-y-5 pt-4">
               {shop.requireCustomerName && (
                 <FormRow label="Name" htmlFor="customerName" required error={errors.customerName}>
                   <Input id="customerName" placeholder="Your name" {...register("customerName")} />
                 </FormRow>
               )}
               {shop.requirePhone && (
-                <FormRow label="Phone number" htmlFor="customerPhone" required error={errors.customerPhone}>
-                  <Input id="customerPhone" inputMode="numeric" placeholder="Your phone number" {...register("customerPhone")} />
-                </FormRow>
+                <PhoneVerification
+                  shopSlug={shop.slug}
+                  phone={phoneValue}
+                  onPhoneChange={(value) => setValue("customerPhone", value, { shouldValidate: true })}
+                  verified={phoneVerified}
+                  onVerifiedChange={setPhoneVerified}
+                  error={errors.customerPhone?.message}
+                />
               )}
-              {shop.enableTableNumber && (
-                prefilledTable ? (
-                  <div className="flex items-center justify-between rounded-xl bg-muted/50 px-4 py-2.5 text-sm">
-                    <span className="text-muted-foreground font-medium">Table</span>
-                    <span className="font-semibold">{prefilledTable}</span>
+              {shop.enableTableNumber && prefilledTable && (
+                <div className="flex items-center gap-2.5 rounded-xl bg-muted/50 px-4 py-3">
+                  <Table2 className="size-4 shrink-0 text-muted-foreground" />
+                  <div className="min-w-0">
+                    <p className="text-xs font-medium text-muted-foreground">Table</p>
+                    <p className="truncate text-sm font-semibold">{prefilledTable}</p>
                   </div>
-                ) : (
-                  <FormRow
-                    label="Table number"
-                    htmlFor="tableNumber"
-                    required={shop.requireTableNumber}
-                    error={errors.tableNumber}
-                  >
-                    <Input id="tableNumber" placeholder="e.g. Table 5" {...register("tableNumber")} />
-                  </FormRow>
-                )
+                </div>
               )}
               {shop.requireDeliveryAddress && (
                 <FormRow
@@ -556,7 +574,7 @@ export function OrderSheet({
                 size="lg"
                 className="h-12 w-full bg-primary text-primary-foreground hover:bg-primary/90 shadow-sm shadow-primary/20"
               >
-                Review bill
+                Review Your Order
               </Button>
             </form>
           </>

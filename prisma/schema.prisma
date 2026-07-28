@@ -204,6 +204,7 @@ model Shop {
   subscriptions      Subscription[]
   pushSubscriptions  PushSubscription[]
   featurePermissions BusinessFeaturePermission[]
+  phoneOtps          PhoneOtp[]
 
   @@map("shops")
 }
@@ -376,6 +377,25 @@ model TableSession {
   @@index([shopId])
   @@index([shopId, tableNumber])
   @@map("table_sessions")
+}
+
+// Phone verification for guest checkout (Customer Ordering module). Codes are
+// bcrypt-hashed — never stored in plaintext — with a short expiry and a
+// capped attempt count. Not related to the password-based Customer login
+// system; this only gates the checkout phone field itself.
+model PhoneOtp {
+  id         String    @id @default(cuid())
+  shopId     String
+  shop       Shop      @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  phone      String
+  codeHash   String
+  attempts   Int       @default(0)
+  expiresAt  DateTime
+  verifiedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([shopId, phone])
+  @@map("phone_otps")
 }
 
 model OrderItem {

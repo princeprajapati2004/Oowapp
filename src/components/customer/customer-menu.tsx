@@ -32,6 +32,7 @@ export function CustomerMenu({
   prefilledTable,
   customer,
   activeSession,
+  verifiedPhone,
 }: {
   shop: CustomerShop;
   categories: CustomerCategory[];
@@ -40,6 +41,7 @@ export function CustomerMenu({
   prefilledTable?: string;
   customer?: { name: string; phone: string } | null;
   activeSession?: ActiveSession;
+  verifiedPhone?: string | null;
 }) {
   const router = useRouter();
   const cart = useCart(shop.slug);
@@ -277,6 +279,7 @@ export function CustomerMenu({
         prefilledTable={prefilledTable}
         customer={customer}
         activeSession={activeSession}
+        verifiedPhone={verifiedPhone}
       />
     </div>
   );

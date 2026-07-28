@@ -25,7 +25,7 @@ export function ProductCard({
   return (
     <div
       className={cn(
-        "flex flex-col overflow-hidden rounded-2xl border bg-card shadow-sm",
+        "flex flex-col overflow-hidden rounded-2xl border bg-card shadow-sm transition-shadow hover:shadow-md",
         !product.isAvailable && "opacity-60"
       )}
     >
@@ -69,24 +69,20 @@ export function ProductCard({
         )}
       </div>
 
-      <div className="flex flex-1 flex-col gap-1 p-3">
+      <div className="flex flex-1 flex-col gap-1 p-3.5">
         <p className="font-medium leading-tight line-clamp-2">{product.name}</p>
         {product.description ? (
           <p className="line-clamp-2 text-xs text-muted-foreground leading-relaxed">{product.description}</p>
         ) : null}
-        <div className="mt-auto flex items-center justify-between gap-2 pt-1.5">
+        <div className="mt-auto space-y-2 pt-2">
           <div className="flex items-baseline gap-1">
             <span className="text-sm font-bold">{formatCurrency(product.price, currency)}</span>
             {product.unit ? <span className="text-xs text-muted-foreground">/{product.unit}</span> : null}
           </div>
           {product.isAvailable && (
-            <QtyStepper
-              size="sm"
-              value={quantityInCart}
-              min={0}
-              max={MAX_QUANTITY}
-              onChange={onQuantityChange}
-            />
+            <div className="flex justify-center border-t pt-2">
+              <QtyStepper value={quantityInCart} min={0} max={MAX_QUANTITY} onChange={onQuantityChange} />
+            </div>
           )}
         </div>
       </div>
