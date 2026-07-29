@@ -4,7 +4,6 @@ import { useEffect, useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import Image from "next/image";
-import Link from "next/link";
 import { toast } from "sonner";
 import QRCode from "qrcode";
 import {
@@ -12,9 +11,6 @@ import {
   ArrowLeft,
   ShoppingBag,
   Download,
-  CircleCheck,
-  MapPinned,
-  History,
   Table2,
   ReceiptText,
   Plus,
@@ -48,12 +44,11 @@ import {
 import { buildCheckoutSchema, type CheckoutInput } from "@/lib/validation/checkout";
 import { api, ApiError } from "@/lib/api-client";
 import { addStoredOrder } from "@/lib/order-history-storage";
-import { useOrderEvents } from "@/lib/hooks/use-order-events";
 import { cn } from "@/lib/utils";
 import type { CartItem } from "@/lib/hooks/use-cart";
 import type { ActiveSession, CustomerShop, CustomerTax } from "@/lib/types/customer";
 
-type Step = "cart" | "checkout" | "bill" | "invoice" | "placed";
+type Step = "cart" | "checkout" | "invoice";
 
 // No official brand glyph ships in lucide-react — a small inline SVG avoids
 // pulling in a whole icon-pack dependency just for this one button.
@@ -65,72 +60,19 @@ function WhatsAppIcon({ className }: { className?: string }) {
   );
 }
 
-/** Shared between the pre-order "Review your bill" step and the post-session
- * "Final Bill" invoice step — extracted to avoid duplicating this block twice. */
-function PaymentInfo({ shop }: { shop: CustomerShop }) {
-  if (!shop.upiId && !shop.paymentQrImageUrl && !shop.acceptCash && !shop.bankAccountNumber) return null;
-  return (
-    <div className="rounded-xl border bg-card overflow-hidden">
-      <div className="px-4 py-2.5 bg-muted/30 border-b">
-        <p className="font-semibold text-xs uppercase tracking-wide text-muted-foreground">How to pay</p>
-      </div>
-      <div className="px-4 py-3 space-y-3 text-sm">
-        {shop.paymentQrImageUrl && (
-          <div className="flex flex-col items-center gap-2">
-            <div className="rounded-2xl border-2 border-border bg-white p-3">
-              <Image
-                src={shop.paymentQrImageUrl}
-                alt="Payment QR"
-                width={160}
-                height={160}
-                unoptimized
-                className="rounded-lg"
-              />
-            </div>
-            {shop.upiId && (
-              <p className="text-center text-xs text-muted-foreground">
-                Scan or pay to <span className="font-semibold text-foreground">{shop.upiId}</span>
-              </p>
-            )}
-          </div>
-        )}
-        {!shop.paymentQrImageUrl && shop.upiId && (
-          <div className="flex items-center gap-2">
-            <span className="text-muted-foreground">UPI ID</span>
-            <span className="font-semibold">{shop.upiId}</span>
-          </div>
-        )}
-        {shop.bankAccountNumber && (
-          <div className="rounded-lg bg-muted/40 px-3 py-2 text-xs space-y-0.5">
-            <p className="font-medium text-foreground">Bank transfer</p>
-            {shop.bankName && <p className="text-muted-foreground">{shop.bankName}</p>}
-            <p className="text-muted-foreground">A/C: {shop.bankAccountNumber}</p>
-            {shop.bankIfsc && <p className="text-muted-foreground">IFSC: {shop.bankIfsc}</p>}
-          </div>
-        )}
-        {shop.acceptCash && (
-          <div className="flex items-center gap-2 text-muted-foreground">
-            <span className="size-2 rounded-full bg-emerald-500 inline-block shrink-0" />
-            <span>Cash accepted</span>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
 export function OrderSheet({
   open,
   onOpenChange,
   items,
   onSetQuantity,
   onRemove,
-  onOrderPlaced,
+  onOrderConfirmed,
   shop,
   taxes,
   prefilledTable,
   customer,
-  activeSession,
+  session,
+  onSessionChange,
   verifiedPhone,
 }: {
   open: boolean;
@@ -138,20 +80,18 @@ export function OrderSheet({
   items: CartItem[];
   onSetQuantity: (productId: string, quantity: number) => void;
   onRemove: (productId: string) => void;
-  onOrderPlaced: () => void;
+  onOrderConfirmed: () => void;
   shop: CustomerShop;
   taxes: CustomerTax[];
   prefilledTable?: string;
   customer?: { name: string; phone: string } | null;
-  activeSession?: ActiveSession;
+  session: ActiveSession;
+  onSessionChange: (updater: ActiveSession | ((prev: ActiveSession) => ActiveSession)) => void;
   verifiedPhone?: string | null;
 }) {
   const [step, setStep] = useState<Step>("cart");
   const [checkoutValues, setCheckoutValues] = useState<CheckoutInput | null>(null);
-  const [billNumber, setBillNumber] = useState<string>("");
-  const [clientRequestId, setClientRequestId] = useState<string>("");
   const [placing, setPlacing] = useState(false);
-  const [downloadingPdf, setDownloadingPdf] = useState(false);
   const [generatingBill, setGeneratingBill] = useState(false);
   const [downloadingInvoicePdf, setDownloadingInvoicePdf] = useState(false);
   const [sharingInvoice, setSharingInvoice] = useState(false);
@@ -161,14 +101,6 @@ export function OrderSheet({
   // what the customer told us they're doing while we wait on that.
   const [paymentIntent, setPaymentIntent] = useState<"idle" | "cash_pending" | "upi_confirm" | "upi_pending">("idle");
   const [upiQrDataUrl, setUpiQrDataUrl] = useState<string | null>(null);
-  // null = still waiting on the persistence call; a string once it resolves
-  // with an orderId; false if the shop doesn't save orders (nothing to track).
-  const [placedOrderId, setPlacedOrderId] = useState<string | null | false>(null);
-  // Local copy of the table session, kept in sync from the POST /api/orders
-  // response after each placed order — the server prop is only fresh as of
-  // page load, so a second order placed in the same sitting (no reload)
-  // needs this to correctly treat itself as incremental.
-  const [session, setSession] = useState<ActiveSession>(activeSession ?? null);
 
   // Reset to the cart step whenever the sheet transitions from closed to open.
   // Adjusting state during render (rather than in an effect) avoids an extra render pass —
@@ -178,7 +110,6 @@ export function OrderSheet({
     setWasOpen(open);
     if (open) {
       setStep("cart");
-      setPlacedOrderId(null);
       setPaymentIntent("idle");
     }
   }
@@ -265,24 +196,6 @@ export function OrderSheet({
   }, [isIncremental, alreadyOrderedItems, items, taxes]);
 
   const billAlreadyRequested = session?.status === "AWAITING_PAYMENT";
-
-  // Keeps the final-bill screen live if staff mark the table as paid while the
-  // customer still has it open — and clears the cart automatically at that
-  // point, since a paid session can never accept more items (the next order
-  // from this table always starts a brand-new session server-side).
-  useOrderEvents(session ? `/api/table-sessions/${session.id}/stream` : "", {
-    onSessionUpdated: (updated) => {
-      setSession((prev) =>
-        prev
-          ? { ...prev, status: updated.status, billRequestedAt: updated.billRequestedAt, paymentMethod: updated.paymentMethod }
-          : prev
-      );
-      if (updated.status === "PAID") {
-        toast.success("Payment confirmed — thank you!");
-        onOrderPlaced();
-      }
-    },
-  });
 
   // "Generate Final Bill" reads from the already-submitted session/checkout
   // data rather than requiring the customer to re-enter their details — the
@@ -374,13 +287,13 @@ export function OrderSheet({
           `/api/table-sessions/${session.id}`,
           { action: "request_bill" }
         );
-        setSession((prev) => (prev ? { ...prev, status: res.session.status, billRequestedAt: res.session.billRequestedAt } : prev));
+        onSessionChange((prev) => (prev ? { ...prev, status: res.session.status, billRequestedAt: res.session.billRequestedAt } : prev));
       }
       setStep("invoice");
     } catch (err) {
       if (err instanceof ApiError && err.status === 409) {
         // Another device on the same table just requested it — show the invoice anyway.
-        setSession((prev) => (prev ? { ...prev, status: "AWAITING_PAYMENT" } : prev));
+        onSessionChange((prev) => (prev ? { ...prev, status: "AWAITING_PAYMENT" } : prev));
         setStep("invoice");
       } else {
         toast.error("Couldn't generate the final bill — please try again.");
@@ -437,52 +350,55 @@ export function OrderSheet({
     }
   }
 
-  function handleGenerateBill(values: CheckoutInput) {
+  // Entering name/notes and tapping the submit button places the order
+  // straight away — no separate "review" screen in between. WhatsApp opens
+  // immediately; the /api/orders persistence call happens in the background
+  // and only clears the just-sent items from the editable cart once it's
+  // confirmed, so a slow network (or the tab getting backgrounded while
+  // WhatsApp takes over) can never make an already-sent order look like it
+  // vanished — on failure the items simply stay put and the customer can retry.
+  function handlePlaceOrder(values: CheckoutInput) {
+    if (billAlreadyRequested) {
+      toast.error("Bill already requested for this table — please check with staff before ordering more.");
+      return;
+    }
     if (shop.requirePhone && !phoneVerified) {
       toast.error("Please verify your phone number before continuing.");
       return;
     }
-    setCheckoutValues({
-      ...values,
-      tableNumber: shop.enableTableNumber
-        ? (values.tableNumber || prefilledTable || "")
-        : "",
-    });
-    setBillNumber(generateBillNumber(shop.slug));
-    setClientRequestId(crypto.randomUUID());
-    setStep("bill");
-  }
 
-  async function handlePlaceOrder() {
-    if (!checkoutValues || billAlreadyRequested) return;
+    const resolvedValues: CheckoutInput = {
+      ...values,
+      tableNumber: shop.enableTableNumber ? (values.tableNumber || prefilledTable || "") : "",
+    };
+    const newBillNumber = generateBillNumber(shop.slug);
+    const newClientRequestId = crypto.randomUUID();
+    setCheckoutValues(resolvedValues);
     setPlacing(true);
 
     const message =
       isIncremental && sessionRunningBill
         ? buildIncrementalOrderMessage({
-            tableNumber: checkoutValues.tableNumber || "",
+            tableNumber: resolvedValues.tableNumber || "",
             roundNumber: (session?.orders.length ?? 0) + 1,
             deltaItems: items,
             deltaBill: bill,
             sessionBill: sessionRunningBill,
             currency: shop.currency,
-            notes: checkoutValues.notes || undefined,
+            notes: resolvedValues.notes || undefined,
           })
         : buildOrderMessage({
-            customerName: checkoutValues.customerName || undefined,
-            customerPhone: checkoutValues.customerPhone || undefined,
-            tableNumber: checkoutValues.tableNumber || undefined,
-            deliveryAddress: checkoutValues.deliveryAddress || undefined,
-            notes: checkoutValues.notes || undefined,
+            customerName: resolvedValues.customerName || undefined,
+            customerPhone: resolvedValues.customerPhone || undefined,
+            tableNumber: resolvedValues.tableNumber || undefined,
+            deliveryAddress: resolvedValues.deliveryAddress || undefined,
+            notes: resolvedValues.notes || undefined,
             items,
             bill,
             currency: shop.currency,
           });
     const url = buildWhatsAppUrl(shop.whatsappNumber, message);
 
-    // The WhatsApp handoff never waits on this — it still fires immediately
-    // below regardless of how (or whether) persistence resolves. The result
-    // only controls whether a "Track your order" link appears afterward.
     api
       .post<{
         ok: boolean;
@@ -493,60 +409,42 @@ export function OrderSheet({
         sessionOrders?: { status: string; items: { productId: string | null; name: string; price: number; quantity: number; categoryId?: string }[] }[];
       }>("/api/orders", {
         shopSlug: shop.slug,
-        billNumber,
-        clientRequestId,
-        customerName: checkoutValues.customerName,
-        customerPhone: checkoutValues.customerPhone,
-        tableNumber: checkoutValues.tableNumber,
-        deliveryAddress: checkoutValues.deliveryAddress,
-        notes: checkoutValues.notes,
+        billNumber: newBillNumber,
+        clientRequestId: newClientRequestId,
+        customerName: resolvedValues.customerName,
+        customerPhone: resolvedValues.customerPhone,
+        tableNumber: resolvedValues.tableNumber,
+        deliveryAddress: resolvedValues.deliveryAddress,
+        notes: resolvedValues.notes,
         items,
       })
       .then((res) => {
-        const id = res.saved && res.orderId ? res.orderId : false;
-        setPlacedOrderId(id);
-        if (id) addStoredOrder(shop.slug, { orderId: id, billNumber, placedAt: new Date().toISOString() });
-        if (res.tableSessionId && res.sessionOrders) {
-          setSession({ id: res.tableSessionId, status: res.sessionStatus ?? "ACTIVE", orders: res.sessionOrders });
+        if (res.saved && res.orderId) {
+          addStoredOrder(shop.slug, { orderId: res.orderId, billNumber: newBillNumber, placedAt: new Date().toISOString() });
         }
+        if (res.tableSessionId && res.sessionOrders) {
+          onSessionChange({ id: res.tableSessionId, status: res.sessionStatus ?? "ACTIVE", orders: res.sessionOrders });
+        }
+        // Only now that the order is confirmed saved do we clear the just-sent
+        // items — they live on as part of the session's orders from here
+        // (rendered as "Already Ordered"), so nothing appears to reset to 0.
+        onOrderConfirmed();
       })
       .catch((err) => {
-        setPlacedOrderId(false);
         if (err instanceof ApiError && err.status === 409) {
           toast.error("Bill was just requested for this table — please check with staff before ordering more.");
-          setSession((prev) => (prev ? { ...prev, status: "AWAITING_PAYMENT" } : prev));
+          onSessionChange((prev) => (prev ? { ...prev, status: "AWAITING_PAYMENT" } : prev));
+        } else {
+          toast.error("Sent on WhatsApp, but we couldn't sync it here — your items are still in your cart.");
         }
-      });
+      })
+      .finally(() => setPlacing(false));
 
-    onOrderPlaced();
-    setPlacing(false);
-    setStep("placed");
-    // Open WhatsApp in a new tab so the customer stays on the menu page.
-    // On mobile the OS intercepts the wa.me URL and opens the WhatsApp app directly
-    // without any visible tab switch.
+    // Return to the cart view (now showing the accumulated order) rather than
+    // a separate "order placed" screen — open WhatsApp last so the redirect
+    // doesn't delay any of the state updates above.
+    setStep("cart");
     window.open(url, "_blank", "noopener,noreferrer");
-  }
-
-  async function handleDownloadPdf() {
-    if (!checkoutValues) return;
-    setDownloadingPdf(true);
-    try {
-      await generateInvoicePdf({
-        shop,
-        billNumber,
-        customerName: checkoutValues.customerName,
-        customerPhone: checkoutValues.customerPhone,
-        tableNumber: checkoutValues.tableNumber,
-        deliveryAddress: checkoutValues.deliveryAddress,
-        notes: checkoutValues.notes,
-        items,
-        bill,
-      });
-    } catch {
-      toast.error("Couldn't generate the PDF — please try again.");
-    } finally {
-      setDownloadingPdf(false);
-    }
   }
 
   return (
@@ -676,7 +574,12 @@ export function OrderSheet({
               </button>
               <SheetTitle className="text-lg">Your details</SheetTitle>
             </SheetHeader>
-            <form onSubmit={handleSubmit(handleGenerateBill)} className="flex-1 overflow-y-auto px-5 pb-4 space-y-5 pt-4">
+            <form onSubmit={handleSubmit(handlePlaceOrder)} className="flex-1 overflow-y-auto px-5 pb-4 space-y-5 pt-4">
+              {billAlreadyRequested && (
+                <div className="rounded-xl border border-amber-300 bg-amber-50 dark:bg-amber-900/20 dark:border-amber-800 px-4 py-3 text-sm text-amber-800 dark:text-amber-400">
+                  Bill already requested for this table — please check with staff before ordering more.
+                </div>
+              )}
               {shop.requireCustomerName && (
                 <FormRow label="Name" htmlFor="customerName" required error={errors.customerName}>
                   <Input id="customerName" placeholder="Your name" {...register("customerName")} />
@@ -725,123 +628,13 @@ export function OrderSheet({
               <Button
                 type="submit"
                 size="lg"
-                className="h-12 w-full bg-primary text-primary-foreground hover:bg-primary/90 shadow-sm shadow-primary/20"
+                disabled={placing || billAlreadyRequested}
+                className="h-12 w-full gap-2 bg-[#25D366] text-white hover:bg-[#1ea952] shadow-sm shadow-[#25D366]/20"
               >
-                Review Your Order
+                <WhatsAppIcon className="size-4.5" />
+                {placing ? "Opening WhatsApp…" : "Place Order on WhatsApp"}
               </Button>
             </form>
-          </>
-        )}
-
-        {step === "bill" && checkoutValues && (
-          <>
-            <SheetHeader className="px-5 pt-4 pb-0">
-              <button
-                type="button"
-                onClick={() => setStep("checkout")}
-                className="mb-2 flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
-              >
-                <ArrowLeft className="size-3.5" /> Back
-              </button>
-              <SheetTitle className="text-lg">Review your bill</SheetTitle>
-            </SheetHeader>
-
-            <div className="flex-1 overflow-y-auto px-5 pb-2 space-y-4 pt-4">
-              <div className="rounded-2xl border bg-card overflow-hidden">
-                <div className="px-4 py-4 text-center border-b bg-muted/30">
-                  {shop.logoUrl ? (
-                    <Image
-                      src={shop.logoUrl}
-                      alt={shop.businessName}
-                      width={44}
-                      height={44}
-                      unoptimized
-                      className="mx-auto mb-2 rounded-full object-cover ring-2 ring-border"
-                    />
-                  ) : null}
-                  <p className="font-bold text-base">{shop.businessName}</p>
-                  {shop.address ? <p className="text-xs text-muted-foreground mt-0.5">{shop.address}</p> : null}
-                  {shop.phone ? <p className="text-xs text-muted-foreground">{shop.phone}</p> : null}
-                  <p className="mt-2 text-xs text-muted-foreground">
-                    Bill #{billNumber}
-                  </p>
-                </div>
-
-                <div className="px-4 py-3 space-y-2 border-b">
-                  {items.map((item) => (
-                    <div key={item.productId} className="flex items-start justify-between gap-2 text-sm">
-                      <div className="flex-1 min-w-0">
-                        <span className="font-medium">{item.name}</span>
-                        <span className="text-muted-foreground ml-1">× {item.quantity}</span>
-                      </div>
-                      <span className="font-medium shrink-0">{formatCurrency(item.price * item.quantity, shop.currency)}</span>
-                    </div>
-                  ))}
-                </div>
-
-                <div className="px-4 py-3 space-y-1.5 text-sm">
-                  <div className="flex justify-between text-muted-foreground">
-                    <span>Subtotal</span>
-                    <span>{formatCurrency(bill.subtotal, shop.currency)}</span>
-                  </div>
-                  {bill.taxLines.map((line) => (
-                    <div key={line.id} className="flex justify-between text-muted-foreground">
-                      <span>{line.name}</span>
-                      <span>{formatCurrency(line.amount, shop.currency)}</span>
-                    </div>
-                  ))}
-                  <div className="flex justify-between border-t pt-2 mt-1 font-bold text-base">
-                    <span>{isIncremental ? "This round" : "Grand total"}</span>
-                    <span className="text-primary">{formatCurrency(bill.grandTotal, shop.currency)}</span>
-                  </div>
-                </div>
-              </div>
-
-              {isIncremental && sessionRunningBill && (
-                <div className="rounded-xl border bg-primary/5 px-4 py-3 flex items-center justify-between text-sm">
-                  <span className="font-medium">Table running total</span>
-                  <span className="font-bold text-primary">
-                    {formatCurrency(sessionRunningBill.grandTotal, shop.currency)}
-                  </span>
-                </div>
-              )}
-
-              {billAlreadyRequested && (
-                <div className="rounded-xl border border-amber-300 bg-amber-50 dark:bg-amber-900/20 dark:border-amber-800 px-4 py-3 text-sm text-amber-800 dark:text-amber-400">
-                  Bill already requested for this table — please check with staff before ordering more.
-                </div>
-              )}
-
-              <PaymentInfo shop={shop} />
-
-              {checkoutValues.notes && (
-                <div className="rounded-xl border bg-card px-4 py-3 text-sm">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-1">Notes</p>
-                  <p className="text-muted-foreground">{checkoutValues.notes}</p>
-                </div>
-              )}
-            </div>
-
-            <div className="border-t bg-background px-5 py-4 space-y-2">
-              <Button
-                size="lg"
-                className="h-12 w-full bg-primary text-primary-foreground hover:bg-primary/90 shadow-sm shadow-primary/20"
-                disabled={placing || billAlreadyRequested}
-                onClick={handlePlaceOrder}
-              >
-                {placing ? "Opening WhatsApp…" : "Place order via WhatsApp"}
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-9 w-full gap-1.5 text-muted-foreground"
-                disabled={downloadingPdf}
-                onClick={handleDownloadPdf}
-              >
-                <Download className="size-3.5" />
-                {downloadingPdf ? "Generating PDF…" : "Download bill PDF"}
-              </Button>
-            </div>
           </>
         )}
 
@@ -1070,58 +863,6 @@ export function OrderSheet({
               )}
               <Button variant="ghost" size="sm" className="h-9 w-full text-muted-foreground" onClick={() => onOpenChange(false)}>
                 Close
-              </Button>
-            </div>
-          </>
-        )}
-
-        {step === "placed" && (
-          <>
-            <SheetHeader className="px-5 pt-5 pb-0">
-              <SheetTitle className="text-lg">Order placed!</SheetTitle>
-            </SheetHeader>
-            <div className="flex-1 overflow-y-auto px-5 pb-2 pt-4">
-              <div className="flex flex-col items-center gap-3 rounded-2xl border bg-card px-5 py-8 text-center">
-                <CircleCheck className="size-12 text-emerald-500" />
-                <div>
-                  <p className="font-semibold">Sent to {shop.businessName} via WhatsApp</p>
-                  <p className="text-sm text-muted-foreground mt-0.5">Bill #{billNumber}</p>
-                </div>
-
-                {placedOrderId === null && (
-                  <p className="text-xs text-muted-foreground">Setting up live order tracking…</p>
-                )}
-
-                {typeof placedOrderId === "string" && (
-                  <Button
-                    size="lg"
-                    className="h-11 w-full gap-1.5 bg-primary text-primary-foreground hover:bg-primary/90"
-                    render={
-                      <Link
-                        href={`/order/${shop.slug}/track/${placedOrderId}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                      />
-                    }
-                    nativeButton={false}
-                  >
-                    <MapPinned className="size-4" /> Track your order live
-                  </Button>
-                )}
-              </div>
-            </div>
-            <div className="border-t bg-background px-5 py-4 space-y-2">
-              <Button variant="outline" size="lg" className="h-11 w-full" onClick={() => onOpenChange(false)}>
-                Continue browsing
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-9 w-full gap-1.5 text-muted-foreground"
-                render={<Link href={`/order/${shop.slug}/orders`} />}
-                nativeButton={false}
-              >
-                <History className="size-3.5" /> View my orders
               </Button>
             </div>
           </>

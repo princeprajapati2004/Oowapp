@@ -5,6 +5,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Search, ShoppingCart, PackageSearch, History, LogIn, LogOut } from "lucide-react";
+import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/shared/empty-state";
@@ -13,6 +14,7 @@ import { InstallApp } from "@/components/shared/install-app";
 import { ProductCard } from "@/components/customer/product-card";
 import { OrderSheet } from "@/components/customer/order-sheet";
 import { useCart } from "@/lib/hooks/use-cart";
+import { useOrderEvents } from "@/lib/hooks/use-order-events";
 import { formatCurrency } from "@/lib/utils/currency";
 import { cn } from "@/lib/utils";
 import { api } from "@/lib/api-client";
@@ -49,6 +51,33 @@ export function CustomerMenu({
   const [activeCategory, setActiveCategory] = useState<string>("all");
   const [orderSheetOpen, setOrderSheetOpen] = useState(false);
 
+  // The table session is owned here (not inside OrderSheet) so that both the
+  // sticky bottom panel and the sheet always agree on what's already been
+  // ordered — previously OrderSheet tracked this itself, so placing an order
+  // updated its own copy while this component kept rendering the stale
+  // server-rendered `activeSession` prop, making the sticky panel (and its
+  // running total) disappear/reset the instant the sheet cleared the cart,
+  // even though the order had gone through fine.
+  const [session, setSession] = useState<ActiveSession>(activeSession ?? null);
+
+  // Keeps the session live if staff mark the table as paid while the customer
+  // still has the app open — and clears the cart at that point, since a paid
+  // session can never accept more items (the next order from this table
+  // always starts a brand-new session server-side).
+  useOrderEvents(session ? `/api/table-sessions/${session.id}/stream` : "", {
+    onSessionUpdated: (updated) => {
+      setSession((prev) =>
+        prev
+          ? { ...prev, status: updated.status, billRequestedAt: updated.billRequestedAt, paymentMethod: updated.paymentMethod }
+          : prev
+      );
+      if (updated.status === "PAID") {
+        toast.success("Payment confirmed — thank you!");
+        cart.clear();
+      }
+    },
+  });
+
   // Drives the sticky bottom panel's mount/unmount so it can slide+fade+scale
   // out smoothly instead of vanishing the instant the cart empties — plain
   // conditional rendering has no exit transition, so the panel stays mounted
@@ -59,7 +88,7 @@ export function CustomerMenu({
   // new in their local cart yet) still needs a way to open the sheet — that's
   // the only place "Generate Final Bill" lives — so the panel isn't gated on
   // the local cart alone.
-  const hasOpenSessionItems = (activeSession?.orders.filter((o) => o.status !== "CANCELLED").length ?? 0) > 0;
+  const hasOpenSessionItems = (session?.orders.filter((o) => o.status !== "CANCELLED").length ?? 0) > 0;
   const cartHasItems = cart.totalQuantity > 0;
   const hasItems = cartHasItems || hasOpenSessionItems;
   const [phase, setPhase] = useState<"hidden" | "visible" | "leaving">(hasItems ? "visible" : "hidden");
@@ -281,14 +310,15 @@ export function CustomerMenu({
         items={cart.items}
         onSetQuantity={cart.setQuantity}
         onRemove={cart.removeItem}
-        onOrderPlaced={() => {
+        onOrderConfirmed={() => {
           cart.clear();
         }}
         shop={shop}
         taxes={taxes}
         prefilledTable={prefilledTable}
         customer={customer}
-        activeSession={activeSession}
+        session={session}
+        onSessionChange={setSession}
         verifiedPhone={verifiedPhone}
       />
     </div>
