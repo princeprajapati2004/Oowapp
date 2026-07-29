@@ -22,6 +22,7 @@ export type SessionOrderSnapshot = {
 export type ActiveSession = {
   id: string;
   status: string;
+  billRequestedAt?: string | null;
   orders: SessionOrderSnapshot[];
 } | null;
 

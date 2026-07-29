@@ -239,6 +239,9 @@ export function OrderTracker({
         notes: order.notes,
         items: invoiceItems,
         bill: invoiceBill,
+        invoiceNumber,
+        paymentStatus: isPaid ? "Paid" : "Unpaid",
+        ownerApprovalStatus: ownerApprovalStatus ?? undefined,
       });
     } catch {
       toast.error("Couldn't generate the PDF — please try again.");
@@ -292,6 +295,17 @@ export function OrderTracker({
     taxTotal: order.taxTotal,
     grandTotal: finalTotal,
   };
+  // A session-scoped identifier distinct from this one round's Bill No. — derived
+  // (no schema change) so multi-round table sessions have a stable invoice number
+  // that covers every round, not just the one this tracker page happens to be for.
+  const invoiceNumber = session ? `INV-${session.id.slice(-8).toUpperCase()}` : order.billNumber;
+  const ownerApprovalStatus = session
+    ? session.status === "PAID"
+      ? "Approved"
+      : session.status === "AWAITING_PAYMENT"
+        ? "Pending"
+        : "—"
+    : null;
 
   return (
     <div className="min-h-screen bg-muted/20 px-4 py-8 print:bg-white print:py-0">
@@ -322,6 +336,11 @@ export function OrderTracker({
             <div>
               <p className="text-xs text-muted-foreground uppercase tracking-wide">Bill No.</p>
               <p className="font-mono font-semibold text-sm">{order.billNumber}</p>
+              {isTableOrder && (
+                <p className="text-[11px] text-muted-foreground mt-0.5">
+                  Invoice: <span className="font-mono">{invoiceNumber}</span>
+                </p>
+              )}
             </div>
             <p className="text-xs text-muted-foreground">
               {new Date(order.createdAt).toLocaleString(undefined, {
@@ -512,6 +531,19 @@ export function OrderTracker({
                 {isPaid ? "Paid" : "Unpaid"}
               </span>
             </div>
+            {ownerApprovalStatus && (
+              <div className="px-5 py-3 border-t flex items-center justify-between text-sm">
+                <span className="text-muted-foreground">Owner approval status</span>
+                <span
+                  className={cn(
+                    "font-semibold",
+                    ownerApprovalStatus === "Approved" ? "text-emerald-600 dark:text-emerald-400" : "text-amber-600 dark:text-amber-400"
+                  )}
+                >
+                  {ownerApprovalStatus}
+                </span>
+              </div>
+            )}
             <div className="px-5 py-4 border-t text-center">
               <p className="text-sm font-medium">Thank you for your order!</p>
               <p className="text-xs text-muted-foreground mt-0.5">We hope to see you again soon.</p>

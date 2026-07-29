@@ -31,6 +31,12 @@ export interface InvoicePdfInput {
   notes?: string | null;
   items: InvoicePdfItem[];
   bill: BillTotals;
+  // Optional — used for the "Generate Final Bill" table-session invoice view,
+  // which reuses this same PDF generator (order-sheet.tsx / order-tracker.tsx).
+  invoiceNumber?: string;
+  invoiceDate?: string | Date;
+  paymentStatus?: "Paid" | "Unpaid";
+  ownerApprovalStatus?: string;
 }
 
 async function toDataUrl(url: string): Promise<string> {
@@ -47,7 +53,21 @@ async function toDataUrl(url: string): Promise<string> {
 /** Single source of truth for the customer-facing invoice PDF — used by both the
  * pre-order bill review (order-sheet.tsx) and the live order/invoice tracker (order-tracker.tsx). */
 export async function generateInvoicePdf(input: InvoicePdfInput): Promise<void> {
-  const { shop, billNumber, customerName, customerPhone, tableNumber, deliveryAddress, notes, items, bill } = input;
+  const {
+    shop,
+    billNumber,
+    customerName,
+    customerPhone,
+    tableNumber,
+    deliveryAddress,
+    notes,
+    items,
+    bill,
+    invoiceNumber,
+    invoiceDate,
+    paymentStatus,
+    ownerApprovalStatus,
+  } = input;
 
   const { jsPDF } = await import("jspdf");
   const doc = new jsPDF({ unit: "pt", format: "a4" });
@@ -88,8 +108,12 @@ export async function generateInvoicePdf(input: InvoicePdfInput): Promise<void> 
   doc.setTextColor(0);
   doc.setFontSize(9);
   doc.text(`Bill No: ${billNumber}`, 40, y);
-  doc.text(new Date().toLocaleString(), pageWidth - 40, y, { align: "right" });
+  doc.text((invoiceDate ? new Date(invoiceDate) : new Date()).toLocaleString(), pageWidth - 40, y, { align: "right" });
   y += 16;
+  if (invoiceNumber) {
+    doc.text(`Invoice No: ${invoiceNumber}`, 40, y);
+    y += 16;
+  }
 
   // Customer details
   const custFields: string[] = [];
@@ -152,6 +176,20 @@ export async function generateInvoicePdf(input: InvoicePdfInput): Promise<void> 
   y += 20;
   doc.setFont("helvetica", "normal");
   doc.setFontSize(9);
+
+  if (paymentStatus || ownerApprovalStatus) {
+    if (paymentStatus) {
+      doc.text("Payment Status", 40, y);
+      doc.text(paymentStatus, pageWidth - 40, y, { align: "right" });
+      y += 14;
+    }
+    if (ownerApprovalStatus) {
+      doc.text("Owner Approval Status", 40, y);
+      doc.text(ownerApprovalStatus, pageWidth - 40, y, { align: "right" });
+      y += 14;
+    }
+    y += 6;
+  }
 
   // Payment section
   const hasPayment = shop.upiId || shop.bankAccountNumber || shop.acceptCash || shop.paymentQrImageUrl;

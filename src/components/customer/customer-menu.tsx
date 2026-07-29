@@ -55,7 +55,13 @@ export function CustomerMenu({
   // through a "leaving" phase (via the render-phase state adjustment below,
   // https://react.dev/learn/you-might-not-need-an-effect#adjusting-some-state-when-a-prop-changes)
   // before a single effect unmounts it once the exit animation finishes.
-  const hasItems = cart.totalQuantity > 0;
+  // A returning customer with items already ordered on this table (but nothing
+  // new in their local cart yet) still needs a way to open the sheet — that's
+  // the only place "Generate Final Bill" lives — so the panel isn't gated on
+  // the local cart alone.
+  const hasOpenSessionItems = (activeSession?.orders.filter((o) => o.status !== "CANCELLED").length ?? 0) > 0;
+  const cartHasItems = cart.totalQuantity > 0;
+  const hasItems = cartHasItems || hasOpenSessionItems;
   const [phase, setPhase] = useState<"hidden" | "visible" | "leaving">(hasItems ? "visible" : "hidden");
   const [prevHasItems, setPrevHasItems] = useState(hasItems);
   // "Add to Cart" the first time this session's cart fills up, "View Cart"
@@ -248,9 +254,11 @@ export function CustomerMenu({
             <div className="flex items-center justify-between px-1 pb-2">
               <span className="flex items-center gap-1.5 text-sm font-medium">
                 <ShoppingCart className="size-4 text-primary" />
-                {displayQty} item{displayQty !== 1 ? "s" : ""}
+                {cartHasItems ? `${displayQty} item${displayQty !== 1 ? "s" : ""}` : "Your table"}
               </span>
-              <span className="text-sm font-semibold">{formatCurrency(displayTotal, shop.currency)} Total</span>
+              {cartHasItems && (
+                <span className="text-sm font-semibold">{formatCurrency(displayTotal, shop.currency)} Total</span>
+              )}
             </div>
             <Button
               onClick={() => {
@@ -259,7 +267,9 @@ export function CustomerMenu({
               }}
               className="h-12 w-full justify-center bg-primary text-primary-foreground shadow-none hover:bg-primary/90"
             >
-              {hasOpenedCart ? "View Cart" : "Add to Cart"} • {formatCurrency(displayTotal, shop.currency)}
+              {cartHasItems
+                ? `${hasOpenedCart ? "View Cart" : "Add to Cart"} • ${formatCurrency(displayTotal, shop.currency)}`
+                : "View Your Bill"}
             </Button>
           </div>
         </div>

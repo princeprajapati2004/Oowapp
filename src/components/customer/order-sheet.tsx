@@ -6,8 +6,24 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import Image from "next/image";
 import Link from "next/link";
 import { toast } from "sonner";
-import { Trash2, ArrowLeft, ShoppingBag, Download, CircleCheck, MapPinned, History, Table2 } from "lucide-react";
-import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetFooter } from "@/components/ui/sheet";
+import {
+  Trash2,
+  ArrowLeft,
+  ShoppingBag,
+  Download,
+  CircleCheck,
+  MapPinned,
+  History,
+  Table2,
+  ReceiptText,
+  Plus,
+  Share2,
+  Printer,
+  Phone,
+  Clock,
+  User,
+} from "lucide-react";
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -15,6 +31,7 @@ import { QtyStepper } from "@/components/shared/qty-stepper";
 import { FormRow } from "@/components/shared/form-row";
 import { EmptyState } from "@/components/shared/empty-state";
 import { PhoneVerification } from "@/components/customer/phone-verification";
+import { ItemStatusBadge, sessionItemStatus } from "@/components/customer/item-status-badge";
 import { formatCurrency } from "@/lib/utils/currency";
 import { generateInvoicePdf } from "@/lib/utils/invoice-pdf";
 import { calculateBill, mergeLineItems } from "@/lib/services/billing";
@@ -27,10 +44,76 @@ import {
 import { buildCheckoutSchema, type CheckoutInput } from "@/lib/validation/checkout";
 import { api, ApiError } from "@/lib/api-client";
 import { addStoredOrder } from "@/lib/order-history-storage";
+import { useOrderEvents } from "@/lib/hooks/use-order-events";
+import { cn } from "@/lib/utils";
 import type { CartItem } from "@/lib/hooks/use-cart";
 import type { ActiveSession, CustomerShop, CustomerTax } from "@/lib/types/customer";
 
-type Step = "cart" | "checkout" | "bill" | "placed";
+type Step = "cart" | "checkout" | "bill" | "invoice" | "placed";
+
+// No official brand glyph ships in lucide-react — a small inline SVG avoids
+// pulling in a whole icon-pack dependency just for this one button.
+function WhatsAppIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor" className={className} aria-hidden="true">
+      <path d="M12.04 2c-5.46 0-9.91 4.45-9.91 9.91 0 1.75.46 3.45 1.32 4.95L2 22l5.25-1.38a9.9 9.9 0 0 0 4.79 1.22h.01c5.46 0 9.91-4.45 9.91-9.91S17.5 2 12.04 2Zm5.8 14.16c-.24.68-1.4 1.3-1.93 1.38-.49.08-1.11.11-1.79-.11a16.5 16.5 0 0 1-1.62-.6c-2.85-1.23-4.7-4.1-4.85-4.29-.14-.19-1.16-1.54-1.16-2.93s.73-2.08.99-2.36c.26-.28.56-.35.75-.35h.53c.17 0 .4-.03.62.47.24.55.8 1.9.87 2.04.07.14.11.3.02.49-.09.19-.14.3-.28.46-.14.16-.29.36-.42.48-.14.13-.28.28-.12.55.16.28.72 1.19 1.55 1.93 1.06.95 1.96 1.24 2.24 1.38.28.14.44.12.6-.07.16-.19.68-.79.87-1.06.18-.28.36-.23.6-.14.24.09 1.55.73 1.81.86.26.14.44.2.5.32.06.12.06.68-.18 1.36Z" />
+    </svg>
+  );
+}
+
+/** Shared between the pre-order "Review your bill" step and the post-session
+ * "Final Bill" invoice step — extracted to avoid duplicating this block twice. */
+function PaymentInfo({ shop }: { shop: CustomerShop }) {
+  if (!shop.upiId && !shop.paymentQrImageUrl && !shop.acceptCash && !shop.bankAccountNumber) return null;
+  return (
+    <div className="rounded-xl border bg-card overflow-hidden">
+      <div className="px-4 py-2.5 bg-muted/30 border-b">
+        <p className="font-semibold text-xs uppercase tracking-wide text-muted-foreground">How to pay</p>
+      </div>
+      <div className="px-4 py-3 space-y-3 text-sm">
+        {shop.paymentQrImageUrl && (
+          <div className="flex flex-col items-center gap-2">
+            <div className="rounded-2xl border-2 border-border bg-white p-3">
+              <Image
+                src={shop.paymentQrImageUrl}
+                alt="Payment QR"
+                width={160}
+                height={160}
+                unoptimized
+                className="rounded-lg"
+              />
+            </div>
+            {shop.upiId && (
+              <p className="text-center text-xs text-muted-foreground">
+                Scan or pay to <span className="font-semibold text-foreground">{shop.upiId}</span>
+              </p>
+            )}
+          </div>
+        )}
+        {!shop.paymentQrImageUrl && shop.upiId && (
+          <div className="flex items-center gap-2">
+            <span className="text-muted-foreground">UPI ID</span>
+            <span className="font-semibold">{shop.upiId}</span>
+          </div>
+        )}
+        {shop.bankAccountNumber && (
+          <div className="rounded-lg bg-muted/40 px-3 py-2 text-xs space-y-0.5">
+            <p className="font-medium text-foreground">Bank transfer</p>
+            {shop.bankName && <p className="text-muted-foreground">{shop.bankName}</p>}
+            <p className="text-muted-foreground">A/C: {shop.bankAccountNumber}</p>
+            {shop.bankIfsc && <p className="text-muted-foreground">IFSC: {shop.bankIfsc}</p>}
+          </div>
+        )}
+        {shop.acceptCash && (
+          <div className="flex items-center gap-2 text-muted-foreground">
+            <span className="size-2 rounded-full bg-emerald-500 inline-block shrink-0" />
+            <span>Cash accepted</span>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
 
 export function OrderSheet({
   open,
@@ -65,6 +148,9 @@ export function OrderSheet({
   const [clientRequestId, setClientRequestId] = useState<string>("");
   const [placing, setPlacing] = useState(false);
   const [downloadingPdf, setDownloadingPdf] = useState(false);
+  const [generatingBill, setGeneratingBill] = useState(false);
+  const [downloadingInvoicePdf, setDownloadingInvoicePdf] = useState(false);
+  const [sharingInvoice, setSharingInvoice] = useState(false);
   // null = still waiting on the persistence call; a string once it resolves
   // with an orderId; false if the shop doesn't save orders (nothing to track).
   const [placedOrderId, setPlacedOrderId] = useState<string | null | false>(null);
@@ -168,6 +254,100 @@ export function OrderSheet({
   }, [isIncremental, alreadyOrderedItems, items, taxes]);
 
   const billAlreadyRequested = session?.status === "AWAITING_PAYMENT";
+
+  // Keeps the final-bill screen live if staff mark the table as paid while the
+  // customer still has it open — and clears the cart automatically at that
+  // point, since a paid session can never accept more items (the next order
+  // from this table always starts a brand-new session server-side).
+  useOrderEvents(session ? `/api/table-sessions/${session.id}/stream` : "", {
+    onSessionUpdated: (updated) => {
+      setSession((prev) => (prev ? { ...prev, status: updated.status, billRequestedAt: updated.billRequestedAt } : prev));
+      if (updated.status === "PAID") {
+        toast.success("Payment confirmed — thank you!");
+        onOrderPlaced();
+      }
+    },
+  });
+
+  // "Generate Final Bill" reads from the already-submitted session/checkout
+  // data rather than requiring the customer to re-enter their details — the
+  // whole point is that this is a returning customer on an existing session.
+  const invoiceNumber = session ? `INV-${session.id.slice(-8).toUpperCase()}` : "";
+  const invoiceCustomerName = checkoutValues?.customerName || customer?.name || undefined;
+  const invoiceCustomerPhone = checkoutValues?.customerPhone || customer?.phone || verifiedPhone || undefined;
+  const invoiceTableNumber = checkoutValues?.tableNumber || prefilledTable || undefined;
+  const finalInvoiceBill = useMemo(() => calculateBill(alreadyOrderedItems, taxes), [alreadyOrderedItems, taxes]);
+  const ownerApprovalStatus = session?.status === "PAID" ? "Approved" : session?.status === "AWAITING_PAYMENT" ? "Pending" : "—";
+  const invoicePaymentStatus: "Paid" | "Unpaid" = session?.status === "PAID" ? "Paid" : "Unpaid";
+
+  async function handleGenerateFinalBill() {
+    if (!session) return;
+    setGeneratingBill(true);
+    try {
+      const res = await api.patch<{ ok: boolean; session: { status: string; billRequestedAt: string | null } }>(
+        `/api/table-sessions/${session.id}`,
+        { action: "request_bill" }
+      );
+      setSession((prev) => (prev ? { ...prev, status: res.session.status, billRequestedAt: res.session.billRequestedAt } : prev));
+      setStep("invoice");
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 409) {
+        // Another device on the same table just requested it — show the invoice anyway.
+        setSession((prev) => (prev ? { ...prev, status: "AWAITING_PAYMENT" } : prev));
+        setStep("invoice");
+      } else {
+        toast.error("Couldn't generate the final bill — please try again.");
+      }
+    } finally {
+      setGeneratingBill(false);
+    }
+  }
+
+  async function handleDownloadInvoicePdf() {
+    setDownloadingInvoicePdf(true);
+    try {
+      await generateInvoicePdf({
+        shop,
+        billNumber: invoiceNumber,
+        invoiceNumber,
+        invoiceDate: session?.billRequestedAt ?? undefined,
+        customerName: invoiceCustomerName,
+        customerPhone: invoiceCustomerPhone,
+        tableNumber: invoiceTableNumber,
+        items: alreadyOrderedItems,
+        bill: finalInvoiceBill,
+        paymentStatus: invoicePaymentStatus,
+        ownerApprovalStatus,
+      });
+    } catch {
+      toast.error("Couldn't generate the PDF — please try again.");
+    } finally {
+      setDownloadingInvoicePdf(false);
+    }
+  }
+
+  async function handleShareInvoice() {
+    const shareData = {
+      title: `${shop.businessName} — Final Bill ${invoiceNumber}`,
+      text: `My bill from ${shop.businessName} — ${invoiceNumber}, total ${formatCurrency(finalInvoiceBill.grandTotal, shop.currency)}`,
+      url: typeof window !== "undefined" ? window.location.href : undefined,
+    };
+    setSharingInvoice(true);
+    try {
+      if (typeof navigator !== "undefined" && navigator.share) {
+        await navigator.share(shareData);
+      } else if (typeof navigator !== "undefined" && navigator.clipboard && shareData.url) {
+        await navigator.clipboard.writeText(shareData.url);
+        toast.success("Invoice link copied to clipboard");
+      }
+    } catch (err) {
+      if (err instanceof Error && err.name !== "AbortError") {
+        toast.error("Couldn't share the invoice");
+      }
+    } finally {
+      setSharingInvoice(false);
+    }
+  }
 
   function handleGenerateBill(values: CheckoutInput) {
     if (shop.requirePhone && !phoneVerified) {
@@ -295,9 +475,12 @@ export function OrderSheet({
             <div className="flex-1 overflow-y-auto px-5 pb-2 space-y-2 pt-4">
               {alreadyOrderedItems.length > 0 && (
                 <div className="rounded-xl border border-dashed bg-muted/30 px-3 py-2.5 space-y-1.5">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                    Already on this table
-                  </p>
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                      Already Ordered
+                    </p>
+                    <ItemStatusBadge status={sessionItemStatus(session?.status ?? "ACTIVE")} />
+                  </div>
                   {alreadyOrderedItems.map((item) => (
                     <div key={item.id} className="flex items-center justify-between text-sm text-muted-foreground">
                       <span className="truncate">{item.name} × {item.quantity}</span>
@@ -316,45 +499,87 @@ export function OrderSheet({
                   description="Add items from the menu to get started."
                 />
               ) : (
-                items.map((item) => (
-                  <div key={item.productId} className="flex items-center gap-3 rounded-xl bg-muted/50 px-3 py-2.5">
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium leading-snug truncate">{item.name}</p>
-                      <p className="text-xs text-muted-foreground mt-0.5">
-                        {formatCurrency(item.price, shop.currency)} × {item.quantity} = {formatCurrency(item.price * item.quantity, shop.currency)}
+                <>
+                  {isIncremental && (
+                    <div className="flex items-center justify-between gap-2 px-0.5">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                        New Items
                       </p>
+                      <ItemStatusBadge status="new" />
                     </div>
-                    <QtyStepper
-                      size="sm"
-                      value={item.quantity}
-                      onChange={(q) => onSetQuantity(item.productId, q)}
-                    />
-                    <Button
-                      variant="ghost"
-                      size="icon-sm"
-                      onClick={() => onRemove(item.productId)}
-                      aria-label="Remove"
-                      className="shrink-0 text-muted-foreground hover:text-destructive"
-                    >
-                      <Trash2 className="size-4" />
-                    </Button>
-                  </div>
-                ))
+                  )}
+                  {items.map((item) => (
+                    <div key={item.productId} className="flex items-center gap-3 rounded-xl bg-muted/50 px-3 py-2.5">
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium leading-snug truncate">{item.name}</p>
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                          {formatCurrency(item.price, shop.currency)} × {item.quantity} = {formatCurrency(item.price * item.quantity, shop.currency)}
+                        </p>
+                      </div>
+                      <QtyStepper
+                        size="sm"
+                        value={item.quantity}
+                        onChange={(q) => onSetQuantity(item.productId, q)}
+                      />
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        onClick={() => onRemove(item.productId)}
+                        aria-label="Remove"
+                        className="shrink-0 text-muted-foreground hover:text-destructive"
+                      >
+                        <Trash2 className="size-4" />
+                      </Button>
+                    </div>
+                  ))}
+                </>
               )}
             </div>
-            {items.length > 0 && (
+            {(items.length > 0 || isIncremental) && (
               <div className="border-t bg-background px-5 py-4 space-y-3">
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-muted-foreground">Subtotal ({items.length} item{items.length !== 1 ? "s" : ""})</span>
-                  <span className="font-semibold">{formatCurrency(bill.subtotal, shop.currency)}</span>
+                {items.length > 0 && (
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-muted-foreground">Subtotal ({items.length} item{items.length !== 1 ? "s" : ""})</span>
+                    <span className="font-semibold">{formatCurrency(bill.subtotal, shop.currency)}</span>
+                  </div>
+                )}
+                {isIncremental && items.length > 0 && (
+                  <p className="text-xs text-muted-foreground">
+                    Send your new items via WhatsApp first so they&apos;re included in the final bill.
+                  </p>
+                )}
+                <div className="space-y-2">
+                  {items.length > 0 && (
+                    <Button
+                      size="lg"
+                      className="h-12 w-full gap-2 bg-[#25D366] text-white hover:bg-[#1ea952] shadow-sm shadow-[#25D366]/20"
+                      onClick={() => setStep("checkout")}
+                    >
+                      <WhatsAppIcon className="size-4.5" /> Place Order on WhatsApp
+                    </Button>
+                  )}
+                  {isIncremental && (
+                    <Button
+                      size="lg"
+                      className="h-12 w-full gap-2 bg-emerald-600 text-white hover:bg-emerald-700 shadow-sm shadow-emerald-600/20"
+                      disabled={generatingBill}
+                      onClick={billAlreadyRequested ? () => setStep("invoice") : handleGenerateFinalBill}
+                    >
+                      <ReceiptText className="size-4.5" />
+                      {generatingBill ? "Generating…" : billAlreadyRequested ? "View Final Bill" : "Generate Final Bill"}
+                    </Button>
+                  )}
+                  {isIncremental && (
+                    <Button
+                      size="lg"
+                      variant="secondary"
+                      className="h-11 w-full gap-2 text-muted-foreground"
+                      onClick={() => onOpenChange(false)}
+                    >
+                      <Plus className="size-4" /> Add More Items
+                    </Button>
+                  )}
                 </div>
-                <Button
-                  size="lg"
-                  className="h-12 w-full bg-primary text-primary-foreground hover:bg-primary/90 shadow-sm shadow-primary/20"
-                  onClick={() => setStep("checkout")}
-                >
-                  Proceed to checkout
-                </Button>
               </div>
             )}
           </>
@@ -508,54 +733,7 @@ export function OrderSheet({
                 </div>
               )}
 
-              {(shop.upiId || shop.paymentQrImageUrl || shop.acceptCash || shop.bankAccountNumber) && (
-                <div className="rounded-xl border bg-card overflow-hidden">
-                  <div className="px-4 py-2.5 bg-muted/30 border-b">
-                    <p className="font-semibold text-xs uppercase tracking-wide text-muted-foreground">How to pay</p>
-                  </div>
-                  <div className="px-4 py-3 space-y-3 text-sm">
-                    {shop.paymentQrImageUrl && (
-                      <div className="flex flex-col items-center gap-2">
-                        <div className="rounded-2xl border-2 border-border bg-white p-3">
-                          <Image
-                            src={shop.paymentQrImageUrl}
-                            alt="Payment QR"
-                            width={160}
-                            height={160}
-                            unoptimized
-                            className="rounded-lg"
-                          />
-                        </div>
-                        {shop.upiId && (
-                          <p className="text-center text-xs text-muted-foreground">
-                            Scan or pay to <span className="font-semibold text-foreground">{shop.upiId}</span>
-                          </p>
-                        )}
-                      </div>
-                    )}
-                    {!shop.paymentQrImageUrl && shop.upiId && (
-                      <div className="flex items-center gap-2">
-                        <span className="text-muted-foreground">UPI ID</span>
-                        <span className="font-semibold">{shop.upiId}</span>
-                      </div>
-                    )}
-                    {shop.bankAccountNumber && (
-                      <div className="rounded-lg bg-muted/40 px-3 py-2 text-xs space-y-0.5">
-                        <p className="font-medium text-foreground">Bank transfer</p>
-                        {shop.bankName && <p className="text-muted-foreground">{shop.bankName}</p>}
-                        <p className="text-muted-foreground">A/C: {shop.bankAccountNumber}</p>
-                        {shop.bankIfsc && <p className="text-muted-foreground">IFSC: {shop.bankIfsc}</p>}
-                      </div>
-                    )}
-                    {shop.acceptCash && (
-                      <div className="flex items-center gap-2 text-muted-foreground">
-                        <span className="size-2 rounded-full bg-emerald-500 inline-block shrink-0" />
-                        <span>Cash accepted</span>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
+              <PaymentInfo shop={shop} />
 
               {checkoutValues.notes && (
                 <div className="rounded-xl border bg-card px-4 py-3 text-sm">
@@ -583,6 +761,156 @@ export function OrderSheet({
               >
                 <Download className="size-3.5" />
                 {downloadingPdf ? "Generating PDF…" : "Download bill PDF"}
+              </Button>
+            </div>
+          </>
+        )}
+
+        {step === "invoice" && (
+          <>
+            <SheetHeader className="px-5 pt-4 pb-0">
+              <button
+                type="button"
+                onClick={() => setStep("cart")}
+                className="mb-2 flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
+              >
+                <ArrowLeft className="size-3.5" /> Back to cart
+              </button>
+              <SheetTitle className="text-lg">Final Bill</SheetTitle>
+            </SheetHeader>
+
+            <div className="flex-1 overflow-y-auto px-5 pb-2 space-y-4 pt-4">
+              <div className="rounded-2xl border bg-card overflow-hidden">
+                <div className="px-4 py-4 text-center border-b bg-muted/30">
+                  {shop.logoUrl ? (
+                    <Image
+                      src={shop.logoUrl}
+                      alt={shop.businessName}
+                      width={44}
+                      height={44}
+                      unoptimized
+                      className="mx-auto mb-2 rounded-full object-cover ring-2 ring-border"
+                    />
+                  ) : null}
+                  <p className="font-bold text-base">{shop.businessName}</p>
+                  {shop.address ? <p className="text-xs text-muted-foreground mt-0.5">{shop.address}</p> : null}
+                  {shop.phone ? <p className="text-xs text-muted-foreground">{shop.phone}</p> : null}
+                  <p className="mt-2 text-xs text-muted-foreground font-mono">{invoiceNumber}</p>
+                </div>
+
+                <div className="px-4 py-3 border-b space-y-1.5 text-sm">
+                  {invoiceCustomerName && (
+                    <div className="flex items-center gap-2 text-muted-foreground">
+                      <User className="size-3.5 shrink-0" />
+                      <span>{invoiceCustomerName}</span>
+                    </div>
+                  )}
+                  {invoiceCustomerPhone && (
+                    <div className="flex items-center gap-2 text-muted-foreground">
+                      <Phone className="size-3.5 shrink-0" />
+                      <span>{invoiceCustomerPhone}</span>
+                    </div>
+                  )}
+                  {invoiceTableNumber && (
+                    <div className="flex items-center gap-2 text-muted-foreground">
+                      <Table2 className="size-3.5 shrink-0" />
+                      <span>Table {invoiceTableNumber}</span>
+                    </div>
+                  )}
+                  <div className="flex items-center gap-2 text-muted-foreground">
+                    <Clock className="size-3.5 shrink-0" />
+                    <span>
+                      {new Date(session?.billRequestedAt ?? Date.now()).toLocaleString(undefined, {
+                        month: "short",
+                        day: "numeric",
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="px-4 py-3 space-y-2 border-b">
+                  {alreadyOrderedItems.map((item) => (
+                    <div key={item.id} className="flex items-start justify-between gap-2 text-sm">
+                      <div className="flex-1 min-w-0">
+                        <span className="font-medium">{item.name}</span>
+                        <span className="text-muted-foreground ml-1">× {item.quantity}</span>
+                      </div>
+                      <span className="font-medium shrink-0">{formatCurrency(item.price * item.quantity, shop.currency)}</span>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="px-4 py-3 space-y-1.5 text-sm border-b">
+                  <div className="flex justify-between text-muted-foreground">
+                    <span>Subtotal</span>
+                    <span>{formatCurrency(finalInvoiceBill.subtotal, shop.currency)}</span>
+                  </div>
+                  {finalInvoiceBill.taxLines.map((line) => (
+                    <div key={line.id} className="flex justify-between text-muted-foreground">
+                      <span>{line.name}</span>
+                      <span>{formatCurrency(line.amount, shop.currency)}</span>
+                    </div>
+                  ))}
+                  <div className="flex justify-between border-t pt-2 mt-1 font-bold text-base">
+                    <span>Grand Total</span>
+                    <span className="text-primary">{formatCurrency(finalInvoiceBill.grandTotal, shop.currency)}</span>
+                  </div>
+                </div>
+
+                <div className="px-4 py-3 flex items-center justify-between text-sm">
+                  <span className="text-muted-foreground">Payment status</span>
+                  <span
+                    className={cn(
+                      "font-semibold",
+                      invoicePaymentStatus === "Paid" ? "text-emerald-600 dark:text-emerald-400" : "text-amber-600 dark:text-amber-400"
+                    )}
+                  >
+                    {invoicePaymentStatus}
+                  </span>
+                </div>
+                <div className="px-4 py-3 border-t flex items-center justify-between text-sm">
+                  <span className="text-muted-foreground">Owner approval status</span>
+                  <span
+                    className={cn(
+                      "font-semibold",
+                      ownerApprovalStatus === "Approved" ? "text-emerald-600 dark:text-emerald-400" : "text-amber-600 dark:text-amber-400"
+                    )}
+                  >
+                    {ownerApprovalStatus}
+                  </span>
+                </div>
+              </div>
+
+              {invoicePaymentStatus === "Unpaid" ? (
+                <PaymentInfo shop={shop} />
+              ) : (
+                <div className="rounded-xl border border-emerald-200 bg-emerald-50 dark:bg-emerald-900/20 dark:border-emerald-800 px-4 py-3 text-sm text-emerald-800 dark:text-emerald-400 text-center">
+                  Payment received — thank you!
+                </div>
+              )}
+            </div>
+
+            <div className="border-t bg-background px-5 py-4 space-y-2">
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  className="h-11 flex-1 gap-1.5"
+                  disabled={downloadingInvoicePdf}
+                  onClick={handleDownloadInvoicePdf}
+                >
+                  <Download className="size-4" /> {downloadingInvoicePdf ? "Generating…" : "Download"}
+                </Button>
+                <Button variant="outline" className="h-11 flex-1 gap-1.5" onClick={() => window.print()}>
+                  <Printer className="size-4" /> Print
+                </Button>
+                <Button variant="outline" className="h-11 flex-1 gap-1.5" disabled={sharingInvoice} onClick={handleShareInvoice}>
+                  <Share2 className="size-4" /> {sharingInvoice ? "Sharing…" : "Share"}
+                </Button>
+              </div>
+              <Button variant="ghost" size="sm" className="h-9 w-full text-muted-foreground" onClick={() => onOpenChange(false)}>
+                Close
               </Button>
             </div>
           </>
