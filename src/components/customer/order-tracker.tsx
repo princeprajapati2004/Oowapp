@@ -17,11 +17,15 @@ import {
   User,
   Printer,
   Receipt,
+  Download,
+  Share2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { QtyStepper } from "@/components/shared/qty-stepper";
 import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 import { formatCurrency } from "@/lib/utils/currency";
+import { generateInvoicePdf, type InvoicePdfItem } from "@/lib/utils/invoice-pdf";
+import { mergeLineItems } from "@/lib/services/billing";
 import { cn } from "@/lib/utils";
 import { api, ApiError } from "@/lib/api-client";
 import { useOrderEvents, type OrderEventOrder, type TableSessionEventPayload } from "@/lib/hooks/use-order-events";
@@ -35,6 +39,12 @@ type Shop = {
   address: string | null;
   phone: string | null;
   currency: string;
+  upiId?: string | null;
+  acceptCash?: boolean;
+  bankAccountNumber?: string | null;
+  bankName?: string | null;
+  bankIfsc?: string | null;
+  paymentQrImageUrl?: string | null;
 };
 
 const STEPS = [
@@ -65,11 +75,13 @@ export function OrderTracker({
   shop,
   session: initialSession,
   sessionBill: initialSessionBill,
+  sessionItems: initialSessionItems,
 }: {
   order: OrderEventOrder;
   shop: Shop;
   session?: TableSessionEventPayload | null;
   sessionBill?: BillTotals | null;
+  sessionItems?: InvoicePdfItem[] | null;
 }) {
   const [order, setOrder] = useState(initialOrder);
   const [displayItems, setDisplayItems] = useState(initialOrder.items);
@@ -78,7 +90,10 @@ export function OrderTracker({
   const [confirming, setConfirming] = useState(false);
   const [session, setSession] = useState(initialSession ?? null);
   const [sessionBill, setSessionBill] = useState(initialSessionBill ?? null);
+  const [sessionItems, setSessionItems] = useState(initialSessionItems ?? null);
   const [requestingBill, setRequestingBill] = useState(false);
+  const [downloadingPdf, setDownloadingPdf] = useState(false);
+  const [sharing, setSharing] = useState(false);
 
   const pendingChangesRef = useRef<Map<string, number>>(new Map());
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -99,13 +114,22 @@ export function OrderTracker({
   useOrderEvents(sessionId ? `/api/table-sessions/${sessionId}/stream` : "", {
     onSessionUpdated: (updated) => setSession(updated),
     onUpdated: () => {
-      // An order in this session changed (e.g. quantity added, status moved) —
-      // re-fetch the session's cumulative bill rather than trying to
-      // reconstruct it from a single event.
+      // An order in this session changed (e.g. quantity added, status moved, a
+      // new round added) — re-fetch the session's cumulative bill and merged
+      // item list rather than trying to reconstruct either from a single event.
       if (!sessionId) return;
       api
-        .get<{ bill: BillTotals }>(`/api/table-sessions/${sessionId}`)
-        .then((res) => setSessionBill(res.bill))
+        .get<{ bill: BillTotals; orders: OrderEventOrder[] }>(`/api/table-sessions/${sessionId}`)
+        .then((res) => {
+          setSessionBill(res.bill);
+          setSessionItems(
+            mergeLineItems(
+              res.orders
+                .filter((o) => o.status !== "CANCELLED")
+                .flatMap((o) => o.items.map((item) => ({ id: item.productId ?? item.name, name: item.name, price: item.price, quantity: item.quantity, categoryId: "" })))
+            )
+          );
+        })
         .catch(() => {});
     },
   });
@@ -202,6 +226,51 @@ export function OrderTracker({
     }
   }
 
+  async function handleDownloadPdf() {
+    setDownloadingPdf(true);
+    try {
+      await generateInvoicePdf({
+        shop,
+        billNumber: order.billNumber,
+        customerName: order.customerName,
+        customerPhone: order.customerPhone,
+        tableNumber: order.tableNumber,
+        deliveryAddress: order.deliveryAddress,
+        notes: order.notes,
+        items: invoiceItems,
+        bill: invoiceBill,
+      });
+    } catch {
+      toast.error("Couldn't generate the PDF — please try again.");
+    } finally {
+      setDownloadingPdf(false);
+    }
+  }
+
+  async function handleShare() {
+    const shareData = {
+      title: `${shop.businessName} — Bill #${order.billNumber}`,
+      text: `My order from ${shop.businessName} — Bill #${order.billNumber}, total ${formatCurrency(invoiceBill.grandTotal, shop.currency)}`,
+      url: typeof window !== "undefined" ? window.location.href : undefined,
+    };
+    setSharing(true);
+    try {
+      if (typeof navigator !== "undefined" && navigator.share) {
+        await navigator.share(shareData);
+      } else if (typeof navigator !== "undefined" && navigator.clipboard && shareData.url) {
+        await navigator.clipboard.writeText(shareData.url);
+        toast.success("Invoice link copied to clipboard");
+      }
+    } catch (err) {
+      // AbortError just means the user closed the native share sheet — not an error.
+      if (err instanceof Error && err.name !== "AbortError") {
+        toast.error("Couldn't share the invoice");
+      }
+    } finally {
+      setSharing(false);
+    }
+  }
+
   const taxBreakdown = (order.taxBreakdown as TaxLine[] | null) ?? [];
   const base = order.subtotal + order.taxTotal;
   const finalTotal = order.discountedTotal ?? base;
@@ -212,6 +281,17 @@ export function OrderTracker({
   // still-live status stepper, rather than replacing it.
   const isConfirmedOrLater = !isCancelled && order.status !== "PENDING";
   const isPaid = session ? session.status === "PAID" : order.status === "COMPLETED";
+
+  // For a table session, the invoice covers every accumulated round (sessionItems/sessionBill);
+  // for a one-off order it's just this order's own items and totals. Referenced by
+  // handleDownloadPdf/handleShare above, which only run after this has been assigned.
+  const invoiceItems: InvoicePdfItem[] = isTableOrder && sessionItems ? sessionItems : displayItems;
+  const invoiceBill: BillTotals = isTableOrder && sessionBill ? sessionBill : {
+    subtotal: order.subtotal,
+    taxLines: taxBreakdown,
+    taxTotal: order.taxTotal,
+    grandTotal: finalTotal,
+  };
 
   return (
     <div className="min-h-screen bg-muted/20 px-4 py-8 print:bg-white print:py-0">
@@ -436,10 +516,28 @@ export function OrderTracker({
               <p className="text-sm font-medium">Thank you for your order!</p>
               <p className="text-xs text-muted-foreground mt-0.5">We hope to see you again soon.</p>
             </div>
-            <div className="px-5 pb-4 print:hidden">
+            <div className="px-5 pb-4 space-y-2 print:hidden">
               <Button variant="outline" className="h-9 w-full gap-1.5" onClick={() => window.print()}>
                 <Printer className="size-4" /> Print bill
               </Button>
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  className="h-9 flex-1 gap-1.5"
+                  disabled={downloadingPdf}
+                  onClick={handleDownloadPdf}
+                >
+                  <Download className="size-4" /> {downloadingPdf ? "Generating…" : "Download PDF"}
+                </Button>
+                <Button
+                  variant="outline"
+                  className="h-9 flex-1 gap-1.5"
+                  disabled={sharing}
+                  onClick={handleShare}
+                >
+                  <Share2 className="size-4" /> {sharing ? "Sharing…" : "Share"}
+                </Button>
+              </div>
             </div>
           </div>
         )}

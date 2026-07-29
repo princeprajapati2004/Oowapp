@@ -16,6 +16,7 @@ import { FormRow } from "@/components/shared/form-row";
 import { EmptyState } from "@/components/shared/empty-state";
 import { PhoneVerification } from "@/components/customer/phone-verification";
 import { formatCurrency } from "@/lib/utils/currency";
+import { generateInvoicePdf } from "@/lib/utils/invoice-pdf";
 import { calculateBill, mergeLineItems } from "@/lib/services/billing";
 import {
   buildOrderMessage,
@@ -262,176 +263,19 @@ export function OrderSheet({
     if (!checkoutValues) return;
     setDownloadingPdf(true);
     try {
-      const { jsPDF } = await import("jspdf");
-      const doc = new jsPDF({ unit: "pt", format: "a4" });
-      const pageWidth = doc.internal.pageSize.getWidth();
-      let y = 40;
-
-      // Logo
-      if (shop.logoUrl) {
-        try {
-          const resp = await fetch(shop.logoUrl);
-          const blob = await resp.blob();
-          const dataUrl = await new Promise<string>((resolve) => {
-            const reader = new FileReader();
-            reader.onload = () => resolve(reader.result as string);
-            reader.readAsDataURL(blob);
-          });
-          const imgW = 50;
-          doc.addImage(dataUrl, "WEBP", (pageWidth - imgW) / 2, y, imgW, imgW);
-          y += 58;
-        } catch {
-          // Logo failed to load — skip it
-        }
-      }
-
-      // Business header
-      doc.setFontSize(18);
-      doc.setFont("helvetica", "bold");
-      doc.text(shop.businessName, pageWidth / 2, y, { align: "center" });
-      y += 20;
-
-      doc.setFontSize(9);
-      doc.setFont("helvetica", "normal");
-      doc.setTextColor(100);
-      if (shop.address) { doc.text(shop.address, pageWidth / 2, y, { align: "center" }); y += 13; }
-      if (shop.phone) { doc.text(shop.phone, pageWidth / 2, y, { align: "center" }); y += 13; }
-      y += 6;
-
-      // Divider
-      doc.setDrawColor(200);
-      doc.line(40, y, pageWidth - 40, y);
-      y += 12;
-
-      // Bill info
-      doc.setTextColor(0);
-      doc.setFontSize(9);
-      doc.text(`Bill No: ${billNumber}`, 40, y);
-      doc.text(new Date().toLocaleString(), pageWidth - 40, y, { align: "right" });
-      y += 16;
-
-      // Customer details
-      const custFields: string[] = [];
-      if (checkoutValues.customerName) custFields.push(`Name: ${checkoutValues.customerName}`);
-      if (checkoutValues.customerPhone) custFields.push(`Phone: ${checkoutValues.customerPhone}`);
-      if (checkoutValues.tableNumber) custFields.push(`Table: ${checkoutValues.tableNumber}`);
-      if (checkoutValues.deliveryAddress) custFields.push(`Address: ${checkoutValues.deliveryAddress}`);
-      if (custFields.length > 0) {
-        custFields.forEach((f) => { doc.text(f, 40, y); y += 13; });
-        y += 4;
-      }
-
-      // Divider
-      doc.line(40, y, pageWidth - 40, y);
-      y += 12;
-
-      // Items header
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(9);
-      doc.text("Item", 40, y);
-      doc.text("Qty", pageWidth / 2 + 20, y, { align: "right" });
-      doc.text("Amount", pageWidth - 40, y, { align: "right" });
-      y += 4;
-      doc.setDrawColor(200);
-      doc.line(40, y, pageWidth - 40, y);
-      y += 10;
-      doc.setFont("helvetica", "normal");
-
-      items.forEach((item) => {
-        const lineH = 14;
-        const nameLines = doc.splitTextToSize(item.name, pageWidth / 2);
-        doc.text(nameLines, 40, y);
-        doc.text(`×${item.quantity}`, pageWidth / 2 + 20, y, { align: "right" });
-        doc.text(formatCurrency(item.price * item.quantity, shop.currency), pageWidth - 40, y, { align: "right" });
-        y += Math.max(nameLines.length * lineH, lineH);
+      await generateInvoicePdf({
+        shop,
+        billNumber,
+        customerName: checkoutValues.customerName,
+        customerPhone: checkoutValues.customerPhone,
+        tableNumber: checkoutValues.tableNumber,
+        deliveryAddress: checkoutValues.deliveryAddress,
+        notes: checkoutValues.notes,
+        items,
+        bill,
       });
-
-      y += 4;
-      doc.line(40, y, pageWidth - 40, y);
-      y += 12;
-
-      // Totals
-      doc.setFontSize(9);
-      doc.text("Subtotal", 40, y);
-      doc.text(formatCurrency(bill.subtotal, shop.currency), pageWidth - 40, y, { align: "right" });
-      y += 14;
-
-      bill.taxLines.forEach((line) => {
-        doc.setTextColor(100);
-        doc.text(line.name, 40, y);
-        doc.text(formatCurrency(line.amount, shop.currency), pageWidth - 40, y, { align: "right" });
-        doc.setTextColor(0);
-        y += 14;
-      });
-
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(11);
-      doc.text("Grand Total", 40, y);
-      doc.text(formatCurrency(bill.grandTotal, shop.currency), pageWidth - 40, y, { align: "right" });
-      y += 20;
-      doc.setFont("helvetica", "normal");
-      doc.setFontSize(9);
-
-      // Payment section
-      const hasPayment = shop.upiId || shop.bankAccountNumber || shop.acceptCash || shop.paymentQrImageUrl;
-      if (hasPayment) {
-        doc.line(40, y, pageWidth - 40, y);
-        y += 12;
-        doc.setFont("helvetica", "bold");
-        doc.text("Payment", 40, y);
-        y += 14;
-        doc.setFont("helvetica", "normal");
-        if (shop.upiId) { doc.text(`UPI: ${shop.upiId}`, 40, y); y += 13; }
-        if (shop.bankAccountNumber) {
-          doc.text(`Bank: ${shop.bankName ?? ""} | A/C: ${shop.bankAccountNumber} | IFSC: ${shop.bankIfsc ?? ""}`, 40, y);
-          y += 13;
-        }
-        if (shop.acceptCash) { doc.text("Cash accepted", 40, y); y += 13; }
-
-        if (shop.paymentQrImageUrl) {
-          try {
-            const resp = await fetch(shop.paymentQrImageUrl);
-            const blob = await resp.blob();
-            const dataUrl = await new Promise<string>((resolve) => {
-              const reader = new FileReader();
-              reader.onload = () => resolve(reader.result as string);
-              reader.readAsDataURL(blob);
-            });
-            const qrSize = 100;
-            doc.addImage(dataUrl, "PNG", (pageWidth - qrSize) / 2, y, qrSize, qrSize);
-            y += qrSize + 8;
-          } catch {
-            // QR failed to load — skip
-          }
-        }
-      }
-
-      // Notes
-      if (checkoutValues.notes) {
-        y += 4;
-        doc.line(40, y, pageWidth - 40, y);
-        y += 12;
-        doc.setFont("helvetica", "bold");
-        doc.text("Notes", 40, y);
-        y += 14;
-        doc.setFont("helvetica", "normal");
-        doc.setTextColor(100);
-        const noteLines = doc.splitTextToSize(checkoutValues.notes, pageWidth - 80);
-        doc.text(noteLines, 40, y);
-        y += noteLines.length * 13;
-        doc.setTextColor(0);
-      }
-
-      // Footer
-      y += 16;
-      doc.setFontSize(10);
-      doc.setFont("helvetica", "bold");
-      doc.setTextColor(100);
-      doc.text("Thank you for your order!", pageWidth / 2, y, { align: "center" });
-
-      doc.save(`bill-${billNumber}.pdf`);
     } catch {
-      // PDF generation failed silently
+      toast.error("Couldn't generate the PDF — please try again.");
     } finally {
       setDownloadingPdf(false);
     }
