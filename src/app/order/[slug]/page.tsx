@@ -63,6 +63,7 @@ export default async function OrderPage({
         id: found.id,
         status: found.status,
         billRequestedAt: found.billRequestedAt ? found.billRequestedAt.toISOString() : null,
+        paymentMethod: found.paymentMethod,
         orders: found.orders.map((order) => ({
           status: order.status,
           items: order.items.map((item) => ({

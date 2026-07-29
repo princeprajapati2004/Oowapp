@@ -47,6 +47,10 @@ export type TableSessionEventPayload = {
   customerName: string | null;
   billRequestedAt: string | null;
   paidAt: string | null;
+  // Set by admin's existing "Mark as Paid" action ("CASH" | "UPI" | etc.) —
+  // exposed so the customer's Final Bill screen can show "Paid (Cash)" vs
+  // "Paid (Online)" once settled.
+  paymentMethod: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -65,6 +69,7 @@ type RawSessionForEvent = {
   customerName: string | null;
   billRequestedAt: unknown;
   paidAt: unknown;
+  paymentMethod?: string | null;
   createdAt: unknown;
   updatedAt: unknown;
 };
@@ -78,6 +83,7 @@ export function toTableSessionEvent(session: RawSessionForEvent): TableSessionEv
     customerName: session.customerName,
     billRequestedAt: session.billRequestedAt ? (session.billRequestedAt as Date).toISOString() : null,
     paidAt: session.paidAt ? (session.paidAt as Date).toISOString() : null,
+    paymentMethod: session.paymentMethod ?? null,
     createdAt: (session.createdAt as Date).toISOString(),
     updatedAt: (session.updatedAt as Date).toISOString(),
   };

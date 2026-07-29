@@ -1,11 +1,12 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import Image from "next/image";
 import Link from "next/link";
 import { toast } from "sonner";
+import QRCode from "qrcode";
 import {
   Trash2,
   ArrowLeft,
@@ -22,6 +23,9 @@ import {
   Phone,
   Clock,
   User,
+  Banknote,
+  QrCode as QrCodeIcon,
+  Loader2,
 } from "lucide-react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
@@ -151,6 +155,12 @@ export function OrderSheet({
   const [generatingBill, setGeneratingBill] = useState(false);
   const [downloadingInvoicePdf, setDownloadingInvoicePdf] = useState(false);
   const [sharingInvoice, setSharingInvoice] = useState(false);
+  // Which payment method the customer is mid-flow on for the Final Bill screen —
+  // purely a local, ephemeral UI state (not persisted): staff still make the
+  // real call via their existing "Mark as Paid" action, this just reflects
+  // what the customer told us they're doing while we wait on that.
+  const [paymentIntent, setPaymentIntent] = useState<"idle" | "cash_pending" | "upi_confirm" | "upi_pending">("idle");
+  const [upiQrDataUrl, setUpiQrDataUrl] = useState<string | null>(null);
   // null = still waiting on the persistence call; a string once it resolves
   // with an orderId; false if the shop doesn't save orders (nothing to track).
   const [placedOrderId, setPlacedOrderId] = useState<string | null | false>(null);
@@ -169,6 +179,7 @@ export function OrderSheet({
     if (open) {
       setStep("cart");
       setPlacedOrderId(null);
+      setPaymentIntent("idle");
     }
   }
 
@@ -261,7 +272,11 @@ export function OrderSheet({
   // from this table always starts a brand-new session server-side).
   useOrderEvents(session ? `/api/table-sessions/${session.id}/stream` : "", {
     onSessionUpdated: (updated) => {
-      setSession((prev) => (prev ? { ...prev, status: updated.status, billRequestedAt: updated.billRequestedAt } : prev));
+      setSession((prev) =>
+        prev
+          ? { ...prev, status: updated.status, billRequestedAt: updated.billRequestedAt, paymentMethod: updated.paymentMethod }
+          : prev
+      );
       if (updated.status === "PAID") {
         toast.success("Payment confirmed — thank you!");
         onOrderPlaced();
@@ -287,8 +302,67 @@ export function OrderSheet({
     [alreadyOrderedItems, items]
   );
   const finalInvoiceBill = useMemo(() => calculateBill(finalInvoiceItems, taxes), [finalInvoiceItems, taxes]);
-  const ownerApprovalStatus = session?.status === "PAID" ? "Approved" : session?.status === "AWAITING_PAYMENT" ? "Pending" : "—";
   const invoicePaymentStatus: "Paid" | "Unpaid" = session?.status === "PAID" ? "Paid" : "Unpaid";
+  // Bill Status Flow: Bill Generated → Cash Approval Pending / Payment Pending → Paid (Cash) / Paid (Online).
+  const billStatusLabel =
+    invoicePaymentStatus === "Paid"
+      ? session?.paymentMethod?.toUpperCase() === "CASH"
+        ? "Paid (Cash)"
+        : "Paid (Online)"
+      : paymentIntent === "cash_pending"
+        ? "Cash Approval Pending"
+        : paymentIntent === "upi_pending"
+          ? "Payment Pending"
+          : "Bill Generated";
+
+  // Dynamic UPI QR — regenerates whenever the payable amount changes, so the
+  // code always encodes the exact current total rather than a static image.
+  useEffect(() => {
+    if (!shop.upiId || invoicePaymentStatus === "Paid") {
+      setUpiQrDataUrl(null);
+      return;
+    }
+    const note = [invoiceTableNumber ? `Table ${invoiceTableNumber}` : null, invoiceNumber || null]
+      .filter(Boolean)
+      .join(" ") || shop.businessName;
+    const upiUrl = `upi://pay?pa=${encodeURIComponent(shop.upiId)}&pn=${encodeURIComponent(shop.businessName)}&am=${finalInvoiceBill.grandTotal.toFixed(2)}&cu=INR&tn=${encodeURIComponent(note)}`;
+    let cancelled = false;
+    QRCode.toDataURL(upiUrl, { width: 220, margin: 1 }).then((url) => {
+      if (!cancelled) setUpiQrDataUrl(url);
+    }).catch(() => {
+      if (!cancelled) setUpiQrDataUrl(null);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [shop.upiId, shop.businessName, finalInvoiceBill.grandTotal, invoiceTableNumber, invoiceNumber, invoicePaymentStatus]);
+
+  function buildUpiUrl() {
+    const note = [invoiceTableNumber ? `Table ${invoiceTableNumber}` : null, invoiceNumber || null]
+      .filter(Boolean)
+      .join(" ") || shop.businessName;
+    return `upi://pay?pa=${encodeURIComponent(shop.upiId ?? "")}&pn=${encodeURIComponent(shop.businessName)}&am=${finalInvoiceBill.grandTotal.toFixed(2)}&cu=INR&tn=${encodeURIComponent(note)}`;
+  }
+
+  function handleCashPayment() {
+    setPaymentIntent("cash_pending");
+    toast.success("Waiting for Restaurant/Admin Approval.");
+  }
+
+  function handlePayViaUpi() {
+    if (!shop.upiId) return;
+    window.location.href = buildUpiUrl();
+    setPaymentIntent("upi_confirm");
+  }
+
+  function handleConfirmUpiPaid() {
+    setPaymentIntent("upi_pending");
+  }
+
+  function handleUpiPaymentFailed() {
+    setPaymentIntent("idle");
+    toast.error("Payment Failed or Cancelled.");
+  }
 
   async function handleGenerateFinalBill() {
     setGeneratingBill(true);
@@ -330,7 +404,7 @@ export function OrderSheet({
         items: finalInvoiceItems,
         bill: finalInvoiceBill,
         paymentStatus: invoicePaymentStatus,
-        ownerApprovalStatus,
+        ownerApprovalStatus: billStatusLabel,
       });
     } catch {
       toast.error("Couldn't generate the PDF — please try again.");
@@ -865,35 +939,105 @@ export function OrderSheet({
                 </div>
 
                 <div className="px-4 py-3 flex items-center justify-between text-sm">
-                  <span className="text-muted-foreground">Payment status</span>
+                  <span className="text-muted-foreground">Bill Status</span>
                   <span
                     className={cn(
                       "font-semibold",
                       invoicePaymentStatus === "Paid" ? "text-emerald-600 dark:text-emerald-400" : "text-amber-600 dark:text-amber-400"
                     )}
                   >
-                    {invoicePaymentStatus}
-                  </span>
-                </div>
-                <div className="px-4 py-3 border-t flex items-center justify-between text-sm">
-                  <span className="text-muted-foreground">Owner approval status</span>
-                  <span
-                    className={cn(
-                      "font-semibold",
-                      ownerApprovalStatus === "Approved" ? "text-emerald-600 dark:text-emerald-400" : "text-amber-600 dark:text-amber-400"
-                    )}
-                  >
-                    {ownerApprovalStatus}
+                    {billStatusLabel}
                   </span>
                 </div>
               </div>
 
-              {invoicePaymentStatus === "Unpaid" ? (
-                <PaymentInfo shop={shop} />
-              ) : (
+              {invoicePaymentStatus === "Paid" ? (
                 <div className="rounded-xl border border-emerald-200 bg-emerald-50 dark:bg-emerald-900/20 dark:border-emerald-800 px-4 py-3 text-sm text-emerald-800 dark:text-emerald-400 text-center">
                   Payment received — thank you!
                 </div>
+              ) : paymentIntent === "cash_pending" ? (
+                <div className="rounded-xl border border-amber-300 bg-amber-50 dark:bg-amber-900/20 dark:border-amber-800 px-4 py-4 flex flex-col items-center gap-2 text-center">
+                  <Loader2 className="size-5 animate-spin text-amber-600 dark:text-amber-400" />
+                  <p className="text-sm font-medium text-amber-800 dark:text-amber-400">
+                    Waiting for Restaurant/Admin Approval.
+                  </p>
+                  <p className="text-xs text-amber-700/80 dark:text-amber-400/80">
+                    Let the staff know you&apos;re paying by cash — they&apos;ll confirm it here.
+                  </p>
+                </div>
+              ) : paymentIntent === "upi_confirm" ? (
+                <div className="rounded-xl border bg-card px-4 py-4 flex flex-col items-center gap-3 text-center">
+                  <p className="text-sm font-medium">Have you completed the payment?</p>
+                  <div className="flex w-full gap-2">
+                    <Button className="h-10 flex-1 bg-emerald-600 text-white hover:bg-emerald-700" onClick={handleConfirmUpiPaid}>
+                      I&apos;ve Paid
+                    </Button>
+                    <Button variant="outline" className="h-10 flex-1" onClick={handleUpiPaymentFailed}>
+                      Failed / Cancelled
+                    </Button>
+                  </div>
+                </div>
+              ) : paymentIntent === "upi_pending" ? (
+                <div className="rounded-xl border border-amber-300 bg-amber-50 dark:bg-amber-900/20 dark:border-amber-800 px-4 py-4 flex flex-col items-center gap-2 text-center">
+                  <Loader2 className="size-5 animate-spin text-amber-600 dark:text-amber-400" />
+                  <p className="text-sm font-medium text-amber-800 dark:text-amber-400">Payment Pending</p>
+                  <p className="text-xs text-amber-700/80 dark:text-amber-400/80">
+                    Waiting for the restaurant to confirm your payment.
+                  </p>
+                </div>
+              ) : (
+                <>
+                  {upiQrDataUrl && (
+                    <div className="rounded-xl border bg-card overflow-hidden">
+                      <div className="px-4 py-2.5 bg-muted/30 border-b flex items-center gap-1.5">
+                        <QrCodeIcon className="size-3.5 text-muted-foreground" />
+                        <p className="font-semibold text-xs uppercase tracking-wide text-muted-foreground">Scan to pay via UPI</p>
+                      </div>
+                      <div className="px-4 py-4 flex flex-col items-center gap-2">
+                        <div className="rounded-2xl border-2 border-border bg-white p-3">
+                          {/* Data-URL, not a remote image — next/image would add no benefit here. */}
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img src={upiQrDataUrl} alt="UPI payment QR code" width={180} height={180} />
+                        </div>
+                        <p className="text-xs text-muted-foreground">
+                          Pay <span className="font-semibold text-foreground">{formatCurrency(finalInvoiceBill.grandTotal, shop.currency)}</span> to{" "}
+                          <span className="font-semibold text-foreground">{shop.upiId}</span>
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                  {shop.bankAccountNumber && (
+                    <div className="rounded-lg bg-muted/40 px-3 py-2 text-xs space-y-0.5">
+                      <p className="font-medium text-foreground">Bank transfer</p>
+                      {shop.bankName && <p className="text-muted-foreground">{shop.bankName}</p>}
+                      <p className="text-muted-foreground">A/C: {shop.bankAccountNumber}</p>
+                      {shop.bankIfsc && <p className="text-muted-foreground">IFSC: {shop.bankIfsc}</p>}
+                    </div>
+                  )}
+                  {(shop.acceptCash || shop.upiId) && (
+                    <div className="space-y-2">
+                      {shop.acceptCash && (
+                        <Button
+                          size="lg"
+                          className="h-11 w-full gap-2 bg-primary text-primary-foreground hover:bg-primary/90"
+                          onClick={handleCashPayment}
+                        >
+                          <Banknote className="size-4" /> Cash Payment
+                        </Button>
+                      )}
+                      {shop.upiId && (
+                        <Button
+                          size="lg"
+                          variant="outline"
+                          className="h-11 w-full gap-2"
+                          onClick={handlePayViaUpi}
+                        >
+                          <QrCodeIcon className="size-4" /> Pay via GPay / UPI
+                        </Button>
+                      )}
+                    </div>
+                  )}
+                </>
               )}
             </div>
 
@@ -914,6 +1058,16 @@ export function OrderSheet({
                   <Share2 className="size-4" /> {sharingInvoice ? "Sharing…" : "Share"}
                 </Button>
               </div>
+              {invoicePaymentStatus === "Unpaid" && (
+                <Button
+                  size="lg"
+                  variant="secondary"
+                  className="h-11 w-full gap-2 text-muted-foreground"
+                  onClick={() => onOpenChange(false)}
+                >
+                  <Plus className="size-4" /> Add More Items
+                </Button>
+              )}
               <Button variant="ghost" size="sm" className="h-9 w-full text-muted-foreground" onClick={() => onOpenChange(false)}>
                 Close
               </Button>

@@ -23,6 +23,7 @@ export type ActiveSession = {
   id: string;
   status: string;
   billRequestedAt?: string | null;
+  paymentMethod?: string | null;
   orders: SessionOrderSnapshot[];
 } | null;
 
