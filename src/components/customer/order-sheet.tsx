@@ -545,13 +545,18 @@ export function OrderSheet({
                 />
               )}
               {shop.enableTableNumber && prefilledTable && (
-                <div className="flex items-center gap-2.5 rounded-xl bg-muted/50 px-4 py-3">
-                  <Table2 className="size-4 shrink-0 text-muted-foreground" />
-                  <div className="min-w-0">
-                    <p className="text-xs font-medium text-muted-foreground">Table</p>
-                    <p className="truncate text-sm font-semibold">{prefilledTable}</p>
+                <FormRow label="Table" htmlFor="tableDisplay">
+                  <div className="relative">
+                    <Table2 className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                    <Input
+                      id="tableDisplay"
+                      value={prefilledTable}
+                      readOnly
+                      disabled
+                      className="pl-8 font-semibold disabled:cursor-default disabled:bg-muted/50 disabled:opacity-100"
+                    />
                   </div>
-                </div>
+                </FormRow>
               )}
               {shop.requireDeliveryAddress && (
                 <FormRow
