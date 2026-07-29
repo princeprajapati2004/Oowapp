@@ -276,19 +276,32 @@ export function OrderSheet({
   const invoiceCustomerName = checkoutValues?.customerName || customer?.name || undefined;
   const invoiceCustomerPhone = checkoutValues?.customerPhone || customer?.phone || verifiedPhone || undefined;
   const invoiceTableNumber = checkoutValues?.tableNumber || prefilledTable || undefined;
-  const finalInvoiceBill = useMemo(() => calculateBill(alreadyOrderedItems, taxes), [alreadyOrderedItems, taxes]);
+  // Final Bill = every previously-placed round PLUS whatever's still sitting in
+  // the cart this sitting, even if it hasn't been sent via WhatsApp yet.
+  const finalInvoiceItems = useMemo(
+    () =>
+      mergeLineItems([
+        ...alreadyOrderedItems,
+        ...items.map((i) => ({ id: i.productId, name: i.name, price: i.price, quantity: i.quantity, categoryId: i.categoryId })),
+      ]),
+    [alreadyOrderedItems, items]
+  );
+  const finalInvoiceBill = useMemo(() => calculateBill(finalInvoiceItems, taxes), [finalInvoiceItems, taxes]);
   const ownerApprovalStatus = session?.status === "PAID" ? "Approved" : session?.status === "AWAITING_PAYMENT" ? "Pending" : "—";
   const invoicePaymentStatus: "Paid" | "Unpaid" = session?.status === "PAID" ? "Paid" : "Unpaid";
 
   async function handleGenerateFinalBill() {
-    if (!session) return;
     setGeneratingBill(true);
     try {
-      const res = await api.patch<{ ok: boolean; session: { status: string; billRequestedAt: string | null } }>(
-        `/api/table-sessions/${session.id}`,
-        { action: "request_bill" }
-      );
-      setSession((prev) => (prev ? { ...prev, status: res.session.status, billRequestedAt: res.session.billRequestedAt } : prev));
+      // A brand-new customer with no session yet has nothing to notify staff
+      // about — just show the bill straight from the current cart.
+      if (session) {
+        const res = await api.patch<{ ok: boolean; session: { status: string; billRequestedAt: string | null } }>(
+          `/api/table-sessions/${session.id}`,
+          { action: "request_bill" }
+        );
+        setSession((prev) => (prev ? { ...prev, status: res.session.status, billRequestedAt: res.session.billRequestedAt } : prev));
+      }
       setStep("invoice");
     } catch (err) {
       if (err instanceof ApiError && err.status === 409) {
@@ -308,13 +321,13 @@ export function OrderSheet({
     try {
       await generateInvoicePdf({
         shop,
-        billNumber: invoiceNumber,
+        billNumber: invoiceNumber || "PREVIEW",
         invoiceNumber,
         invoiceDate: session?.billRequestedAt ?? undefined,
         customerName: invoiceCustomerName,
         customerPhone: invoiceCustomerPhone,
         tableNumber: invoiceTableNumber,
-        items: alreadyOrderedItems,
+        items: finalInvoiceItems,
         bill: finalInvoiceBill,
         paymentStatus: invoicePaymentStatus,
         ownerApprovalStatus,
@@ -327,9 +340,10 @@ export function OrderSheet({
   }
 
   async function handleShareInvoice() {
+    const label = invoiceNumber || "Final Bill";
     const shareData = {
-      title: `${shop.businessName} — Final Bill ${invoiceNumber}`,
-      text: `My bill from ${shop.businessName} — ${invoiceNumber}, total ${formatCurrency(finalInvoiceBill.grandTotal, shop.currency)}`,
+      title: `${shop.businessName} — ${label}`,
+      text: `My bill from ${shop.businessName} — ${label}, total ${formatCurrency(finalInvoiceBill.grandTotal, shop.currency)}`,
       url: typeof window !== "undefined" ? window.location.href : undefined,
     };
     setSharingInvoice(true);
@@ -543,11 +557,6 @@ export function OrderSheet({
                     <span className="font-semibold">{formatCurrency(bill.subtotal, shop.currency)}</span>
                   </div>
                 )}
-                {isIncremental && items.length > 0 && (
-                  <p className="text-xs text-muted-foreground">
-                    Send your new items via WhatsApp first so they&apos;re included in the final bill.
-                  </p>
-                )}
                 <div className="space-y-2">
                   {items.length > 0 && (
                     <Button
@@ -558,27 +567,23 @@ export function OrderSheet({
                       <WhatsAppIcon className="size-4.5" /> Place Order on WhatsApp
                     </Button>
                   )}
-                  {isIncremental && (
-                    <Button
-                      size="lg"
-                      className="h-12 w-full gap-2 bg-emerald-600 text-white hover:bg-emerald-700 shadow-sm shadow-emerald-600/20"
-                      disabled={generatingBill}
-                      onClick={billAlreadyRequested ? () => setStep("invoice") : handleGenerateFinalBill}
-                    >
-                      <ReceiptText className="size-4.5" />
-                      {generatingBill ? "Generating…" : billAlreadyRequested ? "View Final Bill" : "Generate Final Bill"}
-                    </Button>
-                  )}
-                  {isIncremental && (
-                    <Button
-                      size="lg"
-                      variant="secondary"
-                      className="h-11 w-full gap-2 text-muted-foreground"
-                      onClick={() => onOpenChange(false)}
-                    >
-                      <Plus className="size-4" /> Add More Items
-                    </Button>
-                  )}
+                  <Button
+                    size="lg"
+                    className="h-12 w-full gap-2 bg-emerald-600 text-white hover:bg-emerald-700 shadow-sm shadow-emerald-600/20"
+                    disabled={generatingBill}
+                    onClick={billAlreadyRequested ? () => setStep("invoice") : handleGenerateFinalBill}
+                  >
+                    <ReceiptText className="size-4.5" />
+                    {generatingBill ? "Generating…" : billAlreadyRequested ? "View Final Bill" : "Generate Final Bill"}
+                  </Button>
+                  <Button
+                    size="lg"
+                    variant="secondary"
+                    className="h-11 w-full gap-2 text-muted-foreground"
+                    onClick={() => onOpenChange(false)}
+                  >
+                    <Plus className="size-4" /> Add More Items
+                  </Button>
                 </div>
               </div>
             )}
@@ -795,7 +800,7 @@ export function OrderSheet({
                   <p className="font-bold text-base">{shop.businessName}</p>
                   {shop.address ? <p className="text-xs text-muted-foreground mt-0.5">{shop.address}</p> : null}
                   {shop.phone ? <p className="text-xs text-muted-foreground">{shop.phone}</p> : null}
-                  <p className="mt-2 text-xs text-muted-foreground font-mono">{invoiceNumber}</p>
+                  {invoiceNumber && <p className="mt-2 text-xs text-muted-foreground font-mono">{invoiceNumber}</p>}
                 </div>
 
                 <div className="px-4 py-3 border-b space-y-1.5 text-sm">
@@ -831,7 +836,7 @@ export function OrderSheet({
                 </div>
 
                 <div className="px-4 py-3 space-y-2 border-b">
-                  {alreadyOrderedItems.map((item) => (
+                  {finalInvoiceItems.map((item) => (
                     <div key={item.id} className="flex items-start justify-between gap-2 text-sm">
                       <div className="flex-1 min-w-0">
                         <span className="font-medium">{item.name}</span>
