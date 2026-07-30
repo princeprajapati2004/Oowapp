@@ -20,7 +20,9 @@ export default async function OrderPage({
   }
 
   const prefilledTable = resolvedSearch.table?.trim() || undefined;
-  const { categories, products, ...shopInfo } = shop;
+  // taxes carries Prisma Decimal `value` fields, which can't cross the
+  // Server->Client boundary — this page doesn't forward taxes to CustomerMenu.
+  const { categories, products, taxes: _taxes, ...shopInfo } = shop;
 
   const shopRow = await db.shop.findUnique({ where: { slug }, select: { id: true } });
 
