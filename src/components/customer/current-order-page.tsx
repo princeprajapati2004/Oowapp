@@ -23,6 +23,7 @@ import {
   Loader2,
   RefreshCw,
   ImageOff,
+  Lock,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -32,6 +33,7 @@ import { EmptyState } from "@/components/shared/empty-state";
 import { ThemeToggle } from "@/components/shared/theme-toggle";
 import { PhoneVerification } from "@/components/customer/phone-verification";
 import { ItemStatusBadge, sessionItemStatus } from "@/components/customer/item-status-badge";
+import { tableSessionKey } from "@/components/customer/customer-menu";
 import { formatCurrency } from "@/lib/utils/currency";
 import { generateInvoicePdf } from "@/lib/utils/invoice-pdf";
 import { calculateBill, mergeLineItems, type BillLineItem } from "@/lib/services/billing";
@@ -386,6 +388,19 @@ export function CurrentOrderPage({
         }
         if (res.tableSessionId && res.sessionOrders) {
           setSession({ id: res.tableSessionId, status: res.sessionStatus ?? "ACTIVE", orders: res.sessionOrders });
+          // Persist table ownership so CustomerMenu can identify this browser
+          // as the session owner on the next page load — prevents other customers
+          // scanning the same QR from seeing the ordering UI.
+          if (resolvedValues.tableNumber) {
+            try {
+              localStorage.setItem(
+                tableSessionKey(shop.slug, resolvedValues.tableNumber),
+                res.tableSessionId
+              );
+            } catch {
+              // ignore storage errors
+            }
+          }
         }
         cart.clear();
       })
@@ -562,6 +577,12 @@ export function CurrentOrderPage({
 
             {hasUnsentItems && (
               <div className="rounded-2xl border bg-card p-4 space-y-4">
+                {isIncremental && (
+                  <div className="flex items-start gap-2.5 rounded-xl border border-amber-200 bg-amber-50 dark:bg-amber-900/20 dark:border-amber-800 px-4 py-3 text-sm text-amber-800 dark:text-amber-400">
+                    <Lock className="size-4 mt-0.5 shrink-0" />
+                    <p>Order already booked. Previously ordered items cannot be removed. Only additional items can be added.</p>
+                  </div>
+                )}
                 <form onSubmit={handleSubmit(handlePlaceOrder)} className="space-y-4">
                   {billAlreadyRequested && (
                     <div className="rounded-xl border border-amber-300 bg-amber-50 dark:bg-amber-900/20 dark:border-amber-800 px-4 py-3 text-sm text-amber-800 dark:text-amber-400">

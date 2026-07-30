@@ -15,11 +15,13 @@ export function ProductCard({
   product,
   currency,
   quantityInCart,
+  minQuantity = 0,
   onQuantityChange,
 }: {
   product: CustomerProduct;
   currency: string;
   quantityInCart: number;
+  minQuantity?: number;
   onQuantityChange: (quantity: number) => void;
 }) {
   return (
@@ -81,7 +83,7 @@ export function ProductCard({
           </div>
           {product.isAvailable && (
             <div className="flex justify-center border-t pt-2">
-              <QtyStepper value={quantityInCart} min={0} max={MAX_QUANTITY} onChange={onQuantityChange} />
+              <QtyStepper value={quantityInCart} min={minQuantity} max={MAX_QUANTITY} onChange={onQuantityChange} />
             </div>
           )}
         </div>

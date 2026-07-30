@@ -64,7 +64,12 @@
       "Bash(nslookup -type=MX oowapp.in)",
       "Bash(git show *)",
       "Bash(curl -s http://localhost:3000/api/orders -o /dev/null -w \"%{http_code}\\\\n\")",
-      "Bash(node -e ' *)"
+      "Bash(node -e ' *)",
+      "Bash(git rev-list *)",
+      "Bash(grep -n *)",
+      "Bash(git rm *)",
+      "Bash(echo \"---exit:$?\")",
+      "Bash(echo \"exit:$?\")"
     ]
   }
 }

@@ -160,13 +160,31 @@ npx tsx scripts/seed-super-admin.ts
 
 ---
 
-## Step 7 — Build the app
+## Step 7 — Build the app (always done locally, not on server)
+
+The MilesWeb shared server does not have enough resources to run `npm run build`. Build on your local machine instead.
+
+**On your local machine (WSL):**
 
 ```bash
+cd /home/prince/FCT/Oowapp
 npm run build
 ```
 
-Takes 1–3 minutes. Creates the `.next/` folder.
+Then zip and upload the `.next` folder:
+
+```bash
+tar -czf next-build.tar.gz .next
+scp next-build.tar.gz seespos_1@103.191.208.56:~/Oowapp/
+```
+
+**On the server (SSH), extract it:**
+
+```bash
+cd ~/Oowapp
+tar -xzf next-build.tar.gz
+rm next-build.tar.gz
+```
 
 ---
 
@@ -209,15 +227,25 @@ cat ~/oowapp/logs/error.log
 
 ## Updating the app (after every code change)
 
+**1. Local machine (WSL) — build and upload:**
 ```bash
-cd ~/oowapp
-git pull origin main
-npm ci
-npx prisma migrate deploy    # skip if no schema changes
+cd /home/prince/FCT/Oowapp
 npm run build
+tar -czf next-build.tar.gz .next
+scp next-build.tar.gz seespos_1@103.191.208.56:~/Oowapp/
 ```
 
-Then in mympanel → Setup Node.js App → click **Restart**.
+**2. Server (SSH) — pull code and extract build:**
+```bash
+cd ~/Oowapp
+git pull origin main
+npm ci                           # only if package.json changed
+npx prisma migrate deploy        # only if schema changed
+tar -xzf next-build.tar.gz
+rm next-build.tar.gz
+```
+
+**3. mympanel → Setup Node.js App → Restart**
 
 ---
 

@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Search, ShoppingCart, PackageSearch, History, LogIn, LogOut } from "lucide-react";
+import { Search, ShoppingCart, PackageSearch, History, LogIn, LogOut, Lock, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -23,6 +23,34 @@ import type {
   CustomerProduct,
   CustomerShop,
 } from "@/lib/types/customer";
+
+// localStorage key for tracking which session this browser owns at a table.
+export function tableSessionKey(shopSlug: string, tableNumber: string) {
+  return `oowapp_table_${shopSlug}_${tableNumber}`;
+}
+
+function TableOccupiedScreen({ tableNumber, shopName }: { tableNumber: string; shopName: string }) {
+  return (
+    <div className="flex min-h-screen flex-col items-center justify-center bg-muted/20 px-6 text-center">
+      <div className="max-w-sm space-y-5">
+        <div className="mx-auto flex size-16 items-center justify-center rounded-full bg-amber-100 dark:bg-amber-900/30">
+          <AlertTriangle className="size-8 text-amber-600 dark:text-amber-400" />
+        </div>
+        <div className="space-y-2">
+          <h1 className="text-2xl font-bold">Table Already Occupied</h1>
+          <p className="text-muted-foreground">
+            Table <span className="font-semibold text-foreground">#{tableNumber}</span> at{" "}
+            <span className="font-semibold text-foreground">{shopName}</span> currently has an
+            active order.
+          </p>
+        </div>
+        <div className="rounded-xl border border-amber-200 bg-amber-50 dark:bg-amber-900/20 dark:border-amber-800 px-4 py-3 text-sm text-amber-800 dark:text-amber-400">
+          Please contact restaurant staff if you believe this is incorrect.
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export function CustomerMenu({
   shop,
@@ -60,6 +88,44 @@ export function CustomerMenu({
     cart.clear();
     setSession(null);
   });
+
+  // ── Table occupancy ownership check ──────────────────────────────────────
+  // null = still checking localStorage, true = owner or no table, false = blocked.
+  // Only kicks in when there IS a prefilled table AND an active session.
+  const needsOwnershipCheck = !!(prefilledTable && activeSession);
+  const [isTableOwner, setIsTableOwner] = useState<boolean | null>(needsOwnershipCheck ? null : true);
+
+  useEffect(() => {
+    if (!needsOwnershipCheck) return;
+    try {
+      const stored = localStorage.getItem(tableSessionKey(shop.slug, prefilledTable!));
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setIsTableOwner(stored === activeSession!.id);
+    } catch {
+      setIsTableOwner(true); // fail open on storage errors
+    }
+    // activeSession.id and prefilledTable are stable for a given page load.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [needsOwnershipCheck, shop.slug]);
+
+  // ── Locked quantities ─────────────────────────────────────────────────────
+  // Maps productId → total quantity already committed to the restaurant for
+  // this session. The cart stepper shows effective total (locked + new); new
+  // items can be added but committed quantities can never be reduced.
+  const lockedQuantities = useMemo(() => {
+    const map = new Map<string, number>();
+    if (!session) return map;
+    session.orders
+      .filter((o) => o.status !== "CANCELLED")
+      .flatMap((o) => o.items)
+      .forEach((item) => {
+        if (!item.productId) return;
+        map.set(item.productId, (map.get(item.productId) ?? 0) + item.quantity);
+      });
+    return map;
+  }, [session]);
+
+  const hasLockedItems = lockedQuantities.size > 0;
 
   // Drives the sticky bottom panel's mount/unmount so it can slide+fade+scale
   // out smoothly instead of vanishing the instant the cart empties — plain
@@ -105,23 +171,24 @@ export function CustomerMenu({
     [categories, visibleProducts]
   );
 
-  const subtotal = cart.items.reduce((sum, i) => sum + i.price * i.quantity, 0);
-
-  // Snapshot of the last non-empty cart so the panel keeps showing real
-  // numbers while it plays its exit animation, instead of flashing to 0.
-  const [displayTotals, setDisplayTotals] = useState({ qty: cart.totalQuantity, total: subtotal });
-  if (hasItems && (displayTotals.qty !== cart.totalQuantity || displayTotals.total !== subtotal)) {
-    setDisplayTotals({ qty: cart.totalQuantity, total: subtotal });
+  // ── Cart quantity helpers ─────────────────────────────────────────────────
+  // effectiveQty = locked (already ordered) + new (in cart). This is what the
+  // product card stepper shows. Decrement is blocked once it would go below
+  // the locked floor.
+  function effectiveQty(productId: string) {
+    return (lockedQuantities.get(productId) ?? 0) + cart.quantityOf(productId);
   }
-  const displayQty = displayTotals.qty;
-  const displayTotal = displayTotals.total;
 
-  // The cart only ever holds items with quantity > 0 (see use-cart.ts), so a
-  // product not yet in the cart needs addItem (which creates the entry) for
-  // its first "+"; every change after that is a plain setQuantity, which
-  // already removes the item once quantity drops to 0.
   function handleQuantityChange(product: CustomerProduct, quantity: number) {
-    if (cart.quantityOf(product.id) === 0 && quantity > 0) {
+    const lockedQty = lockedQuantities.get(product.id) ?? 0;
+    if (quantity < lockedQty) {
+      toast.error("This item has already been sent to the restaurant and cannot be removed.");
+      return;
+    }
+    const newCartQty = quantity - lockedQty;
+    if (newCartQty === 0) {
+      cart.setQuantity(product.id, 0);
+    } else if (cart.quantityOf(product.id) === 0 && newCartQty > 0) {
       cart.addItem(
         {
           productId: product.id,
@@ -130,16 +197,31 @@ export function CustomerMenu({
           categoryId: product.categoryId,
           imageUrl: product.imageUrl,
         },
-        quantity
+        newCartQty
       );
     } else {
-      cart.setQuantity(product.id, quantity);
+      cart.setQuantity(product.id, newCartQty);
     }
   }
+
+  // Snapshot of last non-empty cart for the sticky panel exit animation.
+  const subtotal = cart.items.reduce((sum, i) => sum + i.price * i.quantity, 0);
+  const [displayTotals, setDisplayTotals] = useState({ qty: cart.totalQuantity, total: subtotal });
+  if (hasItems && (displayTotals.qty !== cart.totalQuantity || displayTotals.total !== subtotal)) {
+    setDisplayTotals({ qty: cart.totalQuantity, total: subtotal });
+  }
+  const displayQty = displayTotals.qty;
+  const displayTotal = displayTotals.total;
 
   async function handleLogout() {
     await api.post("/api/customer/auth/logout");
     router.refresh();
+  }
+
+  // ── Table occupied screen ─────────────────────────────────────────────────
+  // Show after localStorage hydration confirms this browser doesn't own the session.
+  if (isTableOwner === false && activeSession) {
+    return <TableOccupiedScreen tableNumber={prefilledTable!} shopName={shop.businessName} />;
   }
 
   return (
@@ -230,7 +312,16 @@ export function CustomerMenu({
         ) : null}
       </header>
 
-      <main className="mx-auto max-w-3xl px-4 py-5">
+      <main className="mx-auto max-w-3xl px-4 py-5 space-y-4">
+        {hasLockedItems && (
+          <div className="flex items-start gap-2.5 rounded-xl border border-amber-200 bg-amber-50 dark:bg-amber-900/20 dark:border-amber-800 px-4 py-3 text-sm text-amber-800 dark:text-amber-400">
+            <Lock className="size-4 mt-0.5 shrink-0" />
+            <p>
+              Order already booked. Previously ordered items cannot be removed. You can add more items or increase quantities.
+            </p>
+          </div>
+        )}
+
         {filtered.length === 0 ? (
           <EmptyState
             icon={PackageSearch}
@@ -244,7 +335,8 @@ export function CustomerMenu({
                 key={product.id}
                 product={product}
                 currency={shop.currency}
-                quantityInCart={cart.quantityOf(product.id)}
+                quantityInCart={effectiveQty(product.id)}
+                minQuantity={lockedQuantities.get(product.id) ?? 0}
                 onQuantityChange={(quantity) => handleQuantityChange(product, quantity)}
               />
             ))}
