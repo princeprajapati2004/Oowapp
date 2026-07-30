@@ -51,5 +51,7 @@ export type NotificationSettingsInput = z.infer<typeof notificationSettingsSchem
 export const restaurantSettingsSchema = z.object({
   enableTableQr: z.boolean(),
   tableNames: z.array(z.string().trim().min(1).max(50)).max(100),
+  // Ordering mode: WHATSAPP (default) or DIRECT (PRO+)
+  orderMode: z.enum(["WHATSAPP", "DIRECT"]),
 });
 export type RestaurantSettingsInput = z.infer<typeof restaurantSettingsSchema>;

@@ -34,6 +34,7 @@ export async function PATCH(request: Request) {
       data = {
         enableTableQr: parsed.enableTableQr,
         tableNames: JSON.stringify(parsed.tableNames),
+        orderMode: parsed.orderMode,
       };
     } else if (section === "notifications") {
       data = notificationSettingsSchema.parse(rest);

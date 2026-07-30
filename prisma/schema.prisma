@@ -95,6 +95,17 @@ enum TableSessionStatus {
   PAID
 }
 
+enum OrderMode {
+  WHATSAPP
+  DIRECT
+}
+
+enum StaffRole {
+  MANAGER
+  KITCHEN
+  WAITER
+}
+
 enum AuditAction {
   // Auth
   ADMIN_SIGNUP
@@ -192,6 +203,10 @@ model Shop {
   notifyNewOrders    Boolean @default(true)
   notifyOrderUpdates Boolean @default(true)
 
+  // Ordering mode — WHATSAPP sends the cart to WhatsApp; DIRECT creates orders
+  // in the database immediately without opening WhatsApp (requires PRO+).
+  orderMode OrderMode @default(WHATSAPP)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -205,6 +220,7 @@ model Shop {
   pushSubscriptions  PushSubscription[]
   featurePermissions BusinessFeaturePermission[]
   phoneOtps          PhoneOtp[]
+  staffMembers       StaffMember[]
 
   @@map("shops")
 }
@@ -318,6 +334,7 @@ model Order {
   taxBreakdown    Json
   status          OrderStatus @default(PENDING)
   paymentMethod   String?
+  // "qr" = customer-scanned, "waiter" = placed by waiter staff
   source          String      @default("qr")
   // Discount (Feature 3)
   discountType    String?
@@ -329,6 +346,9 @@ model Order {
   // orders, which are unaffected by session grouping or the "no decrease" rule.
   tableSessionId  String?
   tableSession    TableSession? @relation(fields: [tableSessionId], references: [id], onDelete: SetNull)
+  // Staff member who placed this order (waiter workflow); null for QR orders.
+  staffId         String?
+  staff           StaffMember? @relation(fields: [staffId], references: [id], onDelete: SetNull)
   // Client-generated idempotency key — dedupes retries/double WhatsApp sends
   // (see resolveOrCreateSession / POST /api/orders).
   clientRequestId String?
@@ -377,6 +397,29 @@ model TableSession {
   @@index([shopId])
   @@index([shopId, tableNumber])
   @@map("table_sessions")
+}
+
+// Staff accounts scoped to a shop. Separate from the Admin (owner) account —
+// staff can only access role-restricted views (Kitchen Display, Waiter).
+model StaffMember {
+  id           String    @id @default(cuid())
+  shopId       String
+  shop         Shop      @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  name         String
+  email        String?
+  phone        String?
+  role         StaffRole
+  passwordHash String
+  isActive     Boolean   @default(true)
+  lastLoginAt  DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  orders Order[]
+
+  @@unique([shopId, email])
+  @@index([shopId])
+  @@map("staff_members")
 }
 
 // Phone verification for guest checkout (Customer Ordering module). Codes are

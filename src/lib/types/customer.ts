@@ -1,4 +1,5 @@
 import type { Product, Category, Tax, Shop } from "@/generated/prisma/client";
+import type { OrderMode } from "@/generated/prisma/client";
 
 export type CustomerProduct = Omit<Product, "price"> & { price: number };
 export type CustomerTax = Omit<Tax, "value"> & { value: number };
@@ -30,6 +31,8 @@ export type ActiveSession = {
 // Narrow DTO — only the fields customer-facing components actually use.
 // Sensitive internal fields (adminId, gstNumber, lifecycle timestamps, saveOrdersToDb, etc.)
 // are excluded so they are never serialised into the RSC payload sent to the browser.
+// Note: orderMode is added as an intersection because the generated Prisma types do not
+// yet include it — run `prisma generate` after applying the migration to update them.
 export type CustomerShop = Pick<
   Shop,
   | "slug"
@@ -52,4 +55,4 @@ export type CustomerShop = Pick<
   | "bankName"
   | "bankIfsc"
   | "paymentQrImageUrl"
->;
+> & { orderMode: OrderMode };

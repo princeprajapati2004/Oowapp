@@ -119,6 +119,7 @@ export default async function SettingsPage() {
           bare
           defaultValues={{
             enableTableQr: shopAny.enableTableQr ?? false,
+            orderMode: (shopAny.orderMode as "WHATSAPP" | "DIRECT") ?? "WHATSAPP",
             tableNames: shopAny.tableNames
               ? (() => {
                   try {

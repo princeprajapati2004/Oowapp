@@ -1,5 +1,7 @@
 import { redirect } from "next/navigation";
 import { ChefHat } from "lucide-react";
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+import { getStaffSession } from "@/lib/staff-session";
 import { getAdminSession } from "@/lib/session";
 import { getShopById } from "@/lib/services/shop";
 import { db } from "@/lib/db";
@@ -7,21 +9,32 @@ import { toOrderEvent } from "@/lib/server/order-events";
 import { EmptyState } from "@/components/shared/empty-state";
 import { KitchenDisplay } from "@/components/admin/kitchen-display";
 
-export default async function KitchenPage() {
-  const session = await getAdminSession();
-  if (!session) redirect("/login");
+export default async function KitchenStaffPage() {
+  // Accept either a staff session (KITCHEN/MANAGER) or an admin session
+  const staffSession = await getStaffSession();
+  const adminSession = await getAdminSession();
 
-  const shop = await getShopById(session.shopId);
+  if (!staffSession && !adminSession) {
+    redirect("/staff/login?redirect=/kitchen");
+  }
 
+  const shopId = staffSession?.shopId ?? adminSession!.shopId;
+
+  if (staffSession && staffSession.role !== "KITCHEN" && staffSession.role !== "MANAGER") {
+    redirect("/staff/login");
+  }
+
+  const shop = await getShopById(shopId);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const shopAny = shop as any;
+
   if (!shop.saveOrdersToDb && shopAny.orderMode !== "DIRECT") {
     return (
       <div className="flex min-h-screen items-center justify-center px-4">
         <EmptyState
           icon={ChefHat}
-          title="Order history is off"
-          description='Enable "Direct Dashboard Ordering" or turn on "Save orders to database" in Settings to use the kitchen display.'
+          title="Direct ordering is off"
+          description='This restaurant has not enabled Direct Dashboard Ordering.'
         />
       </div>
     );
@@ -32,12 +45,12 @@ export default async function KitchenPage() {
 
   const [orders, completedToday] = await Promise.all([
     db.order.findMany({
-      where: { shopId: session.shopId, status: { in: ["PENDING", "CONFIRMED", "PREPARING", "READY"] } },
+      where: { shopId, status: { in: ["PENDING", "CONFIRMED", "PREPARING", "READY"] } },
       orderBy: { createdAt: "asc" },
       include: { items: true },
     }),
     db.order.findMany({
-      where: { shopId: session.shopId, status: "COMPLETED", createdAt: { gte: startOfToday } },
+      where: { shopId, status: "COMPLETED", createdAt: { gte: startOfToday } },
       orderBy: { createdAt: "desc" },
       include: { items: true },
       take: 100,

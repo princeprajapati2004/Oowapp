@@ -13,13 +13,15 @@ export default async function CounterPage() {
 
   const shop = await getShopById(session.shopId);
 
-  if (!shop.saveOrdersToDb) {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const shopAny = shop as any;
+  if (!shop.saveOrdersToDb && shopAny.orderMode !== "DIRECT") {
     return (
       <div className="flex min-h-screen items-center justify-center px-4">
         <EmptyState
           icon={Banknote}
           title="Order history is off"
-          description='Turn on "Save orders to database" in Settings to use the cash counter.'
+          description='Enable "Direct Dashboard Ordering" or turn on "Save orders to database" in Settings to use the cash counter.'
         />
       </div>
     );
@@ -33,7 +35,8 @@ export default async function CounterPage() {
 
   return (
     <CashCounter
-      initialOrders={orders.map(toOrderEvent)}
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      initialOrders={(orders as any[]).map(toOrderEvent)}
       currency={shop.currency}
       shopName={shop.businessName}
     />

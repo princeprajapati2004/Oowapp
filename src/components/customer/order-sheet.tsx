@@ -22,6 +22,8 @@ import {
   RefreshCw,
   CheckCircle2,
   Lock,
+  ChefHat,
+  ShoppingBag,
 } from "lucide-react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
@@ -74,6 +76,7 @@ export function OrderSheet({
   verifiedPhone?: string | null;
 }) {
   const [placing, setPlacing] = useState(false);
+  const [directOrderPlaced, setDirectOrderPlaced] = useState(false);
   const [requestingBill, setRequestingBill] = useState(false);
   const [billRequestFailed, setBillRequestFailed] = useState(false);
   const [downloadingInvoicePdf, setDownloadingInvoicePdf] = useState(false);
@@ -336,7 +339,7 @@ export function OrderSheet({
     }
   }
 
-  function handlePlaceOrder(values: CheckoutInput) {
+  async function handlePlaceOrder(values: CheckoutInput) {
     if (billAlreadyRequested) {
       toast.error("Bill already requested for this table — please check with staff before ordering more.");
       return;
@@ -355,6 +358,58 @@ export function OrderSheet({
     setCheckoutValues(resolvedValues);
     setPlacing(true);
 
+    if (shop.orderMode === "DIRECT") {
+      // Direct Dashboard mode — POST to API, show in-app confirmation, no WhatsApp.
+      try {
+        const res = await api.post<{
+          ok: boolean;
+          saved: boolean;
+          orderId?: string;
+          tableSessionId?: string | null;
+          sessionStatus?: string | null;
+          sessionOrders?: { status: string; items: { productId: string | null; name: string; price: number; quantity: number; categoryId?: string }[] }[];
+        }>("/api/orders", {
+          shopSlug: shop.slug,
+          billNumber: newBillNumber,
+          clientRequestId: newClientRequestId,
+          customerName: resolvedValues.customerName,
+          customerPhone: resolvedValues.customerPhone,
+          tableNumber: resolvedValues.tableNumber,
+          deliveryAddress: resolvedValues.deliveryAddress,
+          notes: resolvedValues.notes,
+          items: cart.items,
+        });
+
+        if (res.orderId) {
+          addStoredOrder(shop.slug, { orderId: res.orderId, billNumber: newBillNumber, placedAt: new Date().toISOString() });
+        }
+        if (res.tableSessionId && res.sessionOrders) {
+          onSessionChange({ id: res.tableSessionId, status: res.sessionStatus ?? "ACTIVE", orders: res.sessionOrders });
+          if (resolvedValues.tableNumber) {
+            try {
+              localStorage.setItem(
+                `oowapp_table_${shop.slug}_${resolvedValues.tableNumber}`,
+                res.tableSessionId
+              );
+            } catch { /* ignore storage errors */ }
+          }
+        }
+        cart.clear();
+        setDirectOrderPlaced(true);
+      } catch (err) {
+        if (err instanceof ApiError && err.status === 409) {
+          toast.error("Bill was just requested for this table — please check with staff before ordering more.");
+          onSessionChange((prev) => (prev ? { ...prev, status: "AWAITING_PAYMENT" } : prev));
+        } else {
+          toast.error("Couldn't place your order — please try again.");
+        }
+      } finally {
+        setPlacing(false);
+      }
+      return;
+    }
+
+    // WhatsApp mode (default) — build message, open WhatsApp, save to DB asynchronously.
     const message =
       isIncremental && sessionRunningBill
         ? buildIncrementalOrderMessage({
@@ -403,9 +458,6 @@ export function OrderSheet({
         }
         if (res.tableSessionId && res.sessionOrders) {
           onSessionChange({ id: res.tableSessionId, status: res.sessionStatus ?? "ACTIVE", orders: res.sessionOrders });
-          // Persist table ownership so CustomerMenu can identify this browser
-          // as the session owner on the next page load — prevents other customers
-          // scanning the same QR from seeing the ordering UI.
           if (resolvedValues.tableNumber) {
             try {
               localStorage.setItem(
@@ -454,6 +506,25 @@ export function OrderSheet({
           {!cart.hydrated ? (
             <div className="flex items-center justify-center py-24">
               <Loader2 className="size-6 animate-spin text-muted-foreground" />
+            </div>
+          ) : directOrderPlaced ? (
+            <div className="flex flex-col items-center justify-center py-12 text-center space-y-4">
+              <div className="flex size-16 items-center justify-center rounded-full bg-emerald-100 dark:bg-emerald-900/30">
+                <ChefHat className="size-8 text-emerald-600 dark:text-emerald-400" />
+              </div>
+              <div className="space-y-1">
+                <p className="text-xl font-bold">Order Sent to Kitchen!</p>
+                <p className="text-sm text-muted-foreground">
+                  We&apos;ve received your order. Your food is being prepared.
+                </p>
+              </div>
+              <Button
+                variant="outline"
+                className="mt-2 gap-1.5"
+                onClick={() => { setDirectOrderPlaced(false); onOpenChange(false); }}
+              >
+                <Plus className="size-4" /> Add More Items
+              </Button>
             </div>
           ) : nothingYet ? (
             <EmptyState
@@ -633,15 +704,30 @@ export function OrderSheet({
                       </FormRow>
                     )}
 
-                    <Button
-                      type="submit"
-                      size="lg"
-                      disabled={placing || billAlreadyRequested}
-                      className="h-12 w-full gap-2 bg-[#25D366] text-white hover:bg-[#1ea952] shadow-sm shadow-[#25D366]/20"
-                    >
-                      <WhatsAppIcon className="size-4.5" />
-                      {placing ? "Opening WhatsApp…" : "Place Order on WhatsApp"}
-                    </Button>
+                    {shop.orderMode === "DIRECT" ? (
+                      <Button
+                        type="submit"
+                        size="lg"
+                        disabled={placing || billAlreadyRequested}
+                        className="h-12 w-full gap-2 bg-primary text-primary-foreground shadow-sm"
+                      >
+                        {placing ? (
+                          <><Loader2 className="size-4.5 animate-spin" /> Placing Order…</>
+                        ) : (
+                          <><ShoppingBag className="size-4.5" /> Confirm Order</>
+                        )}
+                      </Button>
+                    ) : (
+                      <Button
+                        type="submit"
+                        size="lg"
+                        disabled={placing || billAlreadyRequested}
+                        className="h-12 w-full gap-2 bg-[#25D366] text-white hover:bg-[#1ea952] shadow-sm shadow-[#25D366]/20"
+                      >
+                        <WhatsAppIcon className="size-4.5" />
+                        {placing ? "Opening WhatsApp…" : "Place Order on WhatsApp"}
+                      </Button>
+                    )}
                   </form>
                   <p className="text-center text-xs text-muted-foreground">
                     Payment options appear here once your order is sent.
