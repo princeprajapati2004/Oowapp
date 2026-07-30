@@ -8,6 +8,7 @@ export interface CartItem {
   price: number;
   categoryId: string;
   quantity: number;
+  imageUrl?: string | null;
 }
 
 function storageKey(slug: string) {

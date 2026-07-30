@@ -8,10 +8,17 @@ export type CustomerCategory = Category;
 // history flows through the customer UI: the serialized server-page prop
 // (serializeOrders' richer output structurally satisfies this) and the
 // POST /api/orders response's toOrderEvent-based sessionOrders. Only the
-// fields order-sheet.tsx / order-tracker.tsx actually read.
+// fields current-order-page.tsx / order-tracker.tsx actually read.
 export type SessionOrderSnapshot = {
   status: string;
-  items: { productId: string | null; name: string; price: number; quantity: number; categoryId?: string }[];
+  items: {
+    productId: string | null;
+    name: string;
+    price: number;
+    quantity: number;
+    categoryId?: string;
+    imageUrl?: string | null;
+  }[];
 };
 
 // A table's currently-open order session (see TableSession) — present only

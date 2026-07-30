@@ -30,7 +30,7 @@ export async function resolveCustomerIdentity(shopId: string) {
 /**
  * A QR-scanned table with an already-active session gets its prior orders
  * shown as a locked "already on this table" panel and its next submission
- * treated as an incremental (delta-only) round — see order-sheet.tsx.
+ * treated as an incremental (delta-only) round — see current-order-page.tsx.
  * Not fetched for manually-typed table numbers (no
  * `?table=` param): the server-side session attach on submit still works
  * correctly either way, this only affects whether the cart pre-shows what's
@@ -48,7 +48,7 @@ export async function resolveActiveTableSession(args: {
     include: {
       orders: {
         where: { status: { not: "CANCELLED" } },
-        include: { items: { include: { product: { select: { categoryId: true } } } } },
+        include: { items: { include: { product: { select: { categoryId: true, imageUrl: true } } } } },
       },
     },
   });
@@ -67,6 +67,7 @@ export async function resolveActiveTableSession(args: {
         price: Number(item.price),
         quantity: item.quantity,
         categoryId: item.product?.categoryId,
+        imageUrl: item.product?.imageUrl,
       })),
     })),
   };

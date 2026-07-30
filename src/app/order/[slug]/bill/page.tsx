@@ -1,11 +1,11 @@
 import { notFound } from "next/navigation";
 import { getPublicShopBundle } from "@/lib/services/shop";
-import { serializeProducts } from "@/lib/serialize";
+import { serializeTaxes } from "@/lib/serialize";
 import { resolveCustomerIdentity, resolveActiveTableSession } from "@/lib/services/customer-order-session";
 import { db } from "@/lib/db";
-import { CustomerMenu } from "@/components/customer/customer-menu";
+import { CurrentOrderPage } from "@/components/customer/current-order-page";
 
-export default async function OrderPage({
+export default async function BillPage({
   params,
   searchParams,
 }: {
@@ -20,29 +20,29 @@ export default async function OrderPage({
   }
 
   const prefilledTable = resolvedSearch.table?.trim() || undefined;
-  // taxes carries Prisma Decimal fields and isn't needed here — the bill math
-  // lives on the Current Order page (/order/[slug]/bill), which fetches its
-  // own copy — so it's dropped rather than forwarded to a Client Component.
-  const { categories, products, taxes: _taxes, ...shopInfo } = shop;
+  // categories/products carry Prisma Decimal price fields, which can't cross
+  // the Server->Client boundary — this page doesn't need them, unlike the
+  // menu page which serializes and forwards them.
+  const { categories: _categories, products: _products, taxes, ...shopInfo } = shop;
 
   const shopRow = await db.shop.findUnique({ where: { slug }, select: { id: true } });
 
-  const { customer } = shopRow
+  const { customer, verifiedPhone } = shopRow
     ? await resolveCustomerIdentity(shopRow.id)
-    : { customer: null };
+    : { customer: null, verifiedPhone: null };
 
   const activeSession = shopRow
     ? await resolveActiveTableSession({ shopId: shopRow.id, enableTableQr: shop.enableTableQr, tableNumber: prefilledTable })
     : null;
 
   return (
-    <CustomerMenu
+    <CurrentOrderPage
       shop={shopInfo}
-      categories={categories}
-      products={serializeProducts(products)}
+      taxes={serializeTaxes(taxes)}
       prefilledTable={prefilledTable}
       customer={customer}
       activeSession={activeSession}
+      verifiedPhone={verifiedPhone}
     />
   );
 }

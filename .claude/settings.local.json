@@ -53,7 +53,18 @@
       "Bash(curl -s -o /dev/null -w \"HTTP Status: %{http_code}\\\\n\" \"http://localhost:3000/order/kitchen-kabab?table=3\" --max-time 15)",
       "Bash(curl -s -o /dev/null -w \"HTTP Status: %{http_code}\\\\n\" \"http://localhost:3000/order/kitchen-kabab\" --max-time 15)",
       "Bash(curl -s -o /dev/null -w \"HTTP Status: %{http_code}\\\\n\" \"http://localhost:3000/order/kitchen-kabab?table=1\" --max-time 15)",
-      "Bash(curl -s -o /dev/null -w \"HTTP Status: %{http_code}\\\\n\" \"http://localhost:3000/order/test-shop\" --max-time 15)"
+      "Bash(curl -s -o /dev/null -w \"HTTP Status: %{http_code}\\\\n\" \"http://localhost:3000/order/test-shop\" --max-time 15)",
+      "Bash(nslookup oowapp.in)",
+      "Bash(nslookup www.oowapp.in)",
+      "Bash(dig +short oowapp.in A)",
+      "Bash(dig +short oowapp.in CNAME)",
+      "Bash(dig +short www.oowapp.in CNAME)",
+      "Bash(nslookup -type=NS oowapp.in)",
+      "Bash(nslookup 103.191.208.56)",
+      "Bash(nslookup -type=MX oowapp.in)",
+      "Bash(git show *)",
+      "Bash(curl -s http://localhost:3000/api/orders -o /dev/null -w \"%{http_code}\\\\n\")",
+      "Bash(node -e ' *)"
     ]
   }
 }
