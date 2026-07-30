@@ -190,7 +190,7 @@ export function CustomerMenu({
             <p className="text-xs text-muted-foreground">Scan, order, done.</p>
           </div>
           {prefilledTable && (
-            <span className="shrink-0 rounded-full bg-primary px-3 py-1 text-xs font-semibold text-primary-foreground">
+            <span className="shrink-0 rounded-full border border-[#00b074] bg-[#e6f7f1] px-3 py-1 text-xs font-bold text-[#00b074] dark:bg-[#00b074]/10">
               Table #{prefilledTable}
             </span>
           )}

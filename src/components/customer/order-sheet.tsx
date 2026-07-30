@@ -77,9 +77,12 @@ export function OrderSheet({
   const [billRequestFailed, setBillRequestFailed] = useState(false);
   const [downloadingInvoicePdf, setDownloadingInvoicePdf] = useState(false);
   const [sharingInvoice, setSharingInvoice] = useState(false);
-  const [paymentIntent, setPaymentIntent] = useState<
-    "idle" | "cash_pending" | "upi_confirm" | "upi_pending" | "payment_done_pending"
-  >("idle");
+  // Simplified to a single "confirming" step regardless of how they're paying
+  // (cash / UPI deep-link / scanned the QR with a different app / bank
+  // transfer) — there's no staff-approval wait anymore, see handleConfirmPaid.
+  const [paymentIntent, setPaymentIntent] = useState<"idle" | "confirming">("idle");
+  const [pendingPaymentMethod, setPendingPaymentMethod] = useState<"CASH" | "UPI" | "OTHER">("OTHER");
+  const [confirmingPaid, setConfirmingPaid] = useState(false);
   const [upiQrDataUrl, setUpiQrDataUrl] = useState<string | null>(null);
   const [checkoutValues, setCheckoutValues] = useState<CheckoutInput | null>(null);
 
@@ -184,12 +187,10 @@ export function OrderSheet({
     invoicePaymentStatus === "Paid"
       ? session?.paymentMethod?.toUpperCase() === "CASH"
         ? "Paid (Cash)"
-        : "Paid (Online)"
-      : paymentIntent === "cash_pending"
-        ? "Cash Approval Pending"
-        : paymentIntent === "upi_pending"
-          ? "Payment Pending"
-          : "Bill Generated";
+        : session?.paymentMethod?.toUpperCase() === "UPI"
+          ? "Paid (UPI)"
+          : "Paid (Other)"
+      : "Bill Generated";
 
   async function requestBill(sessionId: string) {
     setBillRequestFailed(false);
@@ -237,31 +238,50 @@ export function OrderSheet({
   }
 
   function handleCashPayment() {
-    setPaymentIntent("cash_pending");
-    toast.success("Waiting for Restaurant/Admin Approval.");
+    setPendingPaymentMethod("CASH");
+    setPaymentIntent("confirming");
   }
 
   function handlePayViaUpi() {
     if (!shop.upiId) return;
     window.location.href = buildUpiUrl();
-    setPaymentIntent("upi_confirm");
+    setPendingPaymentMethod("UPI");
+    setPaymentIntent("confirming");
   }
 
-  function handleConfirmUpiPaid() {
-    setPaymentIntent("upi_pending");
-  }
-
-  function handleUpiPaymentFailed() {
+  function handleCancelConfirm() {
     setPaymentIntent("idle");
-    toast.error("Payment Failed or Cancelled.");
   }
 
-  // Covers payment made by any means not captured by the Cash/UPI intent
-  // buttons above (e.g. scanning the QR with a different app, bank
-  // transfer) — same "awaiting staff approval" outcome, just a generic entry point.
+  // Covers payment made by any means not captured by the Cash/UPI buttons
+  // above (e.g. scanning the QR with a different app, bank transfer).
   function handlePaymentDone() {
-    setPaymentIntent("payment_done_pending");
-    toast.success("Waiting for Restaurant/Admin Approval.");
+    setPendingPaymentMethod("OTHER");
+    setPaymentIntent("confirming");
+  }
+
+  // No staff approval step — the customer self-confirms and the table
+  // session flips straight to PAID. There's no payment gateway behind this
+  // (see the API route), so it's purely a trust-the-customer flow; the
+  // server records it as self-reported rather than staff-verified.
+  async function handleConfirmPaid() {
+    if (!session) return;
+    setConfirmingPaid(true);
+    try {
+      const res = await api.patch<{ ok: boolean; session: { status: string; billRequestedAt: string | null; paymentMethod: string | null } }>(
+        `/api/table-sessions/${session.id}`,
+        { action: "customer_confirm_paid", paymentMethod: pendingPaymentMethod }
+      );
+      onSessionChange((prev) =>
+        prev ? { ...prev, status: res.session.status, billRequestedAt: res.session.billRequestedAt, paymentMethod: res.session.paymentMethod } : prev
+      );
+      toast.success("Payment confirmed — thank you!");
+      setPaymentIntent("idle");
+    } catch {
+      toast.error("Couldn't confirm payment — please try again.");
+    } finally {
+      setConfirmingPaid(false);
+    }
   }
 
   function retryGenerateBill() {
@@ -614,7 +634,7 @@ export function OrderSheet({
               {readyToGenerateBill && !requestingBill && (
                 <Button
                   size="lg"
-                  className="h-12 w-full gap-2 bg-emerald-700 text-white hover:bg-emerald-800"
+                  className="h-12 w-full gap-2 bg-[#00b074] text-white hover:bg-[#009a63]"
                   onClick={() => session && requestBill(session.id)}
                 >
                   <ReceiptText className="size-4.5" /> Generate Final Bill
@@ -643,39 +663,21 @@ export function OrderSheet({
                     <div className="rounded-xl border border-emerald-200 bg-emerald-50 dark:bg-emerald-900/20 dark:border-emerald-800 px-4 py-3 text-sm text-emerald-800 dark:text-emerald-400 text-center">
                       Payment received — thank you!
                     </div>
-                  ) : paymentIntent === "cash_pending" ? (
-                    <div className="rounded-xl border border-amber-300 bg-amber-50 dark:bg-amber-900/20 dark:border-amber-800 px-4 py-4 flex flex-col items-center gap-2 text-center">
-                      <Loader2 className="size-5 animate-spin text-amber-600 dark:text-amber-400" />
-                      <p className="text-sm font-medium text-amber-800 dark:text-amber-400">Waiting for Restaurant/Admin Approval.</p>
-                      <p className="text-xs text-amber-700/80 dark:text-amber-400/80">
-                        Let the staff know you&apos;re paying by cash — they&apos;ll confirm it here.
-                      </p>
-                    </div>
-                  ) : paymentIntent === "upi_confirm" ? (
+                  ) : paymentIntent === "confirming" ? (
                     <div className="rounded-xl border bg-card px-4 py-4 flex flex-col items-center gap-3 text-center">
                       <p className="text-sm font-medium">Have you completed the payment?</p>
                       <div className="flex w-full gap-2">
-                        <Button className="h-10 flex-1 bg-emerald-600 text-white hover:bg-emerald-700" onClick={handleConfirmUpiPaid}>
-                          I&apos;ve Paid
+                        <Button
+                          disabled={confirmingPaid}
+                          className="h-10 flex-1 bg-emerald-600 text-white hover:bg-emerald-700"
+                          onClick={handleConfirmPaid}
+                        >
+                          {confirmingPaid ? "Confirming…" : "Yes, I've Paid"}
                         </Button>
-                        <Button variant="outline" className="h-10 flex-1" onClick={handleUpiPaymentFailed}>
-                          Failed / Cancelled
+                        <Button variant="outline" disabled={confirmingPaid} className="h-10 flex-1" onClick={handleCancelConfirm}>
+                          Not Yet
                         </Button>
                       </div>
-                    </div>
-                  ) : paymentIntent === "upi_pending" ? (
-                    <div className="rounded-xl border border-amber-300 bg-amber-50 dark:bg-amber-900/20 dark:border-amber-800 px-4 py-4 flex flex-col items-center gap-2 text-center">
-                      <Loader2 className="size-5 animate-spin text-amber-600 dark:text-amber-400" />
-                      <p className="text-sm font-medium text-amber-800 dark:text-amber-400">Payment Pending</p>
-                      <p className="text-xs text-amber-700/80 dark:text-amber-400/80">Waiting for the restaurant to confirm your payment.</p>
-                    </div>
-                  ) : paymentIntent === "payment_done_pending" ? (
-                    <div className="rounded-xl border border-amber-300 bg-amber-50 dark:bg-amber-900/20 dark:border-amber-800 px-4 py-4 flex flex-col items-center gap-2 text-center">
-                      <Loader2 className="size-5 animate-spin text-amber-600 dark:text-amber-400" />
-                      <p className="text-sm font-medium text-amber-800 dark:text-amber-400">Waiting for Restaurant/Admin Approval.</p>
-                      <p className="text-xs text-amber-700/80 dark:text-amber-400/80">
-                        Let the staff know you&apos;ve completed the payment — they&apos;ll confirm it here.
-                      </p>
                     </div>
                   ) : (
                     <>
@@ -713,14 +715,14 @@ export function OrderSheet({
                             </Button>
                           )}
                           {shop.upiId && (
-                            <Button size="lg" className="h-12 w-full gap-2 bg-emerald-600 text-white hover:bg-emerald-700" onClick={handlePayViaUpi}>
+                            <Button size="lg" className="h-12 w-full gap-2 bg-[#00b074] text-white hover:bg-[#009a63]" onClick={handlePayViaUpi}>
                               <QrCodeIcon className="size-4.5" /> Pay {formatCurrency(finalInvoiceBill.grandTotal, shop.currency)} via GPay / UPI
                             </Button>
                           )}
                         </div>
                       )}
-                      <Button size="lg" variant="outline" className="h-11 w-full gap-2" onClick={handlePaymentDone}>
-                        <CheckCircle2 className="size-4.5" /> Payment Done
+                      <Button size="lg" className="h-11 w-full gap-2 bg-[#007bff] text-white hover:bg-[#0069d9]" onClick={handlePaymentDone}>
+                        <CheckCircle2 className="size-4.5" /> Paid Bill
                       </Button>
                     </>
                   )}
