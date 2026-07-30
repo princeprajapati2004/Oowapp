@@ -30,7 +30,7 @@ export async function resolveCustomerIdentity(shopId: string) {
 /**
  * A QR-scanned table with an already-active session gets its prior orders
  * shown as a locked "already on this table" panel and its next submission
- * treated as an incremental (delta-only) round — see final-bill-page.tsx.
+ * treated as an incremental (delta-only) round — see order-sheet.tsx.
  * Not fetched for manually-typed table numbers (no
  * `?table=` param): the server-side session attach on submit still works
  * correctly either way, this only affects whether the cart pre-shows what's
