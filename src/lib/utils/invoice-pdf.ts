@@ -32,7 +32,7 @@ export interface InvoicePdfInput {
   items: InvoicePdfItem[];
   bill: BillTotals;
   // Optional — used for the "Generate Final Bill" table-session invoice view,
-  // which reuses this same PDF generator (order-sheet.tsx / order-tracker.tsx).
+  // which reuses this same PDF generator (current-order-page.tsx / order-tracker.tsx).
   invoiceNumber?: string;
   invoiceDate?: string | Date;
   paymentStatus?: "Paid" | "Unpaid";
@@ -51,7 +51,7 @@ async function toDataUrl(url: string): Promise<string> {
 }
 
 /** Single source of truth for the customer-facing invoice PDF — used by both the
- * pre-order bill review (order-sheet.tsx) and the live order/invoice tracker (order-tracker.tsx). */
+ * pre-order bill review (current-order-page.tsx) and the live order/invoice tracker (order-tracker.tsx). */
 export async function generateInvoicePdf(input: InvoicePdfInput): Promise<void> {
   const {
     shop,

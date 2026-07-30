@@ -400,12 +400,19 @@ function TableDetailDialog({
     }
   }
 
+  // Clears stale detail once the dialog closes, however it closed — adjusted
+  // during render (not an effect) per
+  // https://react.dev/learn/you-might-not-need-an-effect#adjusting-some-state-when-a-prop-changes
+  const [prevOpen, setPrevOpen] = useState(open);
+  if (open !== prevOpen) {
+    setPrevOpen(open);
+    if (!open) setDetail(null);
+  }
+
   // Load detail whenever the dialog opens or the session changes.
   useEffect(() => {
-    if (!open || !table?.session?.id) {
-      if (!open) setDetail(null);
-      return;
-    }
+    if (!open || !table?.session?.id) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     loadDetail(table.session.id);
     // loadDetail only uses stable setState setters + api (module-level), safe to omit.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -532,7 +539,7 @@ function TableDetailDialog({
 
           {error && (
             <div className="text-center py-10 text-sm text-destructive">
-              Couldn't load table details.{" "}
+              Couldn&apos;t load table details.{" "}
               <button className="underline" onClick={() => table?.session && loadDetail(table.session.id)}>
                 Retry
               </button>

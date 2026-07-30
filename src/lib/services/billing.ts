@@ -4,6 +4,7 @@ export interface BillLineItem {
   price: number;
   quantity: number;
   categoryId: string;
+  imageUrl?: string | null;
 }
 
 export interface BillTax {

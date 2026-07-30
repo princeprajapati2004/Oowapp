@@ -183,7 +183,17 @@ export async function POST(request: Request) {
     // dropped connection) must not turn an otherwise-successful order into an
     // error response — fall back to the minimal shape instead.
     let sessionOrders:
-      | { status: string; items: { productId: string | null; name: string; price: number; quantity: number; categoryId?: string }[] }[]
+      | {
+          status: string;
+          items: {
+            productId: string | null;
+            name: string;
+            price: number;
+            quantity: number;
+            categoryId?: string;
+            imageUrl?: string | null;
+          }[];
+        }[]
       | undefined;
     let sessionBill: ReturnType<typeof computeSessionBill> | undefined;
     let sessionStatus: string | null = null;
@@ -193,7 +203,7 @@ export async function POST(request: Request) {
           db.tableSession.findUnique({ where: { id: order.tableSessionId } }),
           db.order.findMany({
             where: { tableSessionId: order.tableSessionId, status: { not: "CANCELLED" } },
-            include: { items: { include: { product: { select: { categoryId: true } } } } },
+            include: { items: { include: { product: { select: { categoryId: true, imageUrl: true } } } } },
           }),
         ]);
         sessionStatus = session?.status ?? null;
@@ -205,6 +215,7 @@ export async function POST(request: Request) {
             price: Number(item.price),
             quantity: item.quantity,
             categoryId: item.product?.categoryId,
+            imageUrl: item.product?.imageUrl,
           })),
         }));
         sessionBill = computeSessionBill(sessionOrders, taxes);

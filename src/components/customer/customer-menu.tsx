@@ -12,7 +12,6 @@ import { EmptyState } from "@/components/shared/empty-state";
 import { ThemeToggle } from "@/components/shared/theme-toggle";
 import { InstallApp } from "@/components/shared/install-app";
 import { ProductCard } from "@/components/customer/product-card";
-import { OrderSheet } from "@/components/customer/order-sheet";
 import { useCart } from "@/lib/hooks/use-cart";
 import { useTableSession } from "@/lib/hooks/use-table-session";
 import { formatCurrency } from "@/lib/utils/currency";
@@ -23,11 +22,10 @@ import type {
   CustomerCategory,
   CustomerProduct,
   CustomerShop,
-  CustomerTax,
 } from "@/lib/types/customer";
 
 // localStorage key for tracking which session this browser owns at a table.
-function tableSessionKey(shopSlug: string, tableNumber: string) {
+export function tableSessionKey(shopSlug: string, tableNumber: string) {
   return `oowapp_table_${shopSlug}_${tableNumber}`;
 }
 
@@ -58,46 +56,38 @@ export function CustomerMenu({
   shop,
   categories,
   products,
-  taxes,
   prefilledTable,
   customer,
   activeSession,
-  verifiedPhone,
 }: {
   shop: CustomerShop;
   categories: CustomerCategory[];
   products: CustomerProduct[];
-  taxes: CustomerTax[];
   prefilledTable?: string;
   customer?: { name: string; phone: string } | null;
   activeSession?: ActiveSession;
-  verifiedPhone?: string | null;
 }) {
   const router = useRouter();
   const cart = useCart(shop.slug);
   const [search, setSearch] = useState("");
   const [activeCategory, setActiveCategory] = useState<string>("all");
-  const [orderSheetOpen, setOrderSheetOpen] = useState(false);
 
-  // The table session is owned here so both the sticky bottom panel and the
-  // sheet always agree on what's already been ordered.
+  // The table session is owned here (not on the Current Order page) so the
+  // sticky bottom panel always agrees on what's already been ordered even
+  // right after navigating back from a fresh order there.
   const [session, setSession] = useState<ActiveSession>(activeSession ?? null);
 
   // Keeps the session live if staff mark the table as paid while the customer
-  // still has the app open.
+  // still has the menu open — clears the cart and drops the session at that
+  // point (nothing paid-related to preserve on this page — that view lives on
+  // the Current Order page instead), since a paid session can never accept
+  // more items (the next order from this table always starts a brand-new
+  // session server-side).
   useTableSession(session, setSession, () => {
     toast.success("Payment confirmed — thank you!");
     cart.clear();
+    setSession(null);
   });
-
-  const paidWhileClosed = !orderSheetOpen && session?.status === "PAID";
-  const [prevPaidWhileClosed, setPrevPaidWhileClosed] = useState(paidWhileClosed);
-  if (paidWhileClosed !== prevPaidWhileClosed) {
-    setPrevPaidWhileClosed(paidWhileClosed);
-    if (paidWhileClosed) {
-      setSession(null);
-    }
-  }
 
   // ── Table occupancy ownership check ──────────────────────────────────────
   // null = still checking localStorage, true = owner or no table, false = blocked.
@@ -106,18 +96,16 @@ export function CustomerMenu({
   const [isTableOwner, setIsTableOwner] = useState<boolean | null>(needsOwnershipCheck ? null : true);
 
   useEffect(() => {
-    if (!needsOwnershipCheck) {
-      setIsTableOwner(true);
-      return;
-    }
+    if (!needsOwnershipCheck) return;
     try {
       const stored = localStorage.getItem(tableSessionKey(shop.slug, prefilledTable!));
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setIsTableOwner(stored === activeSession!.id);
     } catch {
       setIsTableOwner(true); // fail open on storage errors
     }
-  // activeSession.id and prefilledTable are stable for a given page load.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // activeSession.id and prefilledTable are stable for a given page load.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [needsOwnershipCheck, shop.slug]);
 
   // ── Locked quantities ─────────────────────────────────────────────────────
@@ -139,22 +127,24 @@ export function CustomerMenu({
 
   const hasLockedItems = lockedQuantities.size > 0;
 
-  // ── Sticky bottom panel visibility ───────────────────────────────────────
+  // Drives the sticky bottom panel's mount/unmount so it can slide+fade+scale
+  // out smoothly instead of vanishing the instant the cart empties — plain
+  // conditional rendering has no exit transition, so the panel stays mounted
+  // through a "leaving" phase (via the render-phase state adjustment below,
+  // https://react.dev/learn/you-might-not-need-an-effect#adjusting-some-state-when-a-prop-changes)
+  // before a single effect unmounts it once the exit animation finishes.
+  // A returning customer with items already ordered on this table (but nothing
+  // new in their local cart yet) still needs a way to reach the Current Order
+  // page, so the panel isn't gated on the local cart alone.
   const hasOpenSessionItems = (session?.orders.filter((o) => o.status !== "CANCELLED").length ?? 0) > 0;
   const cartHasItems = cart.totalQuantity > 0;
   const hasItems = cartHasItems || hasOpenSessionItems;
   const [phase, setPhase] = useState<"hidden" | "visible" | "leaving">(hasItems ? "visible" : "hidden");
   const [prevHasItems, setPrevHasItems] = useState(hasItems);
-  const [hasOpenedCart, setHasOpenedCart] = useState(false);
 
   if (hasItems !== prevHasItems) {
     setPrevHasItems(hasItems);
-    if (hasItems) {
-      setPhase("visible");
-    } else {
-      setPhase("leaving");
-      setHasOpenedCart(false);
-    }
+    setPhase(hasItems ? "visible" : "leaving");
   }
 
   useEffect(() => {
@@ -200,7 +190,13 @@ export function CustomerMenu({
       cart.setQuantity(product.id, 0);
     } else if (cart.quantityOf(product.id) === 0 && newCartQty > 0) {
       cart.addItem(
-        { productId: product.id, name: product.name, price: product.price, categoryId: product.categoryId },
+        {
+          productId: product.id,
+          name: product.name,
+          price: product.price,
+          categoryId: product.categoryId,
+          imageUrl: product.imageUrl,
+        },
         newCartQty
       );
     } else {
@@ -370,32 +366,19 @@ export function CustomerMenu({
               )}
             </div>
             <Button
-              onClick={() => {
-                setOrderSheetOpen(true);
-                setHasOpenedCart(true);
-              }}
               className="h-12 w-full justify-center bg-primary text-primary-foreground shadow-none hover:bg-primary/90"
+              render={
+                <Link
+                  href={`/order/${shop.slug}/bill${prefilledTable ? `?table=${encodeURIComponent(prefilledTable)}` : ""}`}
+                />
+              }
+              nativeButton={false}
             >
-              {cartHasItems
-                ? `${hasOpenedCart ? "View Cart" : "Add to Cart"} • ${formatCurrency(displayTotal, shop.currency)}`
-                : "View Your Bill"}
+              {cartHasItems ? `View Cart • ${formatCurrency(displayTotal, shop.currency)}` : "View Your Bill"}
             </Button>
           </div>
         </div>
       ) : null}
-
-      <OrderSheet
-        open={orderSheetOpen}
-        onOpenChange={setOrderSheetOpen}
-        cart={cart}
-        shop={shop}
-        taxes={taxes}
-        prefilledTable={prefilledTable}
-        customer={customer}
-        session={session}
-        onSessionChange={setSession}
-        verifiedPhone={verifiedPhone}
-      />
     </div>
   );
 }
