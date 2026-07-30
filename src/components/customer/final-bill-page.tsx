@@ -22,6 +22,7 @@ import {
   QrCode as QrCodeIcon,
   Loader2,
   RefreshCw,
+  CheckCircle2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -73,7 +74,9 @@ export function FinalBillPage({
   const [billRequestFailed, setBillRequestFailed] = useState(false);
   const [downloadingInvoicePdf, setDownloadingInvoicePdf] = useState(false);
   const [sharingInvoice, setSharingInvoice] = useState(false);
-  const [paymentIntent, setPaymentIntent] = useState<"idle" | "cash_pending" | "upi_confirm" | "upi_pending">("idle");
+  const [paymentIntent, setPaymentIntent] = useState<
+    "idle" | "cash_pending" | "upi_confirm" | "upi_pending" | "payment_done_pending"
+  >("idle");
   const [upiQrDataUrl, setUpiQrDataUrl] = useState<string | null>(null);
   const [checkoutValues, setCheckoutValues] = useState<CheckoutInput | null>(null);
 
@@ -243,6 +246,14 @@ export function FinalBillPage({
   function handleUpiPaymentFailed() {
     setPaymentIntent("idle");
     toast.error("Payment Failed or Cancelled.");
+  }
+
+  // Covers payment made by any means not captured by the Cash/UPI intent
+  // buttons above (e.g. scanning the QR with a different app, bank
+  // transfer) — same "awaiting staff approval" outcome, just a generic entry point.
+  function handlePaymentDone() {
+    setPaymentIntent("payment_done_pending");
+    toast.success("Waiting for Restaurant/Admin Approval.");
   }
 
   function retryGenerateBill() {
@@ -657,6 +668,14 @@ export function FinalBillPage({
                     <p className="text-sm font-medium text-amber-800 dark:text-amber-400">Payment Pending</p>
                     <p className="text-xs text-amber-700/80 dark:text-amber-400/80">Waiting for the restaurant to confirm your payment.</p>
                   </div>
+                ) : paymentIntent === "payment_done_pending" ? (
+                  <div className="rounded-xl border border-amber-300 bg-amber-50 dark:bg-amber-900/20 dark:border-amber-800 px-4 py-4 flex flex-col items-center gap-2 text-center">
+                    <Loader2 className="size-5 animate-spin text-amber-600 dark:text-amber-400" />
+                    <p className="text-sm font-medium text-amber-800 dark:text-amber-400">Waiting for Restaurant/Admin Approval.</p>
+                    <p className="text-xs text-amber-700/80 dark:text-amber-400/80">
+                      Let the staff know you&apos;ve completed the payment — they&apos;ll confirm it here.
+                    </p>
+                  </div>
                 ) : (
                   <>
                     {upiQrDataUrl && (
@@ -699,20 +718,19 @@ export function FinalBillPage({
                         )}
                       </div>
                     )}
+                    <Button size="lg" variant="outline" className="h-11 w-full gap-2" onClick={handlePaymentDone}>
+                      <CheckCircle2 className="size-4.5" /> Payment Done
+                    </Button>
                   </>
                 )}
 
                 <div className="flex gap-2">
-                  {invoicePaymentStatus === "Paid" && (
-                    <>
-                      <Button variant="outline" className="h-11 flex-1 gap-1.5" disabled={downloadingInvoicePdf} onClick={handleDownloadInvoicePdf}>
-                        <Download className="size-4" /> {downloadingInvoicePdf ? "Generating…" : "Download"}
-                      </Button>
-                      <Button variant="outline" className="h-11 flex-1 gap-1.5" onClick={() => window.print()}>
-                        <Printer className="size-4" /> Print
-                      </Button>
-                    </>
-                  )}
+                  <Button variant="outline" className="h-11 flex-1 gap-1.5" disabled={downloadingInvoicePdf} onClick={handleDownloadInvoicePdf}>
+                    <Download className="size-4" /> {downloadingInvoicePdf ? "Generating…" : "Download"}
+                  </Button>
+                  <Button variant="outline" className="h-11 flex-1 gap-1.5" onClick={() => window.print()}>
+                    <Printer className="size-4" /> Print
+                  </Button>
                   <Button variant="outline" className="h-11 flex-1 gap-1.5" disabled={sharingInvoice} onClick={handleShareInvoice}>
                     <Share2 className="size-4" /> {sharingInvoice ? "Sharing…" : "Share"}
                   </Button>
