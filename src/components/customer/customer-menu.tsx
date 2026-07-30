@@ -78,6 +78,22 @@ export function CustomerMenu({
     },
   });
 
+  // Once a paid session's sheet is closed (whether the customer dismisses it
+  // themselves or the PAID event lands while it's already closed), drop the
+  // session so the sticky panel and "Already Ordered" list clear out for the
+  // next customer at this table — while the sheet stays open we keep it
+  // around so they can still view/download/print the paid invoice. Adjusted
+  // during render (not an effect) per the same pattern as `phase` below —
+  // see https://react.dev/learn/you-might-not-need-an-effect#adjusting-some-state-when-a-prop-changes
+  const paidWhileClosed = !orderSheetOpen && session?.status === "PAID";
+  const [prevPaidWhileClosed, setPrevPaidWhileClosed] = useState(paidWhileClosed);
+  if (paidWhileClosed !== prevPaidWhileClosed) {
+    setPrevPaidWhileClosed(paidWhileClosed);
+    if (paidWhileClosed) {
+      setSession(null);
+    }
+  }
+
   // Drives the sticky bottom panel's mount/unmount so it can slide+fade+scale
   // out smoothly instead of vanishing the instant the cart empties — plain
   // conditional rendering has no exit transition, so the panel stays mounted
