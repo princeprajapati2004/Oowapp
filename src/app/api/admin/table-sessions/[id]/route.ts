@@ -12,11 +12,60 @@ const patchSchema = z.discriminatedUnion("action", [
     paymentNote: z.string().trim().max(200).optional(),
   }),
   z.object({ action: z.literal("request_bill") }),
+  z.object({
+    action: z.literal("release_table"),
+    paymentNote: z.string().trim().max(200).optional(),
+  }),
 ]);
 
-// Ticket statuses that get swept to COMPLETED once the table is marked
-// paid — cancelled tickets are left alone.
+// Ticket statuses swept to COMPLETED when the table is closed.
 const OPEN_TICKET_STATUSES = ["PENDING", "CONFIRMED", "PREPARING", "READY"] as const;
+
+export async function GET(
+  _request: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const session = await requireAdminSession();
+    const { id } = await params;
+
+    const tableSession = await db.tableSession.findFirst({
+      where: { id, shopId: session.shopId },
+      include: {
+        orders: {
+          orderBy: { createdAt: "asc" },
+          include: { items: true },
+        },
+      },
+    });
+    if (!tableSession) throw new NotFoundError("Table session not found");
+
+    // Serialize Decimal fields to numbers so the client receives plain JSON numbers.
+    return NextResponse.json({
+      ...tableSession,
+      createdAt: tableSession.createdAt.toISOString(),
+      updatedAt: tableSession.updatedAt.toISOString(),
+      billRequestedAt: tableSession.billRequestedAt?.toISOString() ?? null,
+      paidAt: tableSession.paidAt?.toISOString() ?? null,
+      orders: tableSession.orders.map((o) => ({
+        ...o,
+        subtotal: Number(o.subtotal),
+        taxTotal: Number(o.taxTotal),
+        grandTotal: Number(o.grandTotal),
+        discountValue: o.discountValue ? Number(o.discountValue) : null,
+        discountedTotal: o.discountedTotal ? Number(o.discountedTotal) : null,
+        createdAt: o.createdAt.toISOString(),
+        items: o.items.map((item) => ({
+          ...item,
+          price: Number(item.price),
+          lineTotal: Number(item.lineTotal),
+        })),
+      })),
+    });
+  } catch (error) {
+    return handleApiError(error);
+  }
+}
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -43,47 +92,62 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       return NextResponse.json({ ok: true, session: toTableSessionEvent(updated) });
     }
 
+    // release_table — same as mark_paid with VOID, labelled separately for UX
+    if (input.action === "release_table") {
+      if (tableSession.status === "PAID") {
+        return NextResponse.json({ error: "This table has already been released." }, { status: 409 });
+      }
+      return closeTable(id, "VOID", input.paymentNote, session.shopId, session.adminId);
+    }
+
     // action === "mark_paid"
     if (tableSession.status === "PAID") {
       return NextResponse.json({ error: "This table has already been paid." }, { status: 409 });
     }
 
-    const [updatedSession, completedOrders] = await db.$transaction(async (tx) => {
-      const updated = await tx.tableSession.update({
-        where: { id },
-        data: {
-          status: "PAID",
-          paidAt: new Date(),
-          paidBy: session.adminId,
-          paymentMethod: input.paymentMethod,
-          paymentNote: input.paymentNote ?? null,
-        },
-      });
-
-      const openOrders = await tx.order.findMany({
-        where: { tableSessionId: id, status: { in: [...OPEN_TICKET_STATUSES] } },
-        include: { items: true },
-      });
-
-      const orders = await Promise.all(
-        openOrders.map((o) =>
-          tx.order.update({ where: { id: o.id }, data: { status: "COMPLETED" }, include: { items: true } })
-        )
-      );
-
-      return [updated, orders] as const;
-    });
-
-    publishOrderEvent(session.shopId, {
-      type: "session.updated",
-      session: toTableSessionEvent(updatedSession),
-    });
-    for (const order of completedOrders) {
-      publishOrderEvent(session.shopId, { type: "order.updated", order: toOrderEvent(order) });
-    }
-
-    return NextResponse.json({ ok: true, session: toTableSessionEvent(updatedSession) });
+    return closeTable(id, input.paymentMethod, input.paymentNote, session.shopId, session.adminId);
   } catch (error) {
     return handleApiError(error);
   }
+}
+
+async function closeTable(
+  id: string,
+  paymentMethod: string,
+  paymentNote: string | undefined,
+  shopId: string,
+  adminId: string
+) {
+  const [updatedSession, completedOrders] = await db.$transaction(async (tx) => {
+    const updated = await tx.tableSession.update({
+      where: { id },
+      data: {
+        status: "PAID",
+        paidAt: new Date(),
+        paidBy: adminId,
+        paymentMethod,
+        paymentNote: paymentNote ?? null,
+      },
+    });
+
+    const openOrders = await tx.order.findMany({
+      where: { tableSessionId: id, status: { in: [...OPEN_TICKET_STATUSES] } },
+      include: { items: true },
+    });
+
+    const orders = await Promise.all(
+      openOrders.map((o) =>
+        tx.order.update({ where: { id: o.id }, data: { status: "COMPLETED" }, include: { items: true } })
+      )
+    );
+
+    return [updated, orders] as const;
+  });
+
+  publishOrderEvent(shopId, { type: "session.updated", session: toTableSessionEvent(updatedSession) });
+  for (const order of completedOrders) {
+    publishOrderEvent(shopId, { type: "order.updated", order: toOrderEvent(order) });
+  }
+
+  return NextResponse.json({ ok: true, session: toTableSessionEvent(updatedSession) });
 }

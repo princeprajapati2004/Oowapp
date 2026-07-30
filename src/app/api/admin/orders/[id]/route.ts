@@ -3,8 +3,10 @@ import { z } from "zod";
 import { requireAdminSession } from "@/lib/session";
 import { handleApiError, NotFoundError } from "@/lib/api-utils";
 import { db } from "@/lib/db";
+import { calculateBill } from "@/lib/services/billing";
 import { sendOrderStatusNotification } from "@/lib/services/push";
 import { publishOrderEvent, toOrderEvent } from "@/lib/server/order-events";
+import type { Prisma } from "@/generated/prisma/client";
 
 const ORDER_STATUSES = ["PENDING", "CONFIRMED", "PREPARING", "READY", "COMPLETED", "CANCELLED"] as const;
 
@@ -18,6 +20,11 @@ const updateOrderSchema = z.discriminatedUnion("action", [
   }),
   z.object({ action: z.literal("remove_discount") }),
   z.object({ action: z.literal("priority"), priorityFlag: z.enum(["VIP", "RUSH"]).nullable() }),
+  z.object({
+    action: z.literal("edit_items"),
+    // quantity: 0 removes the item entirely
+    items: z.array(z.object({ id: z.string(), quantity: z.number().int().min(0) })).min(1),
+  }),
 ]);
 
 export async function GET(
@@ -58,6 +65,11 @@ export async function PATCH(
 
     if ("action" in body) {
       const parsed = updateOrderSchema.parse(body);
+
+      if (parsed.action === "edit_items") {
+        return handleEditItems(id, parsed.items, existing.shopId);
+      }
+
       if (parsed.action === "status") {
         data = { status: parsed.status };
       } else if (parsed.action === "discount") {
@@ -114,6 +126,68 @@ export async function PATCH(
 
     publishOrderEvent(existing.shopId, { type: "order.updated", order: toOrderEvent(updated) });
 
+    return NextResponse.json(updated);
+  } catch (error) {
+    return handleApiError(error);
+  }
+}
+
+async function handleEditItems(
+  orderId: string,
+  updates: { id: string; quantity: number }[],
+  shopId: string
+) {
+  try {
+    const taxes = await db.tax.findMany({ where: { shopId, isEnabled: true } });
+
+    const updated = await db.$transaction(async (tx) => {
+      // Apply quantity changes — delete items with qty 0.
+      for (const u of updates) {
+        if (u.quantity === 0) {
+          await tx.orderItem.delete({ where: { id: u.id } });
+        } else {
+          const item = await tx.orderItem.findUnique({ where: { id: u.id } });
+          if (item) {
+            await tx.orderItem.update({
+              where: { id: u.id },
+              data: { quantity: u.quantity, lineTotal: Number(item.price) * u.quantity },
+            });
+          }
+        }
+      }
+
+      // Recalculate totals from remaining items.
+      const remaining = await tx.orderItem.findMany({
+        where: { orderId },
+        include: { product: { select: { categoryId: true } } },
+      });
+
+      const lineItems = remaining.map((item) => ({
+        id: item.productId ?? item.name,
+        name: item.name,
+        price: Number(item.price),
+        quantity: item.quantity,
+        categoryId: item.product?.categoryId ?? "",
+      }));
+
+      const bill = calculateBill(
+        lineItems,
+        taxes.map((t) => ({ ...t, value: Number(t.value) }))
+      );
+
+      return tx.order.update({
+        where: { id: orderId },
+        data: {
+          subtotal: bill.subtotal,
+          taxTotal: bill.taxTotal,
+          grandTotal: bill.grandTotal,
+          taxBreakdown: bill.taxLines as unknown as Prisma.InputJsonValue,
+        },
+        include: { items: true },
+      });
+    });
+
+    publishOrderEvent(shopId, { type: "order.updated", order: toOrderEvent(updated) });
     return NextResponse.json(updated);
   } catch (error) {
     return handleApiError(error);
