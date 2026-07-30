@@ -200,19 +200,6 @@ export function FinalBillPage({
     }
   }
 
-  // Landing on this page with everything already sent (no unsent items left)
-  // implicitly finalizes the bill — no separate "Generate Final Bill" click
-  // needed. Skipped while items are still unsent so the table doesn't get
-  // locked for payment before the customer has actually sent everything.
-  useEffect(() => {
-    if (!cart.hydrated) return;
-    if (!session || session.status !== "ACTIVE") return;
-    if (hasUnsentItems) return;
-    if (alreadyOrderedItems.length === 0) return;
-    requestBill(session.id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cart.hydrated, hasUnsentItems, session?.id, session?.status, alreadyOrderedItems.length]);
-
   useEffect(() => {
     if (!shop.upiId || invoicePaymentStatus === "Paid" || hasUnsentItems) {
       setUpiQrDataUrl(null);
@@ -393,9 +380,10 @@ export function FinalBillPage({
   }
 
   const nothingYet = cart.hydrated && !hasUnsentItems && alreadyOrderedItems.length === 0;
-  // Gated on the session actually being past ACTIVE (not just "not currently
-  // requesting") so there's no one-frame flash of payment options before the
-  // auto-request effect above has had a chance to run.
+  // Everything's been sent but the customer hasn't asked for the bill yet —
+  // shows the "Generate Final Bill" button rather than requesting it automatically.
+  const readyToGenerateBill =
+    cart.hydrated && !hasUnsentItems && alreadyOrderedItems.length > 0 && session?.status === "ACTIVE";
   const showPaymentSection =
     cart.hydrated && !hasUnsentItems && alreadyOrderedItems.length > 0 && session?.status !== "ACTIVE" && !billRequestFailed;
 
@@ -611,6 +599,16 @@ export function FinalBillPage({
               </div>
             )}
 
+            {readyToGenerateBill && !requestingBill && (
+              <Button
+                size="lg"
+                className="h-12 w-full gap-2 bg-emerald-700 text-white hover:bg-emerald-800"
+                onClick={() => session && requestBill(session.id)}
+              >
+                <ReceiptText className="size-4.5" /> Generate Final Bill
+              </Button>
+            )}
+
             {requestingBill && !hasUnsentItems && (
               <div className="rounded-2xl border bg-card px-4 py-8 flex flex-col items-center gap-2 text-center">
                 <Loader2 className="size-5 animate-spin text-muted-foreground" />
@@ -705,12 +703,16 @@ export function FinalBillPage({
                 )}
 
                 <div className="flex gap-2">
-                  <Button variant="outline" className="h-11 flex-1 gap-1.5" disabled={downloadingInvoicePdf} onClick={handleDownloadInvoicePdf}>
-                    <Download className="size-4" /> {downloadingInvoicePdf ? "Generating…" : "Download"}
-                  </Button>
-                  <Button variant="outline" className="h-11 flex-1 gap-1.5" onClick={() => window.print()}>
-                    <Printer className="size-4" /> Print
-                  </Button>
+                  {invoicePaymentStatus === "Paid" && (
+                    <>
+                      <Button variant="outline" className="h-11 flex-1 gap-1.5" disabled={downloadingInvoicePdf} onClick={handleDownloadInvoicePdf}>
+                        <Download className="size-4" /> {downloadingInvoicePdf ? "Generating…" : "Download"}
+                      </Button>
+                      <Button variant="outline" className="h-11 flex-1 gap-1.5" onClick={() => window.print()}>
+                        <Printer className="size-4" /> Print
+                      </Button>
+                    </>
+                  )}
                   <Button variant="outline" className="h-11 flex-1 gap-1.5" disabled={sharingInvoice} onClick={handleShareInvoice}>
                     <Share2 className="size-4" /> {sharingInvoice ? "Sharing…" : "Share"}
                   </Button>

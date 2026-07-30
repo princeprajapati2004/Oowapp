@@ -158,6 +158,11 @@ export function CustomerMenu({
             <h1 className="truncate font-bold leading-tight text-base">{shop.businessName}</h1>
             <p className="text-xs text-muted-foreground">Scan, order, done.</p>
           </div>
+          {prefilledTable && (
+            <span className="shrink-0 rounded-full bg-primary px-3 py-1 text-xs font-semibold text-primary-foreground">
+              Table #{prefilledTable}
+            </span>
+          )}
           <Button variant="ghost" size="icon" aria-label="Your orders" render={<Link href={`/order/${shop.slug}/orders`} />} nativeButton={false}>
             <History className="size-4.5" />
           </Button>
