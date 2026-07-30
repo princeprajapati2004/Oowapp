@@ -1,11 +1,11 @@
 import { notFound } from "next/navigation";
 import { getPublicShopBundle } from "@/lib/services/shop";
-import { serializeProducts } from "@/lib/serialize";
+import { serializeTaxes } from "@/lib/serialize";
 import { resolveCustomerIdentity, resolveActiveTableSession } from "@/lib/services/customer-order-session";
 import { db } from "@/lib/db";
-import { CustomerMenu } from "@/components/customer/customer-menu";
+import { FinalBillPage } from "@/components/customer/final-bill-page";
 
-export default async function OrderPage({
+export default async function BillPage({
   params,
   searchParams,
 }: {
@@ -20,24 +20,29 @@ export default async function OrderPage({
   }
 
   const prefilledTable = resolvedSearch.table?.trim() || undefined;
-  const { categories, products, ...shopInfo } = shop;
+  // categories/products carry Prisma Decimal price fields, which can't cross
+  // the Server->Client boundary — this page doesn't need them, unlike the
+  // menu page which serializes and forwards them.
+  const { categories: _categories, products: _products, taxes, ...shopInfo } = shop;
 
   const shopRow = await db.shop.findUnique({ where: { slug }, select: { id: true } });
 
-  const { customer } = shopRow ? await resolveCustomerIdentity(shopRow.id) : { customer: null };
+  const { customer, verifiedPhone } = shopRow
+    ? await resolveCustomerIdentity(shopRow.id)
+    : { customer: null, verifiedPhone: null };
 
   const activeSession = shopRow
     ? await resolveActiveTableSession({ shopId: shopRow.id, enableTableQr: shop.enableTableQr, tableNumber: prefilledTable })
     : null;
 
   return (
-    <CustomerMenu
+    <FinalBillPage
       shop={shopInfo}
-      categories={categories}
-      products={serializeProducts(products)}
+      taxes={serializeTaxes(taxes)}
       prefilledTable={prefilledTable}
       customer={customer}
       activeSession={activeSession}
+      verifiedPhone={verifiedPhone}
     />
   );
 }

@@ -12,9 +12,8 @@ import { EmptyState } from "@/components/shared/empty-state";
 import { ThemeToggle } from "@/components/shared/theme-toggle";
 import { InstallApp } from "@/components/shared/install-app";
 import { ProductCard } from "@/components/customer/product-card";
-import { OrderSheet } from "@/components/customer/order-sheet";
 import { useCart } from "@/lib/hooks/use-cart";
-import { useOrderEvents } from "@/lib/hooks/use-order-events";
+import { useTableSession } from "@/lib/hooks/use-table-session";
 import { formatCurrency } from "@/lib/utils/currency";
 import { cn } from "@/lib/utils";
 import { api } from "@/lib/api-client";
@@ -23,76 +22,44 @@ import type {
   CustomerCategory,
   CustomerProduct,
   CustomerShop,
-  CustomerTax,
 } from "@/lib/types/customer";
 
 export function CustomerMenu({
   shop,
   categories,
   products,
-  taxes,
   prefilledTable,
   customer,
   activeSession,
-  verifiedPhone,
 }: {
   shop: CustomerShop;
   categories: CustomerCategory[];
   products: CustomerProduct[];
-  taxes: CustomerTax[];
   prefilledTable?: string;
   customer?: { name: string; phone: string } | null;
   activeSession?: ActiveSession;
-  verifiedPhone?: string | null;
 }) {
   const router = useRouter();
   const cart = useCart(shop.slug);
   const [search, setSearch] = useState("");
   const [activeCategory, setActiveCategory] = useState<string>("all");
-  const [orderSheetOpen, setOrderSheetOpen] = useState(false);
 
-  // The table session is owned here (not inside OrderSheet) so that both the
-  // sticky bottom panel and the sheet always agree on what's already been
-  // ordered — previously OrderSheet tracked this itself, so placing an order
-  // updated its own copy while this component kept rendering the stale
-  // server-rendered `activeSession` prop, making the sticky panel (and its
-  // running total) disappear/reset the instant the sheet cleared the cart,
-  // even though the order had gone through fine.
+  // The table session is owned here (not on the Final Bill page) so the
+  // sticky bottom panel always agrees on what's already been ordered even
+  // right after navigating back from a fresh order there.
   const [session, setSession] = useState<ActiveSession>(activeSession ?? null);
 
   // Keeps the session live if staff mark the table as paid while the customer
-  // still has the app open — and clears the cart at that point, since a paid
-  // session can never accept more items (the next order from this table
-  // always starts a brand-new session server-side).
-  useOrderEvents(session ? `/api/table-sessions/${session.id}/stream` : "", {
-    onSessionUpdated: (updated) => {
-      setSession((prev) =>
-        prev
-          ? { ...prev, status: updated.status, billRequestedAt: updated.billRequestedAt, paymentMethod: updated.paymentMethod }
-          : prev
-      );
-      if (updated.status === "PAID") {
-        toast.success("Payment confirmed — thank you!");
-        cart.clear();
-      }
-    },
+  // still has the menu open — clears the cart and drops the session at that
+  // point (nothing paid-related to preserve on this page — that view lives on
+  // the Final Bill page instead), since a paid session can never accept more
+  // items (the next order from this table always starts a brand-new session
+  // server-side).
+  useTableSession(session, setSession, () => {
+    toast.success("Payment confirmed — thank you!");
+    cart.clear();
+    setSession(null);
   });
-
-  // Once a paid session's sheet is closed (whether the customer dismisses it
-  // themselves or the PAID event lands while it's already closed), drop the
-  // session so the sticky panel and "Already Ordered" list clear out for the
-  // next customer at this table — while the sheet stays open we keep it
-  // around so they can still view/download/print the paid invoice. Adjusted
-  // during render (not an effect) per the same pattern as `phase` below —
-  // see https://react.dev/learn/you-might-not-need-an-effect#adjusting-some-state-when-a-prop-changes
-  const paidWhileClosed = !orderSheetOpen && session?.status === "PAID";
-  const [prevPaidWhileClosed, setPrevPaidWhileClosed] = useState(paidWhileClosed);
-  if (paidWhileClosed !== prevPaidWhileClosed) {
-    setPrevPaidWhileClosed(paidWhileClosed);
-    if (paidWhileClosed) {
-      setSession(null);
-    }
-  }
 
   // Drives the sticky bottom panel's mount/unmount so it can slide+fade+scale
   // out smoothly instead of vanishing the instant the cart empties — plain
@@ -101,27 +68,17 @@ export function CustomerMenu({
   // https://react.dev/learn/you-might-not-need-an-effect#adjusting-some-state-when-a-prop-changes)
   // before a single effect unmounts it once the exit animation finishes.
   // A returning customer with items already ordered on this table (but nothing
-  // new in their local cart yet) still needs a way to open the sheet — that's
-  // the only place "Generate Final Bill" lives — so the panel isn't gated on
-  // the local cart alone.
+  // new in their local cart yet) still needs a way to reach the Final Bill
+  // page, so the panel isn't gated on the local cart alone.
   const hasOpenSessionItems = (session?.orders.filter((o) => o.status !== "CANCELLED").length ?? 0) > 0;
   const cartHasItems = cart.totalQuantity > 0;
   const hasItems = cartHasItems || hasOpenSessionItems;
   const [phase, setPhase] = useState<"hidden" | "visible" | "leaving">(hasItems ? "visible" : "hidden");
   const [prevHasItems, setPrevHasItems] = useState(hasItems);
-  // "Add to Cart" the first time this session's cart fills up, "View Cart"
-  // once they've already opened the review sheet — resets once the cart
-  // empties so starting fresh reads "Add to Cart" again.
-  const [hasOpenedCart, setHasOpenedCart] = useState(false);
 
   if (hasItems !== prevHasItems) {
     setPrevHasItems(hasItems);
-    if (hasItems) {
-      setPhase("visible");
-    } else {
-      setPhase("leaving");
-      setHasOpenedCart(false);
-    }
+    setPhase(hasItems ? "visible" : "leaving");
   }
 
   useEffect(() => {
@@ -306,37 +263,19 @@ export function CustomerMenu({
               )}
             </div>
             <Button
-              onClick={() => {
-                setOrderSheetOpen(true);
-                setHasOpenedCart(true);
-              }}
               className="h-12 w-full justify-center bg-primary text-primary-foreground shadow-none hover:bg-primary/90"
+              render={
+                <Link
+                  href={`/order/${shop.slug}/bill${prefilledTable ? `?table=${encodeURIComponent(prefilledTable)}` : ""}`}
+                />
+              }
+              nativeButton={false}
             >
-              {cartHasItems
-                ? `${hasOpenedCart ? "View Cart" : "Add to Cart"} • ${formatCurrency(displayTotal, shop.currency)}`
-                : "View Your Bill"}
+              {cartHasItems ? `View Cart • ${formatCurrency(displayTotal, shop.currency)}` : "View Your Bill"}
             </Button>
           </div>
         </div>
       ) : null}
-
-      <OrderSheet
-        open={orderSheetOpen}
-        onOpenChange={setOrderSheetOpen}
-        items={cart.items}
-        onSetQuantity={cart.setQuantity}
-        onRemove={cart.removeItem}
-        onOrderConfirmed={() => {
-          cart.clear();
-        }}
-        shop={shop}
-        taxes={taxes}
-        prefilledTable={prefilledTable}
-        customer={customer}
-        session={session}
-        onSessionChange={setSession}
-        verifiedPhone={verifiedPhone}
-      />
     </div>
   );
 }

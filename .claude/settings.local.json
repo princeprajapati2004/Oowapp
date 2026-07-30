@@ -46,7 +46,10 @@
       "Bash(curl -s -o /dev/null -w \"HTTP Status: %{http_code}\\\\nFinal URL: %{url_effective}\\\\n\" -L https://www.oowapp.in --max-time 15)",
       "Bash(npx vercel *)",
       "Bash(node \"C:\\\\Users\\\\user\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\C--Users-user-Desktop-Oowapp\\\\19b700a0-4aef-43a6-8890-ccfc8f89691a\\\\scratchpad\\\\check_shop.mjs\")",
-      "Bash(node --env-file=.env _tmp_check_shop.mjs)"
+      "Bash(node --env-file=.env _tmp_check_shop.mjs)",
+      "Bash(node -e \"console.log\\(require\\('./node_modules/next/package.json'\\).version\\)\")",
+      "Bash(curl -s -o /dev/null -w \"HTTP Status: %{http_code}\\\\n\" http://localhost:3000 --max-time 10)",
+      "Bash(netstat -ano)"
     ]
   }
 }
