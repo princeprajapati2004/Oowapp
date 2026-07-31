@@ -178,6 +178,11 @@ export function CurrentOrderPage({
   }, [isIncremental, alreadyOrderedItems, cart.items, taxes]);
 
   const billAlreadyRequested = session?.status === "AWAITING_PAYMENT";
+  // Header/title switches from "Current Order" to "Final Bill" once the
+  // customer has requested the bill (or it's already paid) — matches the
+  // same moment showPaymentSection below starts rendering payment options.
+  const isFinalBillView = session?.status === "AWAITING_PAYMENT" || session?.status === "PAID";
+  const payeeDisplayName = shop.paymentDisplayName || shop.businessName;
 
   const orderNumber = session ? `INV-${session.id.slice(-8).toUpperCase()}` : "";
   const invoiceCustomerName = checkoutValues?.customerName || customer?.name || undefined;
@@ -231,7 +236,7 @@ export function CurrentOrderPage({
       return;
     }
     const note = [invoiceTableNumber ? `Table ${invoiceTableNumber}` : null, orderNumber || null].filter(Boolean).join(" ") || shop.businessName;
-    const upiUrl = `upi://pay?pa=${encodeURIComponent(shop.upiId)}&pn=${encodeURIComponent(shop.businessName)}&am=${finalInvoiceBill.grandTotal.toFixed(2)}&cu=INR&tn=${encodeURIComponent(note)}`;
+    const upiUrl = `upi://pay?pa=${encodeURIComponent(shop.upiId)}&pn=${encodeURIComponent(payeeDisplayName)}&am=${finalInvoiceBill.grandTotal.toFixed(2)}&cu=INR&tn=${encodeURIComponent(note)}`;
     let cancelled = false;
     QRCode.toDataURL(upiUrl, { width: 220, margin: 1 })
       .then((url) => {
@@ -243,11 +248,11 @@ export function CurrentOrderPage({
     return () => {
       cancelled = true;
     };
-  }, [shop.upiId, shop.businessName, finalInvoiceBill.grandTotal, invoiceTableNumber, orderNumber, invoicePaymentStatus, hasUnsentItems]);
+  }, [shop.upiId, payeeDisplayName, finalInvoiceBill.grandTotal, invoiceTableNumber, orderNumber, invoicePaymentStatus, hasUnsentItems]);
 
   function buildUpiUrl() {
     const note = [invoiceTableNumber ? `Table ${invoiceTableNumber}` : null, orderNumber || null].filter(Boolean).join(" ") || shop.businessName;
-    return `upi://pay?pa=${encodeURIComponent(shop.upiId ?? "")}&pn=${encodeURIComponent(shop.businessName)}&am=${finalInvoiceBill.grandTotal.toFixed(2)}&cu=INR&tn=${encodeURIComponent(note)}`;
+    return `upi://pay?pa=${encodeURIComponent(shop.upiId ?? "")}&pn=${encodeURIComponent(payeeDisplayName)}&am=${finalInvoiceBill.grandTotal.toFixed(2)}&cu=INR&tn=${encodeURIComponent(note)}`;
   }
 
   function handleCashPayment() {
@@ -483,7 +488,13 @@ export function CurrentOrderPage({
             <ArrowLeft className="size-4.5" />
           </Button>
           <h1 className="flex-1 truncate text-center font-bold text-base">
-            {prefilledTable ? `Table #${prefilledTable} — Current Order` : "Current Order"}
+            {isFinalBillView
+              ? prefilledTable
+                ? `Table #${prefilledTable} Final Bill`
+                : "Final Bill"
+              : prefilledTable
+                ? `Table #${prefilledTable} — Current Order`
+                : "Current Order"}
           </h1>
           <ThemeToggle />
         </div>
@@ -521,12 +532,18 @@ export function CurrentOrderPage({
                 ) : null}
                 <p className="font-bold text-lg">{shop.businessName}</p>
                 <p className="text-xs text-muted-foreground mt-0.5">
-                  {prefilledTable ? `Dine-In Order — Table #${prefilledTable}` : "Your Order"}
+                  {isFinalBillView
+                    ? prefilledTable
+                      ? `Dine-In Invoice — Table #${prefilledTable}`
+                      : "Invoice"
+                    : prefilledTable
+                      ? `Dine-In Order — Table #${prefilledTable}`
+                      : "Your Order"}
                 </p>
                 {orderNumber && <p className="mt-2 text-xs text-muted-foreground font-mono">Order #{orderNumber}</p>}
               </div>
 
-              {(invoiceCustomerName || invoiceCustomerPhone) && (
+              {(invoiceCustomerName || invoiceCustomerPhone || session?.billRequestedAt) && (
                 <div className="px-4 py-3 border-b space-y-1.5 text-sm">
                   {invoiceCustomerName && (
                     <div className="flex items-center gap-2 text-muted-foreground">
@@ -545,8 +562,9 @@ export function CurrentOrderPage({
                       <Clock className="size-3.5 shrink-0" />
                       <span>
                         {new Date(session.billRequestedAt).toLocaleString(undefined, {
-                          month: "short",
                           day: "numeric",
+                          month: "long",
+                          year: "numeric",
                           hour: "2-digit",
                           minute: "2-digit",
                         })}
@@ -806,8 +824,25 @@ export function CurrentOrderPage({
                           </div>
                           <p className="text-xs text-muted-foreground">
                             Pay <span className="font-semibold text-foreground">{formatCurrency(finalInvoiceBill.grandTotal, shop.currency)}</span> to{" "}
-                            <span className="font-semibold text-foreground">{shop.upiId}</span>
+                            <span className="font-semibold text-foreground">{payeeDisplayName}</span> ({shop.upiId})
                           </p>
+                          {(shop.googlePayUpi || shop.phonePeUpi || shop.paytmUpi || shop.bhimUpi) && (
+                            <div className="w-full pt-2 mt-1 border-t space-y-0.5">
+                              <p className="text-[11px] font-medium text-muted-foreground text-center">Also accepts</p>
+                              {shop.googlePayUpi && (
+                                <p className="text-[11px] text-muted-foreground text-center">Google Pay: {shop.googlePayUpi}</p>
+                              )}
+                              {shop.phonePeUpi && (
+                                <p className="text-[11px] text-muted-foreground text-center">PhonePe: {shop.phonePeUpi}</p>
+                              )}
+                              {shop.paytmUpi && (
+                                <p className="text-[11px] text-muted-foreground text-center">Paytm: {shop.paytmUpi}</p>
+                              )}
+                              {shop.bhimUpi && (
+                                <p className="text-[11px] text-muted-foreground text-center">BHIM: {shop.bhimUpi}</p>
+                              )}
+                            </div>
+                          )}
                         </div>
                       </div>
                     )}

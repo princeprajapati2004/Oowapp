@@ -84,6 +84,11 @@ export default async function SettingsPage() {
             bankIfsc: shop.bankIfsc ?? "",
             bankName: shop.bankName ?? "",
             paymentQrImageUrl: shop.paymentQrImageUrl,
+            paymentDisplayName: shop.paymentDisplayName ?? "",
+            googlePayUpi: shop.googlePayUpi ?? "",
+            phonePeUpi: shop.phonePeUpi ?? "",
+            paytmUpi: shop.paytmUpi ?? "",
+            bhimUpi: shop.bhimUpi ?? "",
           }}
         />
       ),

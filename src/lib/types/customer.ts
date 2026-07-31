@@ -62,4 +62,9 @@ export type CustomerShop = Pick<
   | "bankName"
   | "bankIfsc"
   | "paymentQrImageUrl"
+  | "paymentDisplayName"
+  | "googlePayUpi"
+  | "phonePeUpi"
+  | "paytmUpi"
+  | "bhimUpi"
 > & { orderMode: OrderMode };

@@ -269,6 +269,21 @@ function MarkPaidDialog({
   const [method, setMethod] = useState<(typeof PAYMENT_METHODS)[number]["value"]>("CASH");
   const [note, setNote] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [rejecting, setRejecting] = useState(false);
+
+  async function handleReject() {
+    if (!table?.session) return;
+    setRejecting(true);
+    try {
+      await api.patch(`/api/admin/table-sessions/${table.session.id}`, { action: "reject_payment" });
+      toast.success(`Payment rejected — table ${table.tableNumber} back to ordering`);
+      onPaid();
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Couldn't reject this payment");
+    } finally {
+      setRejecting(false);
+    }
+  }
 
   async function handleConfirm() {
     if (!table?.session) return;
@@ -334,11 +349,23 @@ function MarkPaidDialog({
           rows={2}
         />
 
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose} disabled={submitting}>Cancel</Button>
-          <Button onClick={handleConfirm} disabled={submitting}>
-            {submitting ? "Saving…" : "Confirm payment"}
-          </Button>
+        <DialogFooter className="sm:justify-between">
+          {table?.session?.status === "AWAITING_PAYMENT" && (
+            <Button
+              variant="outline"
+              className="text-destructive border-destructive/30 hover:bg-destructive/10"
+              onClick={handleReject}
+              disabled={submitting || rejecting}
+            >
+              {rejecting ? "Rejecting…" : "Reject Payment"}
+            </Button>
+          )}
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={onClose} disabled={submitting || rejecting}>Cancel</Button>
+            <Button onClick={handleConfirm} disabled={submitting || rejecting}>
+              {submitting ? "Saving…" : "Confirm payment"}
+            </Button>
+          </div>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -371,6 +398,7 @@ function TableDetailDialog({
   const [payNote, setPayNote] = useState("");
   const [paying, setPaying] = useState(false);
   const [showPayConfirm, setShowPayConfirm] = useState(false);
+  const [rejectingPayment, setRejectingPayment] = useState(false);
 
   const open = !!table;
 
@@ -486,6 +514,20 @@ function TableDetailDialog({
       toast.error(err instanceof ApiError ? err.message : "Couldn't release table");
     } finally {
       setReleasing(false);
+    }
+  }
+
+  async function handleRejectPayment() {
+    if (!table?.session) return;
+    setRejectingPayment(true);
+    try {
+      await api.patch(`/api/admin/table-sessions/${table.session.id}`, { action: "reject_payment" });
+      toast.success(`Payment rejected — table ${table.tableNumber} back to ordering`);
+      onChanged();
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Couldn't reject this payment");
+    } finally {
+      setRejectingPayment(false);
     }
   }
 
@@ -742,6 +784,19 @@ function TableDetailDialog({
                       onClick={() => setShowPayConfirm(true)}
                     >
                       <CircleCheck className="size-4" /> Mark as Paid
+                    </Button>
+                  )}
+
+                  {detail?.status === "AWAITING_PAYMENT" && !showPayConfirm && (
+                    <Button
+                      size="lg"
+                      variant="outline"
+                      className="w-full h-11 gap-1.5 text-destructive border-destructive/30 hover:bg-destructive/10"
+                      onClick={handleRejectPayment}
+                      disabled={rejectingPayment}
+                    >
+                      {rejectingPayment ? <Loader2 className="size-4 animate-spin" /> : null}
+                      {rejectingPayment ? "Rejecting…" : "Reject Payment"}
                     </Button>
                   )}
 

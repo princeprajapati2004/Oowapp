@@ -27,6 +27,11 @@ export const paymentSettingsSchema = z.object({
   bankIfsc: z.string().trim().max(15).optional().or(z.literal("")),
   bankName: z.string().trim().max(100).optional().or(z.literal("")),
   paymentQrImageUrl: z.string().nullable().optional(),
+  paymentDisplayName: z.string().trim().max(100).optional().or(z.literal("")),
+  googlePayUpi: z.string().trim().max(100).optional().or(z.literal("")),
+  phonePeUpi: z.string().trim().max(100).optional().or(z.literal("")),
+  paytmUpi: z.string().trim().max(100).optional().or(z.literal("")),
+  bhimUpi: z.string().trim().max(100).optional().or(z.literal("")),
 });
 export type PaymentSettingsInput = z.infer<typeof paymentSettingsSchema>;
 

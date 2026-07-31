@@ -72,6 +72,11 @@ export type ShopSettingsInput = Partial<{
   bankIfsc: string | null;
   bankName: string | null;
   paymentQrImageUrl: string | null;
+  paymentDisplayName: string | null;
+  googlePayUpi: string | null;
+  phonePeUpi: string | null;
+  paytmUpi: string | null;
+  bhimUpi: string | null;
   requireCustomerName: boolean;
   requirePhone: boolean;
   enableTableNumber: boolean;
@@ -119,6 +124,11 @@ export async function getPublicShopBundle(slug: string) {
       bankName: true,
       bankIfsc: true,
       paymentQrImageUrl: true,
+      paymentDisplayName: true,
+      googlePayUpi: true,
+      phonePeUpi: true,
+      paytmUpi: true,
+      bhimUpi: true,
       // Gate checks — stripped before the value is returned to the caller
       isPublished: true,
       status: true,

@@ -16,6 +16,7 @@ const patchSchema = z.discriminatedUnion("action", [
     action: z.literal("release_table"),
     paymentNote: z.string().trim().max(200).optional(),
   }),
+  z.object({ action: z.literal("reject_payment") }),
 ]);
 
 // Ticket statuses swept to COMPLETED when the table is closed.
@@ -87,6 +88,25 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       const updated = await db.tableSession.update({
         where: { id },
         data: { status: "AWAITING_PAYMENT", billRequestedAt: new Date() },
+      });
+      publishOrderEvent(session.shopId, { type: "session.updated", session: toTableSessionEvent(updated) });
+      return NextResponse.json({ ok: true, session: toTableSessionEvent(updated) });
+    }
+
+    // Staff looked at the customer's claimed cash/UPI payment and it didn't
+    // check out (no cash handed over, UPI never landed) — kick the table
+    // back to ACTIVE so they can keep ordering or re-request the bill, rather
+    // than voiding/closing it out like release_table does.
+    if (input.action === "reject_payment") {
+      if (tableSession.status !== "AWAITING_PAYMENT") {
+        return NextResponse.json(
+          { error: "This table isn't awaiting payment." },
+          { status: 409 }
+        );
+      }
+      const updated = await db.tableSession.update({
+        where: { id },
+        data: { status: "ACTIVE", billRequestedAt: null },
       });
       publishOrderEvent(session.shopId, { type: "session.updated", session: toTableSessionEvent(updated) });
       return NextResponse.json({ ok: true, session: toTableSessionEvent(updated) });

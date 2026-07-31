@@ -208,6 +208,17 @@ model Shop {
   bankIfsc          String?
   bankName          String?
   paymentQrImageUrl String?
+  // Display name shown on the customer-facing bill/QR ("Pay to ..."); falls
+  // back to businessName when unset. The UPI payment QR itself is always
+  // generated from upiId — these per-app fields are informational only,
+  // since a single UPI VPA already works with every UPI app by design; they
+  // exist because some businesses hold separate bank-linked handles per app
+  // (e.g. an SBI-issued @oksbi id vs a PhonePe-issued @ybl id).
+  paymentDisplayName String?
+  googlePayUpi       String?
+  phonePeUpi         String?
+  paytmUpi           String?
+  bhimUpi            String?
 
   // Order settings
   requireCustomerName    Boolean @default(true)

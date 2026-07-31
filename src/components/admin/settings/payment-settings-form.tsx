@@ -49,8 +49,11 @@ export function PaymentSettingsForm({
   const formContent = (
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
       <FieldGroup className="sm:grid sm:grid-cols-2 sm:gap-4 sm:space-y-0">
-        <FormRow label="UPI ID" htmlFor="upiId" description="e.g. yourshop@upi" error={errors.upiId}>
+        <FormRow label="UPI ID" htmlFor="upiId" description="e.g. yourshop@upi — used to generate the payment QR" error={errors.upiId}>
           <Input id="upiId" {...register("upiId")} />
+        </FormRow>
+        <FormRow label="Merchant / display name" htmlFor="paymentDisplayName" description="Shown on the bill instead of the business name, if set" error={errors.paymentDisplayName}>
+          <Input id="paymentDisplayName" {...register("paymentDisplayName")} />
         </FormRow>
         <FormRow label="Bank name" htmlFor="bankName" error={errors.bankName}>
           <Input id="bankName" {...register("bankName")} />
@@ -76,6 +79,28 @@ export function PaymentSettingsForm({
           onChange={(url) => setValue("paymentQrImageUrl", url)}
         />
       </FormRow>
+
+      <FieldGroup className="sm:grid sm:grid-cols-2 sm:gap-4 sm:space-y-0">
+        <div className="sm:col-span-2 pt-2">
+          <p className="text-sm font-medium">Other UPI handles (optional)</p>
+          <p className="text-xs text-muted-foreground">
+            Your UPI ID above already works with every UPI app — only fill these in if you hold
+            separate bank-linked handles per provider (e.g. an SBI @oksbi id vs a PhonePe @ybl id).
+          </p>
+        </div>
+        <FormRow label="Google Pay" htmlFor="googlePayUpi" error={errors.googlePayUpi}>
+          <Input id="googlePayUpi" {...register("googlePayUpi")} />
+        </FormRow>
+        <FormRow label="PhonePe" htmlFor="phonePeUpi" error={errors.phonePeUpi}>
+          <Input id="phonePeUpi" {...register("phonePeUpi")} />
+        </FormRow>
+        <FormRow label="Paytm" htmlFor="paytmUpi" error={errors.paytmUpi}>
+          <Input id="paytmUpi" {...register("paytmUpi")} />
+        </FormRow>
+        <FormRow label="BHIM" htmlFor="bhimUpi" error={errors.bhimUpi}>
+          <Input id="bhimUpi" {...register("bhimUpi")} />
+        </FormRow>
+      </FieldGroup>
 
       <ToggleRow
         id="acceptCash"
