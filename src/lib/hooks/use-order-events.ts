@@ -1,14 +1,15 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import type { OrderEventOrder, TableSessionEventPayload } from "@/lib/server/order-events";
+import type { OrderEventOrder, TableSessionEventPayload, NotificationEventPayload } from "@/lib/server/order-events";
 
-export type { OrderEventOrder, TableSessionEventPayload };
+export type { OrderEventOrder, TableSessionEventPayload, NotificationEventPayload };
 
 type OrderEventHandlers = {
   onCreated?: (order: OrderEventOrder) => void;
   onUpdated?: (order: OrderEventOrder) => void;
   onSessionUpdated?: (session: TableSessionEventPayload) => void;
+  onNotification?: (notification: NotificationEventPayload) => void;
 };
 
 const INITIAL_RETRY_MS = 1000;
@@ -19,10 +20,11 @@ const MAX_RETRY_MS = 15_000;
  * is mounted. Reconnects with backoff on drop — EventSource's own
  * auto-reconnect is disabled once we call close(), so backoff is manual.
  */
-export function useOrderEvents(endpoint: string, { onCreated, onUpdated, onSessionUpdated }: OrderEventHandlers) {
+export function useOrderEvents(endpoint: string, { onCreated, onUpdated, onSessionUpdated, onNotification }: OrderEventHandlers) {
   const onCreatedRef = useRef(onCreated);
   const onUpdatedRef = useRef(onUpdated);
   const onSessionUpdatedRef = useRef(onSessionUpdated);
+  const onNotificationRef = useRef(onNotification);
 
   // Runs after every render (no deps) so the refs never go stale, without
   // reconnecting the EventSource whenever the caller passes new inline
@@ -31,6 +33,7 @@ export function useOrderEvents(endpoint: string, { onCreated, onUpdated, onSessi
     onCreatedRef.current = onCreated;
     onUpdatedRef.current = onUpdated;
     onSessionUpdatedRef.current = onSessionUpdated;
+    onNotificationRef.current = onNotification;
   });
 
   useEffect(() => {
@@ -55,6 +58,14 @@ export function useOrderEvents(endpoint: string, { onCreated, onUpdated, onSessi
     function parseSession(event: Event): TableSessionEventPayload | null {
       try {
         return JSON.parse((event as MessageEvent).data).session as TableSessionEventPayload;
+      } catch {
+        return null;
+      }
+    }
+
+    function parseNotification(event: Event): NotificationEventPayload | null {
+      try {
+        return JSON.parse((event as MessageEvent).data).notification as NotificationEventPayload;
       } catch {
         return null;
       }
@@ -86,6 +97,11 @@ export function useOrderEvents(endpoint: string, { onCreated, onUpdated, onSessi
       source.addEventListener("session.updated", (event) => {
         const session = parseSession(event);
         if (session) onSessionUpdatedRef.current?.(session);
+      });
+
+      source.addEventListener("notification.created", (event) => {
+        const notification = parseNotification(event);
+        if (notification) onNotificationRef.current?.(notification);
       });
 
       source.onerror = () => {

@@ -131,6 +131,14 @@ enum PartyPaymentDirection {
   PAID
 }
 
+enum NotificationType {
+  NEW_ORDER
+  BILL_REQUESTED
+  PAYMENT_RECEIVED
+  ORDER_STATUS_CHANGED
+  TABLE_OCCUPIED
+}
+
 enum AuditAction {
   // Auth
   ADMIN_SIGNUP
@@ -259,6 +267,7 @@ model Shop {
   staffMembers       StaffMember[]
   parties            Party[]
   partyPayments      PartyPayment[]
+  notifications      Notification[]
 
   @@map("shops")
 }
@@ -702,4 +711,30 @@ model PushSubscription {
 
   @@index([shopId])
   @@map("push_subscriptions")
+}
+
+// Persisted, in-app log of shop-facing events shown in the admin
+// Notification Center (bell dropdown + /admin/notifications) — distinct from
+// PushSubscription above, which only fires an ephemeral browser push with no
+// app-side record. Every write also publishes a notification.created
+// OrderEvent over the existing per-shop SSE channel (see
+// lib/server/order-events.ts), so an already-open dashboard tab updates
+// live; this row is what makes it durable across reloads. Writes are
+// unconditional — not gated by the notifyNewOrders/notifyOrderUpdates push
+// toggles, which only affect the separate push call. No "archived" status —
+// delete (single or clearAll) is the only removal path.
+model Notification {
+  id        String           @id @default(cuid())
+  shopId    String
+  shop      Shop             @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  type      NotificationType
+  title     String
+  body      String
+  link      String?
+  isRead    Boolean          @default(false)
+  createdAt DateTime         @default(now())
+
+  @@index([shopId])
+  @@index([shopId, isRead])
+  @@map("notifications")
 }

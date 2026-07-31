@@ -26,8 +26,10 @@ import { Sheet, SheetContent, SheetTrigger, SheetTitle } from "@/components/ui/s
 import { ThemeToggle } from "@/components/shared/theme-toggle";
 import { InstallApp } from "@/components/shared/install-app";
 import { CreateOrderFab } from "@/components/admin/create-order-fab";
+import { NotificationBell } from "@/components/admin/notification-bell";
 import { cn } from "@/lib/utils";
 import { api } from "@/lib/api-client";
+import type { NotificationEventPayload } from "@/lib/hooks/use-order-events";
 
 const NAV_ITEMS = [
   { href: "/admin", label: "Dashboard", icon: LayoutDashboard },
@@ -72,10 +74,12 @@ function NavLinks({ pathname, onNavigate }: { pathname: string; onNavigate?: () 
 export function AdminShell({
   shopName,
   shopSlug,
+  initialNotifications,
   children,
 }: {
   shopName: string;
   shopSlug: string;
+  initialNotifications: NotificationEventPayload[];
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
@@ -186,6 +190,7 @@ export function AdminShell({
             <span className="text-sm font-medium text-muted-foreground">{pageTitle}</span>
           </div>
           <div className="flex items-center gap-2">
+            <NotificationBell initialNotifications={initialNotifications} />
             <InstallApp />
             <ThemeToggle />
           </div>

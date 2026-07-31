@@ -3,6 +3,7 @@ import { z } from "zod";
 import { requireAdminSession } from "@/lib/session";
 import { handleApiError, NotFoundError } from "@/lib/api-utils";
 import { db } from "@/lib/db";
+import { createNotification } from "@/lib/services/notification";
 import { publishOrderEvent, toOrderEvent, toTableSessionEvent } from "@/lib/server/order-events";
 
 const patchSchema = z.discriminatedUnion("action", [
@@ -167,6 +168,17 @@ async function closeTable(
   publishOrderEvent(shopId, { type: "session.updated", session: toTableSessionEvent(updatedSession) });
   for (const order of completedOrders) {
     publishOrderEvent(shopId, { type: "order.updated", order: toOrderEvent(order) });
+  }
+
+  // closeTable() is shared by both mark_paid and release_table (void) — only
+  // a real payment should notify, never a released/voided table.
+  if (paymentMethod !== "VOID") {
+    createNotification(shopId, {
+      type: "PAYMENT_RECEIVED",
+      title: `Table ${updatedSession.tableNumber} — Payment received`,
+      body: `Paid via ${paymentMethod}`,
+      link: "/admin/tables",
+    }).catch(() => {});
   }
 
   return NextResponse.json({ ok: true, session: toTableSessionEvent(updatedSession) });

@@ -5,6 +5,7 @@ import { handleApiError, NotFoundError } from "@/lib/api-utils";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { computeSessionBill } from "@/lib/services/table-session";
 import { sendBillRequestNotification } from "@/lib/services/push";
+import { createNotification } from "@/lib/services/notification";
 import { publishOrderEvent, toOrderEvent, toTableSessionEvent } from "@/lib/server/order-events";
 
 const patchSchema = z.object({ action: z.literal("request_bill") });
@@ -87,6 +88,12 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     sendBillRequestNotification(session.shopId, { tableNumber: session.tableNumber, sessionId: id }).catch(
       () => {}
     );
+    createNotification(session.shopId, {
+      type: "BILL_REQUESTED",
+      title: `Bill requested — Table ${session.tableNumber}`,
+      body: "Customer is ready to pay.",
+      link: "/admin/tables",
+    }).catch(() => {});
     publishOrderEvent(session.shopId, { type: "session.updated", session: toTableSessionEvent(updated) });
 
     return NextResponse.json({ ok: true, session: toTableSessionEvent(updated) });

@@ -6,6 +6,8 @@ import { db } from "@/lib/db";
 import { calculateBill } from "@/lib/services/billing";
 import { sendNewOrderNotification } from "@/lib/services/push";
 import { publishOrderEvent, toOrderEvent } from "@/lib/server/order-events";
+import { createNotification } from "@/lib/services/notification";
+import { formatCurrency } from "@/lib/utils/currency";
 import type { Prisma } from "@/generated/prisma/client";
 
 const orderItemSchema = z.object({
@@ -115,6 +117,13 @@ export async function POST(request: Request) {
       grandTotal: bill.grandTotal,
       currency: shop.currency,
       orderId: order.id,
+    }).catch(() => {});
+
+    createNotification(shop.id, {
+      type: "NEW_ORDER",
+      title: input.tableNumber ? `New order — Table ${input.tableNumber}` : `New order — ${order.billNumber}`,
+      body: `${formatCurrency(bill.grandTotal, shop.currency)} · ${input.items.length} item${input.items.length === 1 ? "" : "s"}`,
+      link: `/admin/orders/${order.id}`,
     }).catch(() => {});
 
     publishOrderEvent(shop.id, { type: "order.created", order: toOrderEvent(order) });

@@ -18,9 +18,14 @@ export async function GET(
   // Public route (no auth) — the shop channel carries every table's events,
   // so this must only ever forward events for this specific session (either
   // a session.* event about it, or an order.* event for one of its orders).
+  // notification.* events are admin-only (owner-facing titles/links into
+  // /admin/...) and must never reach an anonymous customer stream.
   return createOrderEventStream(request, session.shopId, (event) => {
     if (event.type === "session.created" || event.type === "session.updated") {
       return event.session.id === id;
+    }
+    if (event.type === "notification.created") {
+      return false;
     }
     return event.order.tableSessionId === id;
   });

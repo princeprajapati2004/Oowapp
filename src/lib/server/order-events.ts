@@ -55,11 +55,23 @@ export type TableSessionEventPayload = {
   updatedAt: string;
 };
 
+export type NotificationEventPayload = {
+  id: string;
+  shopId: string;
+  type: string;
+  title: string;
+  body: string;
+  link: string | null;
+  isRead: boolean;
+  createdAt: string;
+};
+
 export type OrderEvent =
   | { type: "order.created"; order: OrderEventOrder }
   | { type: "order.updated"; order: OrderEventOrder }
   | { type: "session.created"; session: TableSessionEventPayload }
-  | { type: "session.updated"; session: TableSessionEventPayload };
+  | { type: "session.updated"; session: TableSessionEventPayload }
+  | { type: "notification.created"; notification: NotificationEventPayload };
 
 type RawSessionForEvent = {
   id: string;
@@ -86,6 +98,30 @@ export function toTableSessionEvent(session: RawSessionForEvent): TableSessionEv
     paymentMethod: session.paymentMethod ?? null,
     createdAt: (session.createdAt as Date).toISOString(),
     updatedAt: (session.updatedAt as Date).toISOString(),
+  };
+}
+
+type RawNotificationForEvent = {
+  id: string;
+  shopId: string;
+  type: string;
+  title: string;
+  body: string;
+  link: string | null;
+  isRead: boolean;
+  createdAt: unknown;
+};
+
+export function toNotificationEvent(notification: RawNotificationForEvent): NotificationEventPayload {
+  return {
+    id: notification.id,
+    shopId: notification.shopId,
+    type: notification.type,
+    title: notification.title,
+    body: notification.body,
+    link: notification.link,
+    isRead: notification.isRead,
+    createdAt: (notification.createdAt as Date).toISOString(),
   };
 }
 

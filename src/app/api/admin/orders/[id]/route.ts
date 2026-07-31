@@ -5,6 +5,7 @@ import { handleApiError, NotFoundError } from "@/lib/api-utils";
 import { db } from "@/lib/db";
 import { calculateBill } from "@/lib/services/billing";
 import { sendOrderStatusNotification } from "@/lib/services/push";
+import { createNotification } from "@/lib/services/notification";
 import { publishOrderEvent, toOrderEvent } from "@/lib/server/order-events";
 import type { Prisma } from "@/generated/prisma/client";
 
@@ -121,6 +122,13 @@ export async function PATCH(
         billNumber: existing.billNumber,
         status: data.status,
         orderId: id,
+      }).catch(() => {});
+
+      createNotification(existing.shopId, {
+        type: "ORDER_STATUS_CHANGED",
+        title: `Order #${existing.billNumber} — ${data.status}`,
+        body: `Status updated to ${data.status.toLowerCase()}`,
+        link: `/admin/orders/${id}`,
       }).catch(() => {});
     }
 

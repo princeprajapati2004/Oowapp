@@ -9,6 +9,8 @@ import { publishOrderEvent, toOrderEvent } from "@/lib/server/order-events";
 import { getCustomerSession } from "@/lib/customer-session";
 import { readPhoneVerifiedCookie } from "@/lib/phone-verify-auth";
 import { resolveOrCreateSession, computeSessionBill } from "@/lib/services/table-session";
+import { createNotification } from "@/lib/services/notification";
+import { formatCurrency } from "@/lib/utils/currency";
 import type { Prisma } from "@/generated/prisma/client";
 
 const orderItemSchema = z.object({
@@ -172,6 +174,13 @@ export async function POST(request: Request) {
         orderId: order.id,
       }).catch(() => {});
 
+      createNotification(shop.id, {
+        type: "NEW_ORDER",
+        title: input.tableNumber ? `New order — Table ${input.tableNumber}` : `New order — ${order.billNumber}`,
+        body: `${formatCurrency(Number(order.grandTotal), shop.currency)} · ${order.items.length} item${order.items.length === 1 ? "" : "s"}`,
+        link: `/admin/orders/${order.id}`,
+      }).catch(() => {});
+
       publishOrderEvent(shop.id, { type: "order.created", order: toOrderEvent(order) });
     }
 
@@ -207,6 +216,21 @@ export async function POST(request: Request) {
           }),
         ]);
         sessionStatus = session?.status ?? null;
+
+        // Both checks matter: ordersInSession.length === 1 alone would
+        // re-fire on a retried/duplicate submission of what was originally
+        // the table's first order, since this whole block runs even when
+        // isDuplicate is true (it sits outside the `if (!isDuplicate)` guard
+        // above, unlike the push/publish calls there).
+        if (!isDuplicate && ordersInSession.length === 1 && session) {
+          createNotification(shop.id, {
+            type: "TABLE_OCCUPIED",
+            title: `Table ${session.tableNumber} occupied`,
+            body: input.customerName ? `New guest — ${input.customerName}` : "New guest seated",
+            link: "/admin/tables",
+          }).catch(() => {});
+        }
+
         sessionOrders = ordersInSession.map((o) => ({
           status: o.status,
           items: o.items.map((item) => ({
