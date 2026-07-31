@@ -18,11 +18,13 @@ import {
   ChefHat,
   Banknote,
   Table2,
+  BookUser,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger, SheetTitle } from "@/components/ui/sheet";
 import { ThemeToggle } from "@/components/shared/theme-toggle";
 import { InstallApp } from "@/components/shared/install-app";
+import { CreateOrderFab } from "@/components/admin/create-order-fab";
 import { cn } from "@/lib/utils";
 import { api } from "@/lib/api-client";
 
@@ -35,6 +37,7 @@ const NAV_ITEMS = [
   { href: "/admin/qr", label: "QR Code", icon: QrCode },
   { href: "/admin/orders", label: "Orders", icon: ClipboardList },
   { href: "/admin/tables", label: "Tables", icon: Table2 },
+  { href: "/admin/parties", label: "Parties", icon: BookUser },
 ];
 
 function NavLinks({ pathname, onNavigate }: { pathname: string; onNavigate?: () => void }) {
@@ -132,6 +135,7 @@ export function AdminShell({
 
   return (
     <div className="flex min-h-screen">
+      <CreateOrderFab />
       <aside className="hidden md:flex w-60 shrink-0 flex-col border-r bg-background print:hidden">
         <div className="flex h-14 items-center gap-2.5 border-b px-4">
           <Image

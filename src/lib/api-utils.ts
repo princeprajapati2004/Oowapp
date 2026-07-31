@@ -10,6 +10,13 @@ export class NotFoundError extends Error {
   }
 }
 
+export class ConflictError extends Error {
+  constructor(message = "Already exists") {
+    super(message);
+    this.name = "ConflictError";
+  }
+}
+
 export function handleApiError(error: unknown) {
   if (error instanceof UnauthorizedError) {
     return NextResponse.json({ error: error.message }, { status: 401 });
@@ -19,6 +26,9 @@ export function handleApiError(error: unknown) {
   }
   if (error instanceof NotFoundError) {
     return NextResponse.json({ error: error.message }, { status: 404 });
+  }
+  if (error instanceof ConflictError) {
+    return NextResponse.json({ error: error.message }, { status: 409 });
   }
   if (error instanceof BillAlreadyRequestedError) {
     return NextResponse.json({ error: error.message }, { status: 409 });

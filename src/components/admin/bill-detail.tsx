@@ -35,6 +35,7 @@ type OrderItem = {
 export type BillOrderData = {
   id: string;
   billNumber: string;
+  tokenNumber?: number | null;
   customerName: string | null;
   customerPhone: string | null;
   tableNumber: string | null;
@@ -524,7 +525,7 @@ export function BillDetail({
       doc.setFont("helvetica", "normal");
       doc.setTextColor(80, 80, 80);
 
-      doc.text(`Bill No: ${order.billNumber}`, leftX, y);
+      doc.text(`Bill No: ${order.billNumber}${order.tokenNumber ? ` · Token #${order.tokenNumber}` : ""}`, leftX, y);
       if (order.customerName) doc.text(order.customerName, rightX, y);
       y += 12;
 
@@ -746,6 +747,9 @@ export function BillDetail({
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 flex-wrap">
             <h1 className="text-xl font-bold">Bill #{order.billNumber}</h1>
+            {order.tokenNumber ? (
+              <span className="text-sm font-medium text-muted-foreground">Token #{order.tokenNumber}</span>
+            ) : null}
             <span
               className={cn(
                 "inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium",

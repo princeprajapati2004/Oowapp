@@ -2,10 +2,9 @@
 
 import { useState, useTransition, useCallback } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import {
   TrendingUp, TrendingDown, Minus, ShoppingBag, CircleDollarSign,
-  BarChart3, Clock, Sparkles, QrCode, Settings, Plus, ClipboardList,
+  BarChart3, Clock, Sparkles, QrCode, Settings, ClipboardList,
   UtensilsCrossed, ChevronRight, ExternalLink,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -91,7 +90,6 @@ interface Props {
 }
 
 export function DashboardClient({ initialData, initialGranularity, currency, shopName, ownerName }: Props) {
-  const router = useRouter();
   const [period, setPeriod] = useState<Period>("today");
   const [data, setData] = useState<DashboardData>(initialData);
   const [granularity, setGranularity] = useState<"hour" | "day" | "month">(initialGranularity);
@@ -126,23 +124,18 @@ export function DashboardClient({ initialData, initialGranularity, currency, sho
   return (
     <div className="space-y-5 max-w-7xl">
       {/* Header */}
-      <div className="flex items-start justify-between gap-4 flex-wrap">
-        <div>
-          <h1 className="text-xl font-bold tracking-tight">{getGreeting(ownerName, shopName)}</h1>
-          {summary.totalOrders > 0 ? (
-            <p className="text-sm text-muted-foreground mt-0.5">
-              {period === "today" ? "Today your business earned " : "This period you earned "}
-              <span className="font-semibold text-foreground">{formatCurrency(summary.totalRevenue, currency)}</span>
-              {" · "}
-              <span className="font-semibold text-foreground">{summary.totalOrders}</span> orders
-            </p>
-          ) : (
-            <p className="text-sm text-muted-foreground mt-0.5">No orders yet in this period.</p>
-          )}
-        </div>
-        <Button onClick={() => router.push("/admin/orders/create")}>
-          <Plus className="size-4" /> Create Order
-        </Button>
+      <div>
+        <h1 className="text-xl font-bold tracking-tight">{getGreeting(ownerName, shopName)}</h1>
+        {summary.totalOrders > 0 ? (
+          <p className="text-sm text-muted-foreground mt-0.5">
+            {period === "today" ? "Today your business earned " : "This period you earned "}
+            <span className="font-semibold text-foreground">{formatCurrency(summary.totalRevenue, currency)}</span>
+            {" · "}
+            <span className="font-semibold text-foreground">{summary.totalOrders}</span> orders
+          </p>
+        ) : (
+          <p className="text-sm text-muted-foreground mt-0.5">No orders yet in this period.</p>
+        )}
       </div>
 
       {/* Period Tabs */}

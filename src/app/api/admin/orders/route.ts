@@ -56,6 +56,15 @@ export async function POST(request: Request) {
 
     const billNumber = `${shop.slug.slice(0, 4).toUpperCase()}-${Date.now()}`;
 
+    // Per-shop-per-day sequential display number for admin-created orders
+    // only (see prisma schema comment on Order.tokenNumber). Non-atomic —
+    // consistent with, not a regression from, billNumber's own Date.now()
+    // generation just above, which also has no DB-level uniqueness guarantee.
+    const startOfToday = new Date();
+    startOfToday.setHours(0, 0, 0, 0);
+    const tokenNumber =
+      (await db.order.count({ where: { shopId: shop.id, createdAt: { gte: startOfToday } } })) + 1;
+
     let discountedTotal: number | null = null;
     if (input.discountType && input.discountValue) {
       const base = bill.grandTotal;
@@ -71,6 +80,7 @@ export async function POST(request: Request) {
       data: {
         shopId: shop.id,
         billNumber,
+        tokenNumber,
         customerName: input.customerName || null,
         customerPhone: input.customerPhone || null,
         tableNumber: input.tableNumber || null,
@@ -109,7 +119,10 @@ export async function POST(request: Request) {
 
     publishOrderEvent(shop.id, { type: "order.created", order: toOrderEvent(order) });
 
-    return NextResponse.json({ ok: true, orderId: order.id, billNumber: order.billNumber }, { status: 201 });
+    return NextResponse.json(
+      { ok: true, orderId: order.id, billNumber: order.billNumber, tokenNumber: order.tokenNumber },
+      { status: 201 }
+    );
   } catch (error) {
     return handleApiError(error);
   }

@@ -1,5 +1,3 @@
-// QR Ordering & Billing System — Prisma schema
-
 generator client {
   provider = "prisma-client"
   output   = "../src/generated/prisma"
@@ -9,7 +7,472 @@ datasource db {
   provider = "postgresql"
 }
 
-// ─── Enums ────────────────────────────────────────────────────────────────────
+model Admin {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  createdAt    DateTime @default(now())
+  shop         Shop?
+
+  @@map("admins")
+}
+
+model Shop {
+  id                     String                      @id @default(cuid())
+  adminId                String                      @unique
+  slug                   String                      @unique
+  businessName           String
+  businessType           BusinessType                @default(RESTAURANT)
+  logoUrl                String?
+  phone                  String?
+  whatsappNumber         String
+  address                String?
+  gstNumber              String?
+  currency               String                      @default("INR")
+  ownerName              String?
+  city                   String?
+  state                  String?
+  country                String?
+  status                 ShopStatus                  @default(ACTIVE)
+  lastLoginAt            DateTime?
+  suspendedAt            DateTime?
+  suspendedReason        String?
+  deletedAt              DateTime?
+  upiId                  String?
+  acceptCash             Boolean                     @default(true)
+  bankAccountName        String?
+  bankAccountNumber      String?
+  bankIfsc               String?
+  bankName               String?
+  paymentQrImageUrl      String?
+  requireCustomerName    Boolean                     @default(true)
+  requirePhone           Boolean                     @default(false)
+  requireTableNumber     Boolean                     @default(true)
+  requireDeliveryAddress Boolean                     @default(false)
+  allowNotes             Boolean                     @default(true)
+  saveOrdersToDb         Boolean                     @default(false)
+  isPublished            Boolean                     @default(true)
+  createdAt              DateTime                    @default(now())
+  updatedAt              DateTime                    @updatedAt
+  enableTableQr          Boolean                     @default(false)
+  tableNames             String?
+  enableTableNumber      Boolean                     @default(true)
+  notifyNewOrders        Boolean                     @default(true)
+  notifyOrderUpdates     Boolean                     @default(true)
+  orderMode              OrderMode                   @default(WHATSAPP)
+  paymentDisplayName     String?
+  featurePermissions     BusinessFeaturePermission[]
+  categories             Category[]
+  customers              Customer[]
+  orders                 Order[]
+  phoneOtps              PhoneOtp[]
+  products               Product[]
+  pushSubscriptions      PushSubscription[]
+  admin                  Admin                       @relation(fields: [adminId], references: [id], onDelete: Cascade)
+  staff_members          staff_members[]
+  subscriptions          Subscription[]
+  tableSessions          TableSession[]
+  taxes                  Tax[]
+  parties                Party[]
+  partyPayments          PartyPayment[]
+
+  @@map("shops")
+}
+
+model Customer {
+  id            String         @id @default(cuid())
+  shopId        String
+  name          String
+  phone         String
+  passwordHash  String
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  shop          Shop           @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  orders        Order[]
+  tableSessions TableSession[]
+
+  @@unique([shopId, phone])
+  @@index([shopId])
+  @@map("customers")
+}
+
+// Customers/suppliers ledger ("Parties") — distinct from Customer above,
+// which is a login account for the storefront. A Party is a CRM/khata-book
+// contact (due tracking, GST, credit limit) with no login. Orders are linked
+// by phone-number match at query time (see lib/services/party.ts), the same
+// join key the admin "customer directory" (/api/admin/customers) already
+// uses — no FK on Order, to keep every order-creation path untouched.
+model Party {
+  id             String        @id @default(cuid())
+  shopId         String
+  shop           Shop          @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  type           PartyType     @default(CUSTOMER)
+  name           String
+  phone          String
+  gstNumber      String?
+  businessName   String?
+  address        String?
+  category       PartyCategory @default(GENERAL)
+  openingBalance Decimal       @default(0) @db.Decimal(10, 2)
+  creditLimit    Decimal?      @db.Decimal(10, 2)
+  notes          String?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  payments PartyPayment[]
+
+  @@unique([shopId, phone])
+  // Safe on Postgres with an optional field: NULLs are distinct from each
+  // other in a unique index, so multiple parties with no GST never collide —
+  // enforcing that gstNumber is normalized to null (never "") happens in
+  // lib/validation/party.ts, since an empty string IS a value to Postgres.
+  @@unique([shopId, gstNumber])
+  @@index([shopId])
+  @@map("parties")
+}
+
+// A single logged cash movement against a Party's running balance — not tied
+// to a specific Order. RECEIVED = money the shop took in from the party
+// (paying down what they owe); PAID = money the shop gave out to the party
+// (a supplier settlement, or a customer refund/advance). See
+// lib/services/party.ts for how direction affects the outstanding balance.
+model PartyPayment {
+  id        String                @id @default(cuid())
+  shopId    String
+  shop      Shop                  @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  partyId   String
+  party     Party                 @relation(fields: [partyId], references: [id], onDelete: Cascade)
+  amount    Decimal               @db.Decimal(10, 2)
+  method    PartyPaymentMethod    @default(CASH)
+  direction PartyPaymentDirection
+  note      String?
+  createdBy String
+  createdAt DateTime              @default(now())
+
+  @@index([shopId])
+  @@index([partyId])
+  @@map("party_payments")
+}
+
+model Category {
+  id        String    @id @default(cuid())
+  shopId    String
+  name      String
+  sortOrder Int       @default(0)
+  isVisible Boolean   @default(true)
+  createdBy String?
+  updatedBy String?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  shop      Shop      @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  products  Product[]
+  taxes     Tax[]
+
+  @@index([shopId])
+  @@map("categories")
+}
+
+model Product {
+  id          String      @id @default(cuid())
+  shopId      String
+  categoryId  String
+  name        String
+  description String?
+  price       Decimal     @db.Decimal(10, 2)
+  imageUrl    String?
+  unit        String?
+  foodType    FoodType    @default(NA)
+  isAvailable Boolean     @default(true)
+  isVisible   Boolean     @default(true)
+  stock       Int?
+  sortOrder   Int         @default(0)
+  createdBy   String?
+  updatedBy   String?
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  orderItems  OrderItem[]
+  category    Category    @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  shop        Shop        @relation(fields: [shopId], references: [id], onDelete: Cascade)
+
+  @@index([shopId])
+  @@index([categoryId])
+  @@map("products")
+}
+
+model Tax {
+  id         String       @id @default(cuid())
+  shopId     String
+  name       String
+  type       TaxType      @default(PERCENTAGE)
+  value      Decimal      @db.Decimal(10, 2)
+  appliesTo  TaxAppliesTo @default(ENTIRE_BILL)
+  categoryId String?
+  isEnabled  Boolean      @default(true)
+  sortOrder  Int          @default(0)
+  createdBy  String?
+  updatedBy  String?
+  createdAt  DateTime     @default(now())
+  updatedAt  DateTime     @updatedAt
+  category   Category?    @relation(fields: [categoryId], references: [id])
+  shop       Shop         @relation(fields: [shopId], references: [id], onDelete: Cascade)
+
+  @@index([shopId])
+  @@map("taxes")
+}
+
+model Order {
+  id                 String         @id @default(cuid())
+  shopId             String
+  billNumber         String
+  customerName       String?
+  customerPhone      String?
+  tableNumber        String?
+  deliveryAddress    String?
+  notes              String?
+  subtotal           Decimal        @db.Decimal(10, 2)
+  taxTotal           Decimal        @db.Decimal(10, 2)
+  grandTotal         Decimal        @db.Decimal(10, 2)
+  taxBreakdown       Json
+  createdAt          DateTime       @default(now())
+  status             OrderStatus    @default(PENDING)
+  discountReason     String?
+  discountType       String?
+  discountValue      Decimal?       @db.Decimal(10, 2)
+  discountedTotal    Decimal?       @db.Decimal(10, 2)
+  paymentMethod      String?
+  source             String         @default("qr")
+  customerId         String?
+  clientRequestId    String?
+  tableSessionId     String?
+  priorityFlag       String?
+  paymentConfirmedAt DateTime?
+  paymentConfirmedBy String?
+  paymentStatus      PaymentStatus  @default(PENDING)
+  staffId            String?
+  // Per-shop-per-day sequential display number, set only for admin-created
+  // manual orders (see POST /api/admin/orders) — null for QR/WhatsApp orders.
+  tokenNumber        Int?
+  items              OrderItem[]
+  customer           Customer?      @relation(fields: [customerId], references: [id])
+  shop               Shop           @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  staff_members      staff_members? @relation(fields: [staffId], references: [id])
+  tableSession       TableSession?  @relation(fields: [tableSessionId], references: [id])
+
+  @@unique([shopId, clientRequestId])
+  @@index([shopId])
+  @@index([customerId])
+  @@index([tableSessionId])
+  @@index([shopId, customerPhone])
+  @@map("orders")
+}
+
+model TableSession {
+  id              String             @id @default(cuid())
+  shopId          String
+  tableNumber     String
+  status          TableSessionStatus @default(ACTIVE)
+  customerName    String?
+  customerPhone   String?
+  customerId      String?
+  billRequestedAt DateTime?
+  paymentMethod   String?
+  paymentNote     String?
+  paidAt          DateTime?
+  paidBy          String?
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+  orders          Order[]
+  customer        Customer?          @relation(fields: [customerId], references: [id])
+  shop            Shop               @relation(fields: [shopId], references: [id], onDelete: Cascade)
+
+  @@index([shopId])
+  @@index([shopId, tableNumber])
+  @@map("table_sessions")
+}
+
+model PhoneOtp {
+  id         String    @id @default(cuid())
+  shopId     String
+  phone      String
+  codeHash   String
+  attempts   Int       @default(0)
+  expiresAt  DateTime
+  verifiedAt DateTime?
+  createdAt  DateTime  @default(now())
+  shop       Shop      @relation(fields: [shopId], references: [id], onDelete: Cascade)
+
+  @@index([shopId, phone])
+  @@map("phone_otps")
+}
+
+model OrderItem {
+  id        String   @id @default(cuid())
+  orderId   String
+  productId String?
+  name      String
+  price     Decimal  @db.Decimal(10, 2)
+  quantity  Int
+  lineTotal Decimal  @db.Decimal(10, 2)
+  order     Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product   Product? @relation(fields: [productId], references: [id])
+
+  @@index([orderId])
+  @@map("order_items")
+}
+
+model SuperAdmin {
+  id           String    @id @default(cuid())
+  email        String    @unique
+  passwordHash String
+  name         String
+  lastLoginAt  DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@map("super_admins")
+}
+
+model Subscription {
+  id        String                 @id @default(cuid())
+  shopId    String
+  plan      SubscriptionPlan       @default(FREE)
+  status    SubscriptionStatus     @default(TRIAL)
+  startDate DateTime               @default(now())
+  endDate   DateTime?
+  createdAt DateTime               @default(now())
+  updatedAt DateTime               @updatedAt
+  planId    String?
+  duration  SubscriptionDuration   @default(ONE_MONTH)
+  action    SubscriptionActionType @default(CREATED)
+  createdBy String?
+  remarks   String?
+  planRef   Plan?                  @relation(fields: [planId], references: [id])
+  shop      Shop                   @relation(fields: [shopId], references: [id], onDelete: Cascade)
+
+  @@index([shopId])
+  @@index([shopId, createdAt])
+  @@map("subscriptions")
+}
+
+model Plan {
+  id            String         @id @default(cuid())
+  code          String         @unique
+  name          String
+  description   String?
+  isActive      Boolean        @default(true)
+  sortOrder     Int            @default(0)
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  planFeatures  PlanFeature[]
+  subscriptions Subscription[]
+
+  @@map("plans")
+}
+
+model Feature {
+  id                String                      @id @default(cuid())
+  key               String                      @unique
+  label             String
+  description       String?
+  category          String?
+  isActive          Boolean                     @default(true)
+  createdAt         DateTime                    @default(now())
+  businessOverrides BusinessFeaturePermission[]
+  planFeatures      PlanFeature[]
+
+  @@map("features")
+}
+
+model PlanFeature {
+  id        String  @id @default(cuid())
+  planId    String
+  featureId String
+  enabled   Boolean @default(true)
+  feature   Feature @relation(fields: [featureId], references: [id], onDelete: Cascade)
+  plan      Plan    @relation(fields: [planId], references: [id], onDelete: Cascade)
+
+  @@unique([planId, featureId])
+  @@map("plan_features")
+}
+
+model BusinessFeaturePermission {
+  id        String   @id @default(cuid())
+  shopId    String
+  featureId String
+  enabled   Boolean
+  reason    String?
+  updatedBy String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  feature   Feature  @relation(fields: [featureId], references: [id], onDelete: Cascade)
+  shop      Shop     @relation(fields: [shopId], references: [id], onDelete: Cascade)
+
+  @@unique([shopId, featureId])
+  @@index([shopId])
+  @@map("business_feature_permissions")
+}
+
+model AuditLog {
+  id         String      @id @default(cuid())
+  action     AuditAction
+  actorType  String
+  actorId    String
+  targetType String?
+  targetId   String?
+  metadata   Json?
+  shopId     String?
+  ipAddress  String?
+  userAgent  String?
+  requestId  String?
+  createdAt  DateTime    @default(now())
+
+  @@index([shopId])
+  @@index([actorId])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+model PlatformSettings {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  value     String
+  updatedAt DateTime @updatedAt
+
+  @@map("platform_settings")
+}
+
+model PushSubscription {
+  id        String   @id @default(cuid())
+  shopId    String
+  endpoint  String   @unique
+  p256dh    String
+  auth      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  shop      Shop     @relation(fields: [shopId], references: [id], onDelete: Cascade)
+
+  @@index([shopId])
+  @@map("push_subscriptions")
+}
+
+model staff_members {
+  id           String    @id
+  shopId       String
+  name         String
+  email        String?
+  phone        String?
+  role         StaffRole
+  passwordHash String
+  isActive     Boolean   @default(true)
+  lastLoginAt  DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime
+  orders       Order[]
+  shops        Shop      @relation(fields: [shopId], references: [id], onDelete: Cascade)
+
+  @@unique([shopId, email])
+  @@index([shopId])
+}
 
 enum BusinessType {
   RESTAURANT
@@ -57,8 +520,8 @@ enum SubscriptionStatus {
   TRIAL
   ACTIVE
   EXPIRED
-  SUSPENDED
   CANCELLED
+  SUSPENDED
 }
 
 enum SubscriptionDuration {
@@ -96,18 +559,15 @@ enum TableSessionStatus {
 }
 
 enum AuditAction {
-  // Auth
   ADMIN_SIGNUP
   ADMIN_LOGIN
   ADMIN_LOGOUT
   SUPER_ADMIN_LOGIN
   SUPER_ADMIN_LOGOUT
-  // Business lifecycle
   SHOP_UPDATED
   SHOP_SUSPENDED
   SHOP_ACTIVATED
   SHOP_DELETED
-  // Content
   CATEGORY_CREATED
   CATEGORY_UPDATED
   CATEGORY_DELETED
@@ -117,446 +577,50 @@ enum AuditAction {
   TAX_CREATED
   TAX_UPDATED
   TAX_DELETED
-  // Orders
   ORDER_CREATED
-  TABLE_SESSION_MARKED_PAID
-  // Platform
   PLATFORM_SETTINGS_UPDATED
   SUBSCRIPTION_CHANGED
+  TABLE_SESSION_MARKED_PAID
+  ORDER_MARKED_PAID
 }
 
-// ─── Core Models ──────────────────────────────────────────────────────────────
-
-model Admin {
-  id           String   @id @default(cuid())
-  email        String   @unique
-  passwordHash String
-  createdAt    DateTime @default(now())
-  shop         Shop?
-
-  @@map("admins")
+enum OrderMode {
+  WHATSAPP
+  DIRECT
 }
 
-model Shop {
-  id             String       @id @default(cuid())
-  adminId        String       @unique
-  admin          Admin        @relation(fields: [adminId], references: [id], onDelete: Cascade)
-  slug           String       @unique
-  businessName   String
-  businessType   BusinessType @default(RESTAURANT)
-  logoUrl        String?
-  phone          String?
-  whatsappNumber String
-  address        String?
-  gstNumber      String?
-  currency       String       @default("INR")
-
-  // Owner profile
-  ownerName String?
-  city      String?
-  state     String?
-  country   String?
-
-  // Platform lifecycle
-  status          ShopStatus @default(ACTIVE)
-  lastLoginAt     DateTime?
-  suspendedAt     DateTime?
-  suspendedReason String?
-  deletedAt       DateTime?
-
-  // Payment settings
-  upiId             String?
-  acceptCash        Boolean @default(true)
-  bankAccountName   String?
-  bankAccountNumber String?
-  bankIfsc          String?
-  bankName          String?
-  paymentQrImageUrl String?
-
-  // Order settings
-  requireCustomerName    Boolean @default(true)
-  requirePhone           Boolean @default(false)
-  enableTableNumber      Boolean @default(true)
-  requireTableNumber     Boolean @default(true)
-  requireDeliveryAddress Boolean @default(false)
-  allowNotes             Boolean @default(true)
-  saveOrdersToDb         Boolean @default(false)
-
-  isPublished Boolean  @default(true)
-
-  // Restaurant-specific settings
-  enableTableQr Boolean @default(false)
-  tableNames    String? // JSON-encoded string[]
-
-  // Push notification preferences
-  notifyNewOrders    Boolean @default(true)
-  notifyOrderUpdates Boolean @default(true)
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  categories         Category[]
-  products           Product[]
-  taxes              Tax[]
-  orders             Order[]
-  customers          Customer[]
-  tableSessions      TableSession[]
-  subscriptions      Subscription[]
-  pushSubscriptions  PushSubscription[]
-  featurePermissions BusinessFeaturePermission[]
-  phoneOtps          PhoneOtp[]
-
-  @@map("shops")
+enum PaymentStatus {
+  PENDING
+  PAID
 }
 
-// Customer accounts (Feature: customer login) — scoped per shop, mirrors how
-// every other entity here belongs to a single shop rather than a global
-// platform-wide identity.
-model Customer {
-  id           String   @id @default(cuid())
-  shopId       String
-  shop         Shop     @relation(fields: [shopId], references: [id], onDelete: Cascade)
-  name         String
-  phone        String
-  passwordHash String
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
-
-  orders        Order[]
-  tableSessions TableSession[]
-
-  @@unique([shopId, phone])
-  @@index([shopId])
-  @@map("customers")
+enum StaffRole {
+  MANAGER
+  KITCHEN
+  WAITER
 }
 
-model Category {
-  id        String   @id @default(cuid())
-  shopId    String
-  shop      Shop     @relation(fields: [shopId], references: [id], onDelete: Cascade)
-  name      String
-  sortOrder Int      @default(0)
-  isVisible Boolean  @default(true)
-  createdBy String?
-  updatedBy String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  products Product[]
-  taxes    Tax[]
-
-  @@index([shopId])
-  @@map("categories")
+enum PartyType {
+  CUSTOMER
+  SUPPLIER
 }
 
-model Product {
-  id          String   @id @default(cuid())
-  shopId      String
-  shop        Shop     @relation(fields: [shopId], references: [id], onDelete: Cascade)
-  categoryId  String
-  category    Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
-  name        String
-  description String?
-  price       Decimal  @db.Decimal(10, 2)
-  imageUrl    String?
-  unit        String?
-  foodType    FoodType @default(NA)
-  isAvailable Boolean  @default(true)
-  isVisible   Boolean  @default(true)
-  stock       Int?
-  sortOrder   Int      @default(0)
-  createdBy   String?
-  updatedBy   String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  orderItems OrderItem[]
-
-  @@index([shopId])
-  @@index([categoryId])
-  @@map("products")
+enum PartyCategory {
+  VIP
+  WHOLESALE
+  RETAIL
+  GENERAL
 }
 
-model Tax {
-  id         String       @id @default(cuid())
-  shopId     String
-  shop       Shop         @relation(fields: [shopId], references: [id], onDelete: Cascade)
-  name       String
-  type       TaxType      @default(PERCENTAGE)
-  value      Decimal      @db.Decimal(10, 2)
-  appliesTo  TaxAppliesTo @default(ENTIRE_BILL)
-  categoryId String?
-  category   Category?    @relation(fields: [categoryId], references: [id], onDelete: SetNull)
-  isEnabled  Boolean      @default(true)
-  sortOrder  Int          @default(0)
-  createdBy  String?
-  updatedBy  String?
-  createdAt  DateTime     @default(now())
-  updatedAt  DateTime     @updatedAt
-
-  @@index([shopId])
-  @@map("taxes")
+enum PartyPaymentMethod {
+  CASH
+  UPI
+  CARD
+  BANK_TRANSFER
+  OTHER
 }
 
-model Order {
-  id              String   @id @default(cuid())
-  shopId          String
-  shop            Shop     @relation(fields: [shopId], references: [id], onDelete: Cascade)
-  billNumber      String
-  customerName    String?
-  customerPhone   String?
-  // Set when the order was placed by a logged-in customer account — orders
-  // from guests (the common case) leave this null.
-  customerId      String?
-  customer        Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
-  tableNumber     String?
-  deliveryAddress String?
-  notes           String?
-  subtotal        Decimal     @db.Decimal(10, 2)
-  taxTotal        Decimal     @db.Decimal(10, 2)
-  grandTotal      Decimal     @db.Decimal(10, 2)
-  taxBreakdown    Json
-  status          OrderStatus @default(PENDING)
-  paymentMethod   String?
-  source          String      @default("qr")
-  // Discount (Feature 3)
-  discountType    String?
-  discountValue   Decimal?    @db.Decimal(10, 2)
-  discountReason  String?
-  discountedTotal Decimal?    @db.Decimal(10, 2)
-  // Table order lifecycle — set only when this order was placed against an
-  // active table session (see TableSession); null for pickup/delivery/manual
-  // orders, which are unaffected by session grouping or the "no decrease" rule.
-  tableSessionId  String?
-  tableSession    TableSession? @relation(fields: [tableSessionId], references: [id], onDelete: SetNull)
-  // Client-generated idempotency key — dedupes retries/double WhatsApp sends
-  // (see resolveOrCreateSession / POST /api/orders).
-  clientRequestId String?
-  // Manual priority marker for Kitchen Display badges ("VIP" | "RUSH"), set by
-  // staff via a quick toggle — not derived from any other data. Null = no marker.
-  priorityFlag    String?
-  createdAt       DateTime    @default(now())
-
-  items OrderItem[]
-
-  @@unique([shopId, clientRequestId])
-  @@index([shopId])
-  @@index([customerId])
-  @@index([tableSessionId])
-  @@map("orders")
-}
-
-// Groups a table's orders into one running tab from the first QR/WhatsApp
-// order until payment is confirmed. One non-PAID session per (shopId,
-// tableNumber) is enforced by a partial unique index added by hand to the
-// generated migration (Prisma has no partial-unique-index syntax) — see
-// prisma/migrations/*_add_table_sessions/migration.sql.
-model TableSession {
-  id              String              @id @default(cuid())
-  shopId          String
-  shop            Shop                @relation(fields: [shopId], references: [id], onDelete: Cascade)
-  tableNumber     String
-  status          TableSessionStatus  @default(ACTIVE)
-  customerName    String?
-  customerPhone   String?
-  customerId      String?
-  customer        Customer?           @relation(fields: [customerId], references: [id], onDelete: SetNull)
-  billRequestedAt DateTime?
-  // Informational only — there is no payment gateway integration. Admin
-  // records what they observed being paid (cash/UPI/card/etc.), or "VOID" to
-  // free a mis-scanned/abandoned table without a real payment.
-  paymentMethod   String?
-  paymentNote     String?
-  paidAt          DateTime?
-  paidBy          String?
-  createdAt       DateTime            @default(now())
-  updatedAt       DateTime            @updatedAt
-
-  orders Order[]
-
-  @@index([shopId])
-  @@index([shopId, tableNumber])
-  @@map("table_sessions")
-}
-
-// Phone verification for guest checkout (Customer Ordering module). Codes are
-// bcrypt-hashed — never stored in plaintext — with a short expiry and a
-// capped attempt count. Not related to the password-based Customer login
-// system; this only gates the checkout phone field itself.
-model PhoneOtp {
-  id         String    @id @default(cuid())
-  shopId     String
-  shop       Shop      @relation(fields: [shopId], references: [id], onDelete: Cascade)
-  phone      String
-  codeHash   String
-  attempts   Int       @default(0)
-  expiresAt  DateTime
-  verifiedAt DateTime?
-  createdAt  DateTime  @default(now())
-
-  @@index([shopId, phone])
-  @@map("phone_otps")
-}
-
-model OrderItem {
-  id        String   @id @default(cuid())
-  orderId   String
-  order     Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  productId String?
-  product   Product? @relation(fields: [productId], references: [id])
-  name      String
-  price     Decimal  @db.Decimal(10, 2)
-  quantity  Int
-  lineTotal Decimal  @db.Decimal(10, 2)
-
-  @@index([orderId])
-  @@map("order_items")
-}
-
-// ─── SaaS Platform Models ─────────────────────────────────────────────────────
-
-model SuperAdmin {
-  id           String    @id @default(cuid())
-  email        String    @unique
-  passwordHash String
-  name         String
-  lastLoginAt  DateTime?
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
-
-  @@map("super_admins")
-}
-
-model Subscription {
-  id        String                 @id @default(cuid())
-  shopId    String
-  shop      Shop                   @relation(fields: [shopId], references: [id], onDelete: Cascade)
-  plan      SubscriptionPlan       @default(FREE)
-  planId    String?
-  planRef   Plan?                  @relation(fields: [planId], references: [id], onDelete: SetNull)
-  status    SubscriptionStatus     @default(TRIAL)
-  duration  SubscriptionDuration   @default(ONE_MONTH)
-  action    SubscriptionActionType @default(CREATED)
-  startDate DateTime               @default(now())
-  endDate   DateTime?
-  // Super admin actor id ("system" for auto-created trial subscriptions); nullable for
-  // rows created before this column existed.
-  createdBy String?
-  remarks   String?
-  createdAt DateTime               @default(now())
-  updatedAt DateTime               @updatedAt
-
-  @@index([shopId])
-  @@index([shopId, createdAt])
-  @@map("subscriptions")
-}
-
-// ─── Subscription Plans & Feature Permissions ─────────────────────────────────
-
-model Plan {
-  id          String   @id @default(cuid())
-  // Matches the legacy SubscriptionPlan enum value during the migration bridge period
-  // (see SUBSCRIPTION_POS_ARCHITECTURE.md, Decision A); free-form for plans created later.
-  code        String   @unique
-  name        String
-  description String?
-  isActive    Boolean  @default(true)
-  sortOrder   Int      @default(0)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  planFeatures  PlanFeature[]
-  subscriptions Subscription[]
-
-  @@map("plans")
-}
-
-model Feature {
-  id          String   @id @default(cuid())
-  key         String   @unique
-  label       String
-  description String?
-  category    String?
-  isActive    Boolean  @default(true)
-  createdAt   DateTime @default(now())
-
-  planFeatures      PlanFeature[]
-  businessOverrides BusinessFeaturePermission[]
-
-  @@map("features")
-}
-
-model PlanFeature {
-  id        String  @id @default(cuid())
-  planId    String
-  plan      Plan    @relation(fields: [planId], references: [id], onDelete: Cascade)
-  featureId String
-  feature   Feature @relation(fields: [featureId], references: [id], onDelete: Cascade)
-  enabled   Boolean @default(true)
-
-  @@unique([planId, featureId])
-  @@map("plan_features")
-}
-
-// Per-business override layer resolved on top of the plan's defaults — see
-// src/lib/services/feature-permission.ts::resolveFeatures for resolution order.
-model BusinessFeaturePermission {
-  id        String   @id @default(cuid())
-  shopId    String
-  shop      Shop     @relation(fields: [shopId], references: [id], onDelete: Cascade)
-  featureId String
-  feature   Feature  @relation(fields: [featureId], references: [id], onDelete: Cascade)
-  enabled   Boolean
-  reason    String?
-  updatedBy String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@unique([shopId, featureId])
-  @@index([shopId])
-  @@map("business_feature_permissions")
-}
-
-model AuditLog {
-  id         String      @id @default(cuid())
-  action     AuditAction
-  actorType  String
-  actorId    String
-  targetType String?
-  targetId   String?
-  metadata   Json?
-  shopId     String?
-  ipAddress  String?
-  userAgent  String?
-  requestId  String?
-  createdAt  DateTime    @default(now())
-
-  @@index([shopId])
-  @@index([actorId])
-  @@index([createdAt])
-  @@map("audit_logs")
-}
-
-model PlatformSettings {
-  id        String   @id @default(cuid())
-  key       String   @unique
-  value     String
-  updatedAt DateTime @updatedAt
-
-  @@map("platform_settings")
-}
-
-// Feature 4: Web push subscriptions
-model PushSubscription {
-  id        String   @id @default(cuid())
-  shopId    String
-  shop      Shop     @relation(fields: [shopId], references: [id], onDelete: Cascade)
-  endpoint  String   @unique
-  p256dh    String
-  auth      String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@index([shopId])
-  @@map("push_subscriptions")
+enum PartyPaymentDirection {
+  RECEIVED
+  PAID
 }

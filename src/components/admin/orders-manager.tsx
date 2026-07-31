@@ -4,7 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { ClipboardList, ExternalLink, Search, X, Copy, Plus } from "lucide-react";
+import { ClipboardList, ExternalLink, Search, X, Copy } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -210,13 +210,6 @@ export function OrdersManager({
               ))}
             </SelectContent>
           </Select>
-          <Button
-            onClick={() => router.push("/admin/orders/create")}
-            className="max-sm:fixed max-sm:right-5 max-sm:bottom-5 max-sm:z-40 max-sm:size-14 max-sm:rounded-full max-sm:p-0 max-sm:shadow-lg"
-            aria-label="Create Order"
-          >
-            <Plus className="size-4 max-sm:size-6" /> <span className="max-sm:hidden" aria-hidden="true">Create Order</span>
-          </Button>
         </div>
       </div>
 

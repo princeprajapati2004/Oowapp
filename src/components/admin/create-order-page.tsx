@@ -98,7 +98,15 @@ function avatarColor(name: string) {
   return AVATAR_PALETTE[hash % AVATAR_PALETTE.length];
 }
 
-export function CreateOrderPage({ currency, shopSlug }: { currency: string; shopSlug: string }) {
+export function CreateOrderPage({
+  currency,
+  shopSlug,
+  initialOrderType,
+}: {
+  currency: string;
+  shopSlug: string;
+  initialOrderType?: OrderType;
+}) {
   const router = useRouter();
 
   const [products, setProducts] = useState<Product[]>([]);
@@ -119,7 +127,7 @@ export function CreateOrderPage({ currency, shopSlug }: { currency: string; shop
   const [customerName, setCustomerName] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
   const [showCustomerSuggestions, setShowCustomerSuggestions] = useState(false);
-  const [orderType, setOrderType] = useState<OrderType>("DINE_IN");
+  const [orderType, setOrderType] = useState<OrderType>(initialOrderType ?? "DINE_IN");
   const [tableNumber, setTableNumber] = useState("");
   const [deliveryAddress, setDeliveryAddress] = useState("");
   const [deliveryInstructions, setDeliveryInstructions] = useState("");
@@ -487,8 +495,10 @@ export function CreateOrderPage({ currency, shopSlug }: { currency: string; shop
         body.discountValue = parseFloat(discountValue);
       }
 
-      const res = await api.post<{ billNumber: string; orderId: string }>("/api/admin/orders", body);
-      toast.success(`Order ${res.billNumber} created — ${totalQty} item(s)`);
+      const res = await api.post<{ billNumber: string; orderId: string; tokenNumber: number | null }>("/api/admin/orders", body);
+      toast.success(
+        `Order ${res.billNumber} created — ${totalQty} item(s)${res.tokenNumber ? ` · Token #${res.tokenNumber}` : ""}`
+      );
       clearLocalStore(shopSlug, "draftOrder");
       // Straight to the invoice preview (the bill-detail page) instead of
       // back to the list — that page already renders the full invoice and
