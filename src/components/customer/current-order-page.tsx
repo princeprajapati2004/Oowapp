@@ -98,6 +98,7 @@ export function CurrentOrderPage({
   // mark_paid). There is no customer self-confirm step.
   const [paymentIntent, setPaymentIntent] = useState<"idle" | "cash_pending" | "upi_confirm" | "upi_pending">("idle");
   const [upiQrDataUrl, setUpiQrDataUrl] = useState<string | null>(null);
+  const [uploadedQrFailed, setUploadedQrFailed] = useState(false);
   const [checkoutValues, setCheckoutValues] = useState<CheckoutInput | null>(null);
   const [directOrderPlaced, setDirectOrderPlaced] = useState(false);
 
@@ -248,7 +249,7 @@ export function CurrentOrderPage({
     return () => {
       cancelled = true;
     };
-  }, [shop.upiId, payeeDisplayName, finalInvoiceBill.grandTotal, invoiceTableNumber, orderNumber, invoicePaymentStatus, hasUnsentItems]);
+  }, [shop.upiId, shop.businessName, payeeDisplayName, finalInvoiceBill.grandTotal, invoiceTableNumber, orderNumber, invoicePaymentStatus, hasUnsentItems]);
 
   function buildUpiUrl() {
     const note = [invoiceTableNumber ? `Table ${invoiceTableNumber}` : null, orderNumber || null].filter(Boolean).join(" ") || shop.businessName;
@@ -846,12 +847,47 @@ export function CurrentOrderPage({
                         </div>
                       </div>
                     )}
+                    {/* Fallback for shops that uploaded a static QR screenshot
+                        (e.g. from their banking app) instead of typing a UPI
+                        ID — without this, those shops showed no QR at all,
+                        since the block above only renders a QR generated
+                        from shop.upiId. Doesn't encode the amount, so the
+                        customer is told to enter it manually. */}
+                    {!upiQrDataUrl && shop.paymentQrImageUrl && !uploadedQrFailed && (
+                      <div className="rounded-xl border bg-card overflow-hidden">
+                        <div className="px-4 py-2.5 bg-muted/30 border-b flex items-center gap-1.5">
+                          <QrCodeIcon className="size-3.5 text-muted-foreground" />
+                          <p className="font-semibold text-xs uppercase tracking-wide text-muted-foreground">Scan to Pay</p>
+                        </div>
+                        <div className="px-4 py-4 flex flex-col items-center gap-2">
+                          <div className="relative size-[200px] rounded-2xl border-2 border-border bg-white p-3">
+                            <Image
+                              src={shop.paymentQrImageUrl}
+                              alt="Payment QR code"
+                              fill
+                              className="object-contain p-2"
+                              unoptimized
+                              onError={() => setUploadedQrFailed(true)}
+                            />
+                          </div>
+                          <p className="text-xs text-muted-foreground">
+                            Scan and pay <span className="font-semibold text-foreground">{formatCurrency(finalInvoiceBill.grandTotal, shop.currency)}</span> to{" "}
+                            <span className="font-semibold text-foreground">{payeeDisplayName}</span>
+                          </p>
+                        </div>
+                      </div>
+                    )}
                     {shop.bankAccountNumber && (
                       <div className="rounded-lg bg-muted/40 px-3 py-2 text-xs space-y-0.5">
                         <p className="font-medium text-foreground">Bank transfer</p>
                         {shop.bankName && <p className="text-muted-foreground">{shop.bankName}</p>}
                         <p className="text-muted-foreground">A/C: {shop.bankAccountNumber}</p>
                         {shop.bankIfsc && <p className="text-muted-foreground">IFSC: {shop.bankIfsc}</p>}
+                      </div>
+                    )}
+                    {!upiQrDataUrl && (!shop.paymentQrImageUrl || uploadedQrFailed) && !shop.bankAccountNumber && !shop.acceptCash && (
+                      <div className="rounded-xl border border-dashed px-4 py-6 text-center text-sm text-muted-foreground">
+                        The restaurant hasn&apos;t set up online payment yet — please pay at the counter.
                       </div>
                     )}
                     {(shop.acceptCash || shop.upiId) && (
