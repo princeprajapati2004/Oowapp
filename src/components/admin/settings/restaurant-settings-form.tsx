@@ -2,13 +2,14 @@
 
 import { useState } from "react";
 import { toast } from "sonner";
-import { Plus, Trash2, QrCode } from "lucide-react";
+import { Plus, Trash2, QrCode, MessageCircle, Monitor } from "lucide-react";
 import { restaurantSettingsSchema, type RestaurantSettingsInput } from "@/lib/validation/shop-settings";
 import { api, ApiError } from "@/lib/api-client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ToggleRow } from "@/components/shared/toggle-row";
 import { Badge } from "@/components/ui/badge";
+import { cn } from "@/lib/utils";
 
 export function RestaurantSettingsForm({
   defaultValues,
@@ -18,6 +19,7 @@ export function RestaurantSettingsForm({
   bare?: boolean;
 }) {
   const [enableTableQr, setEnableTableQr] = useState(defaultValues.enableTableQr);
+  const [orderMode, setOrderMode] = useState<"WHATSAPP" | "DIRECT">(defaultValues.orderMode ?? "WHATSAPP");
   const [tables, setTables] = useState<string[]>(defaultValues.tableNames);
   const [newTable, setNewTable] = useState("");
   const [saving, setSaving] = useState(false);
@@ -38,7 +40,7 @@ export function RestaurantSettingsForm({
   }
 
   async function handleSave() {
-    const parsed = restaurantSettingsSchema.safeParse({ enableTableQr, tableNames: tables });
+    const parsed = restaurantSettingsSchema.safeParse({ enableTableQr, tableNames: tables, orderMode });
     if (!parsed.success) {
       toast.error("Invalid settings");
       return;
@@ -49,6 +51,7 @@ export function RestaurantSettingsForm({
         section: "restaurant",
         enableTableQr: parsed.data.enableTableQr,
         tableNames: parsed.data.tableNames,
+        orderMode: parsed.data.orderMode,
       });
       toast.success("Restaurant settings saved");
     } catch (error) {
@@ -60,6 +63,39 @@ export function RestaurantSettingsForm({
 
   const content = (
     <div className="space-y-4">
+      {/* Order Mode */}
+      <div className="space-y-2">
+        <p className="text-sm font-medium">Ordering mode</p>
+        <p className="text-xs text-muted-foreground">Choose how customers place orders. Requires PRO+ plan to use Direct mode.</p>
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+          {(["WHATSAPP", "DIRECT"] as const).map((mode) => {
+            const isActive = orderMode === mode;
+            const Icon = mode === "WHATSAPP" ? MessageCircle : Monitor;
+            return (
+              <button
+                key={mode}
+                type="button"
+                onClick={() => setOrderMode(mode)}
+                className={cn(
+                  "flex items-start gap-3 rounded-lg border p-3 text-left transition-all",
+                  isActive ? "border-primary bg-primary/5 ring-1 ring-primary" : "border-border hover:border-muted-foreground/40"
+                )}
+              >
+                <Icon className={cn("mt-0.5 size-4 shrink-0", isActive ? "text-primary" : "text-muted-foreground")} />
+                <div>
+                  <p className={cn("text-sm font-medium", isActive ? "text-primary" : "")}>{mode === "WHATSAPP" ? "WhatsApp" : "Direct Dashboard"}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {mode === "WHATSAPP"
+                      ? "Orders open WhatsApp (Free, Starter, Pro)"
+                      : "Orders go straight to kitchen & dashboard (Pro+)"}
+                  </p>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
       <ToggleRow
         label="Enable table-wise QR ordering"
         description="Generate a unique QR per table. Customers scan their table's QR and the table number is auto-filled."

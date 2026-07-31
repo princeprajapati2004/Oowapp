@@ -2,6 +2,7 @@ import { db } from "@/lib/db";
 import { slugify, randomSuffix } from "@/lib/utils/slugify";
 import { isDeliveryFirst, type BusinessType } from "@/lib/business-types";
 import { NotFoundError } from "@/lib/api-utils";
+import type { OrderMode } from "@/generated/prisma/client";
 
 async function generateUniqueSlug(businessName: string) {
   const base = slugify(businessName) || "shop";
@@ -83,6 +84,7 @@ export type ShopSettingsInput = Partial<{
   tableNames: string | null;
   notifyNewOrders: boolean;
   notifyOrderUpdates: boolean;
+  orderMode: OrderMode;
 }>;
 
 export async function updateShopSettings(shopId: string, data: ShopSettingsInput) {
@@ -142,5 +144,17 @@ export async function getPublicShopBundle(slug: string) {
 
   // Strip internal gate fields before forwarding to the RSC — they must not reach the browser.
   const { isPublished: _pub, status: _status, ...publicBundle } = shop;
-  return publicBundle;
+
+  // Load orderMode separately: the generated Prisma types don't include it yet —
+  // run `prisma generate` after applying the migration to regenerate them.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const modeRow = await (db.shop as any).findUnique({
+    where: { slug },
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    select: { orderMode: true } as any,
+  });
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const orderMode: OrderMode = (modeRow as any)?.orderMode ?? "WHATSAPP";
+
+  return { ...publicBundle, orderMode };
 }

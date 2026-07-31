@@ -51,7 +51,11 @@ export async function POST(request: Request) {
     });
     if (!shop || !shop.isPublished) throw new NotFoundError("Shop not found");
 
-    if (!shop.saveOrdersToDb) {
+    // DIRECT mode always saves orders to the DB — saveOrdersToDb is only a
+    // logging override in WHATSAPP mode.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const orderMode: string = (shop as any).orderMode ?? "WHATSAPP";
+    if (!shop.saveOrdersToDb && orderMode !== "DIRECT") {
       return NextResponse.json({ ok: true, saved: false });
     }
 

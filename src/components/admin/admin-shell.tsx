@@ -19,6 +19,7 @@ import {
   Banknote,
   Table2,
   BookUser,
+  Users,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger, SheetTitle } from "@/components/ui/sheet";
@@ -38,6 +39,7 @@ const NAV_ITEMS = [
   { href: "/admin/orders", label: "Orders", icon: ClipboardList },
   { href: "/admin/tables", label: "Tables", icon: Table2 },
   { href: "/admin/parties", label: "Parties", icon: BookUser },
+  { href: "/admin/staff", label: "Staff", icon: Users },
 ];
 
 function NavLinks({ pathname, onNavigate }: { pathname: string; onNavigate?: () => void }) {
