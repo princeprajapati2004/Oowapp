@@ -1,11 +1,11 @@
 "use client";
 
-import { useState, useTransition, useCallback } from "react";
+import { useState, useEffect, useTransition, useCallback } from "react";
 import Link from "next/link";
 import {
   TrendingUp, TrendingDown, Minus, ShoppingBag, CircleDollarSign,
   BarChart3, Clock, Sparkles, QrCode, Settings, ClipboardList,
-  UtensilsCrossed, ChevronRight, ExternalLink,
+  UtensilsCrossed, ChevronRight, ExternalLink, Table2,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -15,7 +15,9 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { RevenueChart } from "./revenue-chart";
 import { formatCurrency } from "@/lib/utils/currency";
 import { api } from "@/lib/api-client";
+import { useOrderEvents } from "@/lib/hooks/use-order-events";
 import type { DashboardData, RevenuePoint } from "@/lib/services/analytics";
+import type { TableBoardEntry } from "@/lib/services/table-session";
 import { cn } from "@/lib/utils";
 
 type Period = "today" | "yesterday" | "7d" | "30d" | "this_month" | "last_month" | "12m";
@@ -95,6 +97,33 @@ export function DashboardClient({ initialData, initialGranularity, currency, sho
   const [granularity, setGranularity] = useState<"hour" | "day" | "month">(initialGranularity);
   const [isPending, startTransition] = useTransition();
   const [selectedPoint, setSelectedPoint] = useState<{ point: RevenuePoint; index: number } | null>(null);
+
+  const [tableStats, setTableStats] = useState<{ total: number; available: number; occupied: number; awaitingPayment: number } | null>(null);
+
+  const fetchTableStats = useCallback(async () => {
+    try {
+      const res = await api.get<{ tables: TableBoardEntry[] }>("/api/admin/table-sessions");
+      const tables = res.tables;
+      setTableStats({
+        total: tables.length,
+        available: tables.filter((t) => !t.occupied).length,
+        occupied: tables.filter((t) => t.occupied && t.session?.status === "ACTIVE").length,
+        awaitingPayment: tables.filter((t) => t.session?.status === "AWAITING_PAYMENT").length,
+      });
+    } catch {
+      // Dashboard still works without this widget — next SSE event or reload retries.
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchTableStats();
+  }, [fetchTableStats]);
+
+  useOrderEvents("/api/admin/orders/stream", {
+    onCreated: () => fetchTableStats(),
+    onUpdated: () => fetchTableStats(),
+    onSessionUpdated: () => fetchTableStats(),
+  });
 
   const changePeriod = useCallback((p: Period) => {
     setPeriod(p);
@@ -263,6 +292,35 @@ export function DashboardClient({ initialData, initialGranularity, currency, sho
           </Card>
         ))}
       </div>
+
+      {/* Tables */}
+      {tableStats && tableStats.total > 0 && (
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between pb-3">
+            <CardTitle className="text-sm font-semibold flex items-center gap-2">
+              <Table2 className="size-4 text-muted-foreground" /> Tables
+            </CardTitle>
+            <Button variant="ghost" size="sm" className="h-7 text-xs" render={<Link href="/admin/tables" />}>
+              View all <ChevronRight className="size-3 ml-1" />
+            </Button>
+          </CardHeader>
+          <CardContent className="pt-0">
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+              {[
+                { label: "Total Tables", value: tableStats.total },
+                { label: "Available", value: tableStats.available, accent: "text-emerald-600 dark:text-emerald-400" },
+                { label: "Occupied", value: tableStats.occupied, accent: "text-amber-600 dark:text-amber-400" },
+                { label: "Awaiting Payment", value: tableStats.awaitingPayment, accent: "text-violet-600 dark:text-violet-400" },
+              ].map((stat) => (
+                <div key={stat.label} className="rounded-xl border px-3 py-2.5 text-center">
+                  <p className={cn("text-xl font-bold tabular-nums", stat.accent)}>{stat.value}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">{stat.label}</p>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Payment + Status Row */}
       <div className="grid gap-3 md:grid-cols-2">

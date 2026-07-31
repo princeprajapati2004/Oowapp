@@ -4,6 +4,7 @@ import { requireAdminSession } from "@/lib/session";
 import { handleApiError } from "@/lib/api-utils";
 import { db } from "@/lib/db";
 import { calculateBill } from "@/lib/services/billing";
+import { resolveOrCreateSession } from "@/lib/services/table-session";
 import { sendNewOrderNotification } from "@/lib/services/push";
 import { publishOrderEvent, toOrderEvent } from "@/lib/server/order-events";
 import { createNotification } from "@/lib/services/notification";
@@ -43,6 +44,21 @@ export async function POST(request: Request) {
     });
     if (!shop) return NextResponse.json({ error: "Shop not found" }, { status: 404 });
 
+    // A table number here only opens a running-tab TableSession (see below)
+    // when payment is Pending — that's the only case an unrecognized table
+    // number could stand up a session nothing can ever find on the board.
+    // Fully-settled dine-in orders (Cash/UPI/etc.) keep accepting freeform
+    // table text exactly as before, unaffected.
+    if (input.tableNumber && input.paymentMethod === "PENDING") {
+      const configuredTables: string[] = shop.tableNames ? JSON.parse(shop.tableNames) : [];
+      if (configuredTables.length > 0 && !configuredTables.includes(input.tableNumber)) {
+        return NextResponse.json(
+          { error: "This table wasn't recognized. Please select a valid table." },
+          { status: 400 }
+        );
+      }
+    }
+
     const billItems = input.items.map((item) => ({
       id: item.productId ?? crypto.randomUUID(),
       name: item.name,
@@ -77,38 +93,55 @@ export async function POST(request: Request) {
       discountedTotal = Math.max(0, base - discount);
     }
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const order = await (db.order as any).create({
-      data: {
-        shopId: shop.id,
-        billNumber,
-        tokenNumber,
-        customerName: input.customerName || null,
-        customerPhone: input.customerPhone || null,
-        tableNumber: input.tableNumber || null,
-        deliveryAddress: input.deliveryAddress || null,
-        notes: input.notes || null,
-        subtotal: bill.subtotal,
-        taxTotal: bill.taxTotal,
-        grandTotal: bill.grandTotal,
-        taxBreakdown: bill.taxLines as unknown as Prisma.InputJsonValue,
-        paymentMethod: input.paymentMethod,
-        source: "manual",
-        discountType: input.discountType ?? null,
-        discountValue: input.discountValue ?? null,
-        discountReason: input.discountReason ?? null,
-        discountedTotal,
-        items: {
-          create: input.items.map((item) => ({
-            productId: item.productId ?? null,
-            name: item.name,
-            price: item.price,
-            quantity: item.quantity,
-            lineTotal: item.price * item.quantity,
-          })),
+    const order = await db.$transaction(async (tx) => {
+      // Only a Pending-payment dine-in order represents a running tab —
+      // everything else (Cash/UPI/etc.) is an immediately-settled sale and
+      // never touches table occupancy, exactly like before this change.
+      const tableSession =
+        input.tableNumber && input.paymentMethod === "PENDING"
+          ? await resolveOrCreateSession(tx, {
+              shopId: shop.id,
+              tableNumber: input.tableNumber,
+              customerName: input.customerName,
+              customerPhone: input.customerPhone,
+              customerId: null,
+            })
+          : null;
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      return (tx.order as any).create({
+        data: {
+          shopId: shop.id,
+          billNumber,
+          tokenNumber,
+          customerName: input.customerName || null,
+          customerPhone: input.customerPhone || null,
+          tableNumber: input.tableNumber || null,
+          tableSessionId: tableSession?.id ?? null,
+          deliveryAddress: input.deliveryAddress || null,
+          notes: input.notes || null,
+          subtotal: bill.subtotal,
+          taxTotal: bill.taxTotal,
+          grandTotal: bill.grandTotal,
+          taxBreakdown: bill.taxLines as unknown as Prisma.InputJsonValue,
+          paymentMethod: input.paymentMethod,
+          source: "manual",
+          discountType: input.discountType ?? null,
+          discountValue: input.discountValue ?? null,
+          discountReason: input.discountReason ?? null,
+          discountedTotal,
+          items: {
+            create: input.items.map((item) => ({
+              productId: item.productId ?? null,
+              name: item.name,
+              price: item.price,
+              quantity: item.quantity,
+              lineTotal: item.price * item.quantity,
+            })),
+          },
         },
-      },
-      include: { items: true },
+        include: { items: true },
+      });
     });
 
     sendNewOrderNotification(shop.id, {

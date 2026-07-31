@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useCallback, useEffect } from "react";
+import { createPortal } from "react-dom";
 import { toast } from "sonner";
 import {
   Table2,
@@ -17,15 +18,19 @@ import {
   ChevronUp,
   Phone,
   User,
+  PackagePlus,
+  Printer,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { EmptyState } from "@/components/shared/empty-state";
+import { AddItemsPanel } from "@/components/admin/add-items-panel";
 import { api, ApiError } from "@/lib/api-client";
 import { formatCurrency } from "@/lib/utils/currency";
 import { cn } from "@/lib/utils";
 import { useOrderEvents } from "@/lib/hooks/use-order-events";
+import type { Product, CartItem } from "@/lib/types/manual-order";
 
 type SessionLabel = "Preparing" | "Served" | "Awaiting payment" | "Paid";
 
@@ -400,6 +405,15 @@ function TableDetailDialog({
   const [showPayConfirm, setShowPayConfirm] = useState(false);
   const [rejectingPayment, setRejectingPayment] = useState(false);
 
+  // "Add More Items" — a new round on this table's existing session.
+  const [products, setProducts] = useState<Product[]>([]);
+  const [loadingProducts, setLoadingProducts] = useState(false);
+  const [catalogLoadedAt, setCatalogLoadedAt] = useState(0);
+  const [addItemsOpen, setAddItemsOpen] = useState(false);
+  const [addCart, setAddCart] = useState<CartItem[]>([]);
+  const [showAddConfirm, setShowAddConfirm] = useState(false);
+  const [addingItems, setAddingItems] = useState(false);
+
   const open = !!table;
 
   // Fetch detail when dialog opens
@@ -411,6 +425,9 @@ function TableDetailDialog({
     setEditingOrder(null);
     setShowReleaseConfirm(false);
     setShowPayConfirm(false);
+    setAddItemsOpen(false);
+    setAddCart([]);
+    setShowAddConfirm(false);
     try {
       const data = await api.get<SessionDetail>(`/api/admin/table-sessions/${sessionId}`);
       setDetail(data);
@@ -425,6 +442,9 @@ function TableDetailDialog({
     if (!isOpen) {
       onClose();
       setDetail(null);
+      setAddItemsOpen(false);
+      setAddCart([]);
+      setShowAddConfirm(false);
     }
   }
 
@@ -546,6 +566,82 @@ function TableDetailDialog({
       toast.error(err instanceof ApiError ? err.message : "Couldn't mark as paid");
     } finally {
       setPaying(false);
+    }
+  }
+
+  async function openAddItems() {
+    setAddItemsOpen(true);
+    if (products.length > 0) return;
+    setLoadingProducts(true);
+    try {
+      const data = await api.get<Product[]>("/api/admin/products");
+      setProducts(data.filter((p) => p.isAvailable && p.isVisible));
+      setCatalogLoadedAt(Date.now());
+    } catch {
+      toast.error("Failed to load products");
+    } finally {
+      setLoadingProducts(false);
+    }
+  }
+
+  function addToAddCart(product: Product) {
+    setAddCart((prev) => {
+      const existing = prev.find((i) => i.productId === product.id);
+      if (existing) {
+        return prev.map((i) => (i.productId === product.id ? { ...i, quantity: i.quantity + 1 } : i));
+      }
+      return [
+        ...prev,
+        {
+          productId: product.id,
+          name: product.name,
+          price: Number(product.price),
+          quantity: 1,
+          categoryId: product.category.id,
+          categoryName: product.category.name,
+          imageUrl: product.imageUrl,
+        },
+      ];
+    });
+  }
+
+  function updateAddCartQty(productId: string, delta: number) {
+    setAddCart((prev) => {
+      const next = prev.map((i) => (i.productId === productId ? { ...i, quantity: Math.max(0, i.quantity + delta) } : i));
+      return next.filter((i) => i.quantity > 0);
+    });
+  }
+
+  function closeAddItemsPanel() {
+    setAddItemsOpen(false);
+    if (addCart.length > 0) setShowAddConfirm(true);
+  }
+
+  async function handleConfirmAddItems() {
+    if (!table || addCart.length === 0) return;
+    setAddingItems(true);
+    try {
+      await api.post("/api/admin/orders", {
+        tableNumber: table.tableNumber,
+        paymentMethod: "PENDING",
+        customerName: detail?.customerName ?? undefined,
+        customerPhone: detail?.customerPhone ?? undefined,
+        items: addCart.map(({ productId, name, price, quantity, categoryId }) => ({
+          productId,
+          name,
+          price,
+          quantity,
+          categoryId,
+        })),
+      });
+      toast.success("Items added to the table");
+      setAddCart([]);
+      setShowAddConfirm(false);
+      if (table.session) await loadDetail(table.session.id);
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Couldn't add items");
+    } finally {
+      setAddingItems(false);
     }
   }
 
@@ -747,6 +843,51 @@ function TableDetailDialog({
                 ))}
               </div>
 
+              {/* Add more items / Print bill */}
+              <div className="flex gap-2">
+                {detail.status === "ACTIVE" && (
+                  <Button size="sm" variant="outline" className="flex-1 h-9 gap-1.5 text-xs" onClick={openAddItems}>
+                    <PackagePlus className="size-3.5" /> Add More Items
+                  </Button>
+                )}
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="flex-1 h-9 gap-1.5 text-xs"
+                  onClick={() => window.open(`/admin/tables/${detail.id}/bill`, "_blank")}
+                >
+                  <Printer className="size-3.5" /> Print Bill
+                </Button>
+              </div>
+
+              {showAddConfirm && (
+                <div className="rounded-xl border bg-card p-4 space-y-3">
+                  <p className="text-sm font-semibold">Add {addCart.length} item{addCart.length === 1 ? "" : "s"} to Table {table?.tableNumber}?</p>
+                  <div className="space-y-1.5 max-h-40 overflow-y-auto">
+                    {addCart.map((item) => (
+                      <div key={item.productId} className="flex items-center justify-between text-sm">
+                        <span>{item.name} × {item.quantity}</span>
+                        <span className="font-medium tabular-nums">{formatCurrency(item.price * item.quantity, currency)}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      className="flex-1"
+                      onClick={() => { setShowAddConfirm(false); setAddCart([]); }}
+                      disabled={addingItems}
+                    >
+                      Cancel
+                    </Button>
+                    <Button className="flex-1 gap-1.5" onClick={handleConfirmAddItems} disabled={addingItems}>
+                      {addingItems ? <Loader2 className="size-4 animate-spin" /> : <PackagePlus className="size-4" />}
+                      Add to Table
+                    </Button>
+                  </div>
+                </div>
+              )}
+
               {/* Mark Paid */}
               {!isClosed && (
                 <>
@@ -830,6 +971,25 @@ function TableDetailDialog({
           )}
         </div>
       </DialogContent>
+
+      {addItemsOpen &&
+        createPortal(
+          <AddItemsPanel
+            currency={currency}
+            products={products}
+            loadingProducts={loadingProducts}
+            catalogLoadedAt={catalogLoadedAt}
+            cart={addCart}
+            popularProductIds={[]}
+            recentlyViewedIds={[]}
+            recentSearches={[]}
+            onAddToCart={addToAddCart}
+            onUpdateQty={updateAddCartQty}
+            onCommitSearch={() => {}}
+            onClose={closeAddItemsPanel}
+          />,
+          document.body
+        )}
     </Dialog>
   );
 }

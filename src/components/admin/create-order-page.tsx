@@ -23,12 +23,14 @@ import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
 import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from "@/components/ui/accordion";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { AddItemsPanel } from "@/components/admin/add-items-panel";
 import { api, ApiError } from "@/lib/api-client";
 import { calculateBill } from "@/lib/services/billing";
 import { formatCurrency } from "@/lib/utils/currency";
 import { cn } from "@/lib/utils";
 import { readLocalStore, writeLocalStore, clearLocalStore } from "@/lib/utils/local-store";
+import type { TableBoardEntry } from "@/lib/services/table-session";
 import {
   type Product,
   type CartItem,
@@ -37,6 +39,15 @@ import {
   type PaymentMethod,
   PAYMENT_METHODS,
 } from "@/lib/types/manual-order";
+
+// Same status-label color language as tables-board.tsx's LABEL_BADGE, so the
+// table dropdown here reads consistently with the Tables board.
+const TABLE_LABEL_BADGE: Record<string, string> = {
+  Preparing: "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400",
+  Served: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400",
+  "Awaiting payment": "bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-400",
+  Paid: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400",
+};
 
 type OrderType = "DINE_IN" | "TAKEAWAY" | "DELIVERY";
 
@@ -112,6 +123,7 @@ export function CreateOrderPage({
   const [products, setProducts] = useState<Product[]>([]);
   const [taxes, setTaxes] = useState<Tax[]>([]);
   const [customers, setCustomers] = useState<PastCustomer[]>([]);
+  const [tables, setTables] = useState<TableBoardEntry[]>([]);
   const [popularProductIds, setPopularProductIds] = useState<string[]>([]);
   const [loadingProducts, setLoadingProducts] = useState(true);
   // Set inside the products fetch's .then() below (never read Date.now()
@@ -202,6 +214,10 @@ export function CreateOrderPage({
     api
       .get<{ productId: string; orderCount: number }[]>("/api/admin/products/stats")
       .then((rows) => setPopularProductIds(rows.map((r) => r.productId)))
+      .catch(() => {});
+    api
+      .get<{ tables: TableBoardEntry[] }>("/api/admin/table-sessions")
+      .then((res) => setTables(res.tables))
       .catch(() => {});
   }, []);
 
@@ -812,7 +828,42 @@ export function CreateOrderPage({
                   {orderType === "DINE_IN" && (
                     <div className="space-y-1">
                       <Label className="text-xs">Table Number</Label>
-                      <Input value={tableNumber} onChange={(e) => setTableNumber(e.target.value)} placeholder="e.g. Table 4" className="h-8 text-sm" />
+                      {tables.length === 0 ? (
+                        <Input value={tableNumber} onChange={(e) => setTableNumber(e.target.value)} placeholder="e.g. Table 4" className="h-8 text-sm" />
+                      ) : (
+                        <Select
+                          value={tableNumber}
+                          onValueChange={(v) => v && setTableNumber(v as string)}
+                        >
+                          <SelectTrigger className="h-8 w-full text-sm" size="sm">
+                            <SelectValue placeholder="Select Table">
+                              {(value: string | null) => (value ? `Table ${value}` : "Select Table")}
+                            </SelectValue>
+                          </SelectTrigger>
+                          <SelectContent>
+                            {tables.map((t) => {
+                              const label = t.occupied && t.session ? t.session.label : "Available";
+                              return (
+                                <SelectItem key={t.tableNumber} value={t.tableNumber} disabled={t.occupied}>
+                                  <span className="flex flex-1 items-center justify-between gap-2">
+                                    <span>Table {t.tableNumber}</span>
+                                    <span
+                                      className={cn(
+                                        "rounded-full px-1.5 py-0.5 text-[10px] font-semibold",
+                                        t.occupied
+                                          ? TABLE_LABEL_BADGE[label]
+                                          : "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400"
+                                      )}
+                                    >
+                                      {label}
+                                    </span>
+                                  </span>
+                                </SelectItem>
+                              );
+                            })}
+                          </SelectContent>
+                        </Select>
+                      )}
                     </div>
                   )}
                   {orderType === "DELIVERY" && (
