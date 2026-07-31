@@ -381,6 +381,7 @@ model Product {
   price       Decimal  @db.Decimal(10, 2)
   imageUrl    String?
   unit        String?
+  barcode     String?
   foodType    FoodType @default(NA)
   isAvailable Boolean  @default(true)
   isVisible   Boolean  @default(true)
@@ -395,6 +396,11 @@ model Product {
 
   @@index([shopId])
   @@index([categoryId])
+  // NULLs are distinct from each other in a unique index (same as Party's
+  // gstNumber) — only two products actually sharing the same scanned
+  // barcode collide, not the many with none set. Normalized to null (never
+  // "") in lib/validation/product.ts.
+  @@unique([shopId, barcode])
   @@map("products")
 }
 

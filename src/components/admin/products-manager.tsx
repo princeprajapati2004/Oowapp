@@ -36,6 +36,7 @@ import { FormRow } from "@/components/shared/form-row";
 import { EmptyState } from "@/components/shared/empty-state";
 import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 import { ImageUploader } from "@/components/shared/image-uploader";
+import { BarcodeScanButton } from "@/components/admin/barcode-scan-button";
 import { api, ApiError } from "@/lib/api-client";
 import { isFoodBusiness, type BusinessType } from "@/lib/business-types";
 import { formatCurrency } from "@/lib/utils/currency";
@@ -53,6 +54,7 @@ const EMPTY_FORM = {
   categoryId: "",
   imageUrl: null as string | null,
   unit: "",
+  barcode: "",
   foodType: "NA" as "VEG" | "NON_VEG" | "NA",
   isAvailable: true,
   isVisible: true,
@@ -92,7 +94,8 @@ export function ProductsManager({
       const matchesSearch =
         !search ||
         product.name.toLowerCase().includes(search.toLowerCase()) ||
-        (product.description ?? "").toLowerCase().includes(search.toLowerCase());
+        (product.description ?? "").toLowerCase().includes(search.toLowerCase()) ||
+        (product.barcode ?? "").toLowerCase() === search.toLowerCase();
       const matchesCategory = categoryFilter === "all" || product.categoryId === categoryFilter;
       return matchesSearch && matchesCategory;
     });
@@ -120,6 +123,7 @@ export function ProductsManager({
       categoryId: product.categoryId,
       imageUrl: product.imageUrl,
       unit: product.unit ?? "",
+      barcode: product.barcode ?? "",
       foodType: product.foodType,
       isAvailable: product.isAvailable,
       isVisible: product.isVisible,
@@ -142,6 +146,7 @@ export function ProductsManager({
       categoryId: form.categoryId,
       imageUrl: form.imageUrl,
       unit: form.unit,
+      barcode: form.barcode,
       foodType: form.foodType,
       isAvailable: form.isAvailable,
       isVisible: form.isVisible,
@@ -404,6 +409,18 @@ export function ProductsManager({
                 />
               </FormRow>
             </div>
+
+            <FormRow label="Barcode" htmlFor="product-barcode" description="Scan or type — used to find this item while taking orders">
+              <div className="flex gap-2">
+                <Input
+                  id="product-barcode"
+                  value={form.barcode}
+                  onChange={(e) => setForm((f) => ({ ...f, barcode: e.target.value }))}
+                  placeholder="e.g. 8901030895556"
+                />
+                <BarcodeScanButton onDetect={(code) => setForm((f) => ({ ...f, barcode: code }))} />
+              </div>
+            </FormRow>
 
             <FormRow label="Category" htmlFor="product-category" required>
               <Select value={form.categoryId} onValueChange={(v) => setForm((f) => ({ ...f, categoryId: v ?? "" }))}>

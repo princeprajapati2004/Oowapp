@@ -1,5 +1,5 @@
 import { db } from "@/lib/db";
-import { NotFoundError } from "@/lib/api-utils";
+import { NotFoundError, ConflictError } from "@/lib/api-utils";
 import type { ProductInput } from "@/lib/validation/product";
 
 export async function listProducts(shopId: string) {
@@ -15,6 +15,14 @@ async function assertCategoryBelongsToShop(shopId: string, categoryId: string) {
   if (!category) throw new NotFoundError("Category not found");
 }
 
+async function assertUniqueBarcode(shopId: string, barcode: string | null, excludeId?: string) {
+  if (!barcode) return;
+  const clash = await db.product.findFirst({
+    where: { shopId, barcode, id: excludeId ? { not: excludeId } : undefined },
+  });
+  if (clash) throw new ConflictError(`Barcode already in use by "${clash.name}"`);
+}
+
 function toProductData(input: ProductInput) {
   return {
     name: input.name,
@@ -23,6 +31,7 @@ function toProductData(input: ProductInput) {
     categoryId: input.categoryId,
     imageUrl: input.imageUrl || null,
     unit: input.unit || null,
+    barcode: input.barcode || null,
     foodType: input.foodType,
     isAvailable: input.isAvailable,
     isVisible: input.isVisible,
@@ -33,6 +42,7 @@ function toProductData(input: ProductInput) {
 
 export async function createProduct(shopId: string, input: ProductInput) {
   await assertCategoryBelongsToShop(shopId, input.categoryId);
+  await assertUniqueBarcode(shopId, input.barcode || null);
   return db.product.create({
     data: { shopId, ...toProductData(input) },
     include: { category: true },
@@ -48,6 +58,7 @@ async function assertOwnedProduct(shopId: string, id: string) {
 export async function updateProduct(shopId: string, id: string, input: ProductInput) {
   await assertOwnedProduct(shopId, id);
   await assertCategoryBelongsToShop(shopId, input.categoryId);
+  await assertUniqueBarcode(shopId, input.barcode || null, id);
   return db.product.update({
     where: { id },
     data: toProductData(input),

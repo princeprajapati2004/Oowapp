@@ -14,6 +14,7 @@ export interface Product {
   imageUrl?: string | null;
   foodType?: "VEG" | "NON_VEG" | "NA";
   stock?: number | null;
+  barcode?: string | null;
   createdAt?: string;
 }
 

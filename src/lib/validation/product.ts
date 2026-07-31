@@ -7,6 +7,7 @@ export const productSchema = z.object({
   categoryId: z.string().min(1, "Select a category"),
   imageUrl: z.string().nullable().optional(),
   unit: z.string().trim().max(30).optional().or(z.literal("")),
+  barcode: z.string().trim().max(64).optional().or(z.literal("")),
   foodType: z.enum(["VEG", "NON_VEG", "NA"]).default("NA"),
   isAvailable: z.boolean().default(true),
   isVisible: z.boolean().default(true),

@@ -99,7 +99,7 @@ export function AddItemsPanel({
     const q = search.trim().toLowerCase();
     return products.filter((p) => {
       const matchesCategory = activeCategory === "all" || p.category.id === activeCategory;
-      const matchesSearch = !q || p.name.toLowerCase().includes(q);
+      const matchesSearch = !q || p.name.toLowerCase().includes(q) || p.barcode?.toLowerCase() === q;
       return matchesCategory && matchesSearch;
     });
   }, [products, search, activeCategory]);
