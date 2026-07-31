@@ -48,10 +48,12 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         isActive: true,
         lastLoginAt: true,
         createdAt: true,
+        _count: { select: { orders: true } },
       },
     });
 
-    return NextResponse.json(updated);
+    const { _count, ...rest } = updated;
+    return NextResponse.json({ ...rest, orderCount: _count.orders });
   } catch (error) {
     return handleApiError(error);
   }

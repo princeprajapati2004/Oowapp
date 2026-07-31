@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
-import { Plus, Pencil, Trash2, Search, Users, Phone, Building2, MapPin, Receipt } from "lucide-react";
+import { Plus, Pencil, Trash2, Search, Users, Phone, Building2, MapPin, Receipt, MessageCircle, ArrowUpDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -36,7 +36,7 @@ type PartyRow = Awaited<ReturnType<typeof listPartiesWithBalances>>[number];
 // listing endpoint's computed orderCount/outstanding fields.
 type PartyDetail = Omit<PartyRow, "orderCount" | "outstanding">;
 
-type FilterValue = "all" | "CUSTOMER" | "SUPPLIER" | "VIP" | "WHOLESALE" | "RETAIL";
+type FilterValue = "all" | "CUSTOMER" | "SUPPLIER" | "VIP" | "WHOLESALE" | "RETAIL" | "DUE" | "ADVANCE";
 
 const FILTER_OPTIONS: { value: FilterValue; label: string }[] = [
   { value: "all", label: "All" },
@@ -45,7 +45,22 @@ const FILTER_OPTIONS: { value: FilterValue; label: string }[] = [
   { value: "VIP", label: "VIP" },
   { value: "WHOLESALE", label: "Wholesale" },
   { value: "RETAIL", label: "Retail" },
+  { value: "DUE", label: "Due" },
+  { value: "ADVANCE", label: "Advance" },
 ];
+
+type SortValue = "newest" | "name" | "due" | "advance";
+
+const SORT_OPTIONS: { value: SortValue; label: string }[] = [
+  { value: "newest", label: "Newest" },
+  { value: "name", label: "Name (A-Z)" },
+  { value: "due", label: "Highest due" },
+  { value: "advance", label: "Highest advance" },
+];
+
+function waLink(phone: string) {
+  return `https://wa.me/${phone.replace(/[^\d]/g, "")}`;
+}
 
 const EMPTY_FORM = {
   type: "CUSTOMER" as "CUSTOMER" | "SUPPLIER",
@@ -79,6 +94,7 @@ export function PartiesManager({
   const [parties, setParties] = useState(initialParties);
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<FilterValue>("all");
+  const [sort, setSort] = useState<SortValue>("newest");
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<PartyRow | null>(null);
@@ -88,7 +104,7 @@ export function PartiesManager({
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return parties.filter((party) => {
+    const result = parties.filter((party) => {
       const matchesSearch =
         !q ||
         party.name.toLowerCase().includes(q) ||
@@ -100,10 +116,23 @@ export function PartiesManager({
         filter === "all" ||
         (filter === "CUSTOMER" && party.type === "CUSTOMER") ||
         (filter === "SUPPLIER" && party.type === "SUPPLIER") ||
+        (filter === "DUE" && party.outstanding > 0) ||
+        (filter === "ADVANCE" && party.outstanding < 0) ||
         party.category === filter;
       return matchesSearch && matchesFilter;
     });
-  }, [parties, search, filter]);
+
+    const sorted = [...result];
+    if (sort === "name") {
+      sorted.sort((a, b) => a.name.localeCompare(b.name));
+    } else if (sort === "due") {
+      sorted.sort((a, b) => b.outstanding - a.outstanding);
+    } else if (sort === "advance") {
+      sorted.sort((a, b) => a.outstanding - b.outstanding);
+    }
+    // "newest" — already ordered by createdAt desc from the server, no re-sort needed.
+    return sorted;
+  }, [parties, search, filter, sort]);
 
   function openCreate() {
     setEditing(null);
@@ -220,6 +249,19 @@ export function PartiesManager({
             ))}
           </SelectContent>
         </Select>
+        <Select value={sort} onValueChange={(v) => setSort((v as SortValue) ?? "newest")}>
+          <SelectTrigger className="w-44 h-9">
+            <ArrowUpDown className="size-3.5 text-muted-foreground" />
+            <SelectValue>{SORT_OPTIONS.find((s) => s.value === sort)?.label}</SelectValue>
+          </SelectTrigger>
+          <SelectContent>
+            {SORT_OPTIONS.map((s) => (
+              <SelectItem key={s.value} value={s.value}>
+                {s.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
 
       {filtered.length === 0 ? (
@@ -296,6 +338,26 @@ export function PartiesManager({
                   </p>
                 </div>
                 <div className="flex items-center gap-0.5">
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    render={<a href={`tel:${party.phone}`} onClick={(e) => e.stopPropagation()} />}
+                    nativeButton={false}
+                    aria-label="Call"
+                    className="text-muted-foreground hover:text-foreground"
+                  >
+                    <Phone className="size-3.5" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    render={<a href={waLink(party.phone)} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} />}
+                    nativeButton={false}
+                    aria-label="WhatsApp"
+                    className="text-muted-foreground hover:text-emerald-600"
+                  >
+                    <MessageCircle className="size-3.5" />
+                  </Button>
                   <Button variant="ghost" size="icon-sm" onClick={() => openEdit(party)} aria-label="Edit" className="text-muted-foreground hover:text-foreground">
                     <Pencil className="size-3.5" />
                   </Button>

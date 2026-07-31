@@ -29,9 +29,12 @@ export async function GET() {
         isActive: true,
         lastLoginAt: true,
         createdAt: true,
+        _count: { select: { orders: true } },
       },
     });
-    return NextResponse.json(staff);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const withOrderCount = staff.map(({ _count, ...s }: any) => ({ ...s, orderCount: _count.orders }));
+    return NextResponse.json(withOrderCount);
   } catch (error) {
     return handleApiError(error);
   }
@@ -67,7 +70,7 @@ export async function POST(request: Request) {
       },
     });
 
-    return NextResponse.json(staff, { status: 201 });
+    return NextResponse.json({ ...staff, orderCount: 0 }, { status: 201 });
   } catch (error) {
     return handleApiError(error);
   }

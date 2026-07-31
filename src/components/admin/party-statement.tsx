@@ -36,10 +36,12 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { FormRow } from "@/components/shared/form-row";
+import { RevenueChart } from "@/components/admin/dashboard/revenue-chart";
 import { api, ApiError } from "@/lib/api-client";
 import { formatCurrency } from "@/lib/utils/currency";
 import { cn } from "@/lib/utils";
 import type { getPartyStatement } from "@/lib/services/party";
+import type { RevenuePoint } from "@/lib/services/analytics";
 
 type Statement = Awaited<ReturnType<typeof getPartyStatement>>;
 
@@ -137,6 +139,30 @@ export function PartyStatement({
     const cutoff = nowMs - PERIOD_DAYS[period] * 24 * 60 * 60 * 1000;
     return merged.filter((e) => new Date(e.date).getTime() >= cutoff);
   }, [statement, period, nowMs]);
+
+  // Monthly totals for the last 6 calendar months (oldest first), reusing the
+  // dashboard's RevenueChart — spending here means orders only, not payments.
+  const monthlyChart = useMemo<RevenuePoint[]>(() => {
+    const months: { key: string; label: string }[] = [];
+    const cursor = new Date();
+    cursor.setDate(1);
+    for (let i = 5; i >= 0; i--) {
+      const d = new Date(cursor.getFullYear(), cursor.getMonth() - i, 1);
+      months.push({ key: `${d.getFullYear()}-${d.getMonth()}`, label: d.toLocaleDateString(undefined, { month: "short" }) });
+    }
+    const buckets = new Map<string, { revenue: number; orders: number }>();
+    for (const m of months) buckets.set(m.key, { revenue: 0, orders: 0 });
+    for (const order of statement.orders) {
+      const d = new Date(order.createdAt);
+      const key = `${d.getFullYear()}-${d.getMonth()}`;
+      const bucket = buckets.get(key);
+      if (!bucket) continue;
+      bucket.revenue += order.discountedTotal ?? order.grandTotal;
+      bucket.orders += 1;
+    }
+    return months.map((m) => ({ label: m.label, revenue: buckets.get(m.key)!.revenue, orders: buckets.get(m.key)!.orders }));
+  }, [statement.orders]);
+  const hasChartData = monthlyChart.some((p) => p.orders > 0);
 
   async function refresh() {
     const refreshed = await api.get<Statement>(`/api/admin/parties/${party.id}`);
@@ -394,6 +420,14 @@ export function PartyStatement({
           </div>
         </div>
       </div>
+
+      {/* Monthly spending chart */}
+      {hasChartData && (
+        <div className="rounded-xl border bg-card p-4 print:hidden">
+          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">Monthly Spending</p>
+          <RevenueChart data={monthlyChart} granularity="month" currency={shop.currency} />
+        </div>
+      )}
 
       {/* Period filter */}
       <div className="flex overflow-hidden rounded-md border text-xs w-fit print:hidden">

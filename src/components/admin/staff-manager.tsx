@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { UserPlus, Pencil, Trash2, ChefHat, UtensilsCrossed, ShieldCheck } from "lucide-react";
+import Link from "next/link";
+import { UserPlus, Pencil, Trash2, ChefHat, UtensilsCrossed, ShieldCheck, Phone, MessageCircle, ReceiptText, Mail } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -20,6 +21,7 @@ import {
 } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { FormRow } from "@/components/shared/form-row";
+import { EmptyState } from "@/components/shared/empty-state";
 import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 import { api, ApiError } from "@/lib/api-client";
 
@@ -34,6 +36,11 @@ interface StaffMember {
   isActive: boolean;
   lastLoginAt: string | null;
   createdAt: string;
+  orderCount: number;
+}
+
+function waLink(phone: string) {
+  return `https://wa.me/${phone.replace(/[^\d]/g, "")}`;
 }
 
 const ROLE_LABELS: Record<StaffRole, string> = {
@@ -218,53 +225,102 @@ export function StaffManager({ initialStaff }: { initialStaff: StaffMember[] }) 
       </div>
 
       {staff.length === 0 ? (
-        <div className="rounded-xl border border-dashed p-8 text-center text-sm text-muted-foreground">
-          No staff members yet. Add your first staff member to get started.
-        </div>
+        <EmptyState
+          icon={UserPlus}
+          title="No staff members yet"
+          description="Add your first staff member to get started."
+          action={<Button onClick={() => setAddOpen(true)}>Add Staff</Button>}
+        />
       ) : (
-        <div className="divide-y rounded-xl border overflow-hidden">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {staff.map((member) => {
             const Icon = ROLE_ICONS[member.role];
             return (
-              <div key={member.id} className="flex items-center gap-3 px-4 py-3">
-                <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-muted">
-                  <Icon className="size-4 text-muted-foreground" />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <p className="font-medium truncate">{member.name}</p>
-                    {!member.isActive && (
-                      <Badge variant="secondary" className="text-xs">Inactive</Badge>
+              <div
+                key={member.id}
+                className="rounded-xl border bg-card p-4 space-y-3 transition-all duration-200 hover:shadow-md hover:-translate-y-0.5"
+              >
+                <Link href={`/admin/staff/${member.id}`} className="flex items-start gap-3">
+                  <div className="flex size-11 shrink-0 items-center justify-center rounded-full bg-muted">
+                    <Icon className="size-5 text-muted-foreground" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="font-semibold text-sm truncate">{member.name}</p>
+                    {member.email && (
+                      <div className="flex items-center gap-1 text-xs text-muted-foreground truncate">
+                        <Mail className="size-3 shrink-0" /> {member.email}
+                      </div>
+                    )}
+                    {member.phone && (
+                      <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                        <Phone className="size-3 shrink-0" /> {member.phone}
+                      </div>
                     )}
                   </div>
-                  <p className="text-xs text-muted-foreground truncate">{member.email}</p>
+                </Link>
+
+                <div className="flex flex-wrap items-center gap-1">
+                  <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${ROLE_BADGE[member.role]}`}>
+                    {ROLE_LABELS[member.role]}
+                  </span>
+                  <Badge variant={member.isActive ? "secondary" : "outline"} className="text-xs">
+                    {member.isActive ? "Active" : "Inactive"}
+                  </Badge>
                 </div>
-                <span className={`shrink-0 rounded-full px-2.5 py-0.5 text-xs font-medium ${ROLE_BADGE[member.role]}`}>
-                  {ROLE_LABELS[member.role]}
-                </span>
-                <div className="flex shrink-0 items-center gap-1">
-                  <Button variant="ghost" size="icon-sm" onClick={() => setEditTarget(member)} aria-label="Edit">
-                    <Pencil className="size-3.5" />
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="icon-sm"
-                    className="text-muted-foreground hover:text-foreground"
-                    onClick={() => toggleActive(member)}
-                    aria-label={member.isActive ? "Deactivate" : "Activate"}
-                    title={member.isActive ? "Deactivate" : "Activate"}
-                  >
-                    <ShieldCheck className={`size-3.5 ${member.isActive ? "text-emerald-500" : ""}`} />
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="icon-sm"
-                    className="text-muted-foreground hover:text-destructive"
-                    onClick={() => setDeleteTarget(member)}
-                    aria-label="Delete"
-                  >
-                    <Trash2 className="size-3.5" />
-                  </Button>
+
+                <div className="flex items-center justify-between border-t pt-2.5">
+                  <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                    <ReceiptText className="size-3.5" />
+                    {member.orderCount} order{member.orderCount !== 1 ? "s" : ""} served
+                  </div>
+                  <div className="flex items-center gap-0.5">
+                    {member.phone && (
+                      <>
+                        <Button
+                          variant="ghost"
+                          size="icon-sm"
+                          render={<a href={`tel:${member.phone}`} />}
+                          nativeButton={false}
+                          aria-label="Call"
+                          className="text-muted-foreground hover:text-foreground"
+                        >
+                          <Phone className="size-3.5" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon-sm"
+                          render={<a href={waLink(member.phone)} target="_blank" rel="noopener noreferrer" />}
+                          nativeButton={false}
+                          aria-label="WhatsApp"
+                          className="text-muted-foreground hover:text-emerald-600"
+                        >
+                          <MessageCircle className="size-3.5" />
+                        </Button>
+                      </>
+                    )}
+                    <Button variant="ghost" size="icon-sm" onClick={() => setEditTarget(member)} aria-label="Edit" className="text-muted-foreground hover:text-foreground">
+                      <Pencil className="size-3.5" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      className="text-muted-foreground hover:text-foreground"
+                      onClick={() => toggleActive(member)}
+                      aria-label={member.isActive ? "Deactivate" : "Activate"}
+                      title={member.isActive ? "Deactivate" : "Activate"}
+                    >
+                      <ShieldCheck className={`size-3.5 ${member.isActive ? "text-emerald-500" : ""}`} />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      className="text-muted-foreground hover:text-destructive"
+                      onClick={() => setDeleteTarget(member)}
+                      aria-label="Delete"
+                    >
+                      <Trash2 className="size-3.5" />
+                    </Button>
+                  </div>
                 </div>
               </div>
             );

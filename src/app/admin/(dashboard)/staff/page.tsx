@@ -20,14 +20,16 @@ export default async function StaffPage() {
       isActive: true,
       lastLoginAt: true,
       createdAt: true,
+      _count: { select: { orders: true } },
     },
   });
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const serialized = staff.map((s: any) => ({
+  const serialized = staff.map(({ _count, ...s }: any) => ({
     ...s,
     lastLoginAt: s.lastLoginAt?.toISOString() ?? null,
     createdAt: s.createdAt.toISOString(),
+    orderCount: _count.orders,
   }));
 
   return (
