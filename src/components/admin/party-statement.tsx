@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import {
   ArrowLeft,
@@ -16,6 +17,10 @@ import {
   ReceiptText,
   Wallet,
   Pencil,
+  MessageCircle,
+  Trash2,
+  CreditCard,
+  StickyNote,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -36,12 +41,18 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { FormRow } from "@/components/shared/form-row";
+import { ConfirmDialog } from "@/components/shared/confirm-dialog";
+import { PartyFormDialog } from "@/components/admin/party-form-dialog";
 import { RevenueChart } from "@/components/admin/dashboard/revenue-chart";
 import { api, ApiError } from "@/lib/api-client";
 import { formatCurrency } from "@/lib/utils/currency";
 import { cn } from "@/lib/utils";
 import type { getPartyStatement } from "@/lib/services/party";
 import type { RevenuePoint } from "@/lib/services/analytics";
+
+function waLink(phone: string) {
+  return `https://wa.me/${phone.replace(/[^\d]/g, "")}`;
+}
 
 type Statement = Awaited<ReturnType<typeof getPartyStatement>>;
 
@@ -83,6 +94,7 @@ export function PartyStatement({
     currency: string;
   };
 }) {
+  const router = useRouter();
   const [statement, setStatement] = useState(initialStatement);
   const [period, setPeriod] = useState<Period>("all");
   // Date.now() can't be read during render (React purity rule) — captured
@@ -92,6 +104,8 @@ export function PartyStatement({
   const [downloadingPdf, setDownloadingPdf] = useState(false);
   const [sharing, setSharing] = useState(false);
   const [logOpen, setLogOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
   const [amount, setAmount] = useState("");
   const [direction, setDirection] = useState<"RECEIVED" | "PAID">(
     statement.party.type === "SUPPLIER" ? "PAID" : "RECEIVED"
@@ -167,6 +181,18 @@ export function PartyStatement({
   async function refresh() {
     const refreshed = await api.get<Statement>(`/api/admin/parties/${party.id}`);
     setStatement(refreshed);
+  }
+
+  async function handleDeleteParty() {
+    try {
+      await api.delete(`/api/admin/parties/${party.id}`);
+      toast.success("Party deleted");
+      router.push("/admin/parties");
+    } catch (error) {
+      toast.error(error instanceof ApiError ? error.message : "Failed to delete");
+    } finally {
+      setDeleteOpen(false);
+    }
   }
 
   async function handleLogPayment() {
@@ -349,6 +375,27 @@ export function PartyStatement({
       </div>
 
       <div className="flex flex-wrap items-center gap-2 print:hidden">
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-9 gap-1.5"
+          render={<a href={`tel:${party.phone}`} />}
+          nativeButton={false}
+        >
+          <Phone className="size-4" /> Call
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-9 gap-1.5"
+          render={<a href={waLink(party.phone)} target="_blank" rel="noopener noreferrer" />}
+          nativeButton={false}
+        >
+          <MessageCircle className="size-4" /> WhatsApp
+        </Button>
+        <Button variant="outline" size="sm" className="h-9 gap-1.5" onClick={() => setEditOpen(true)}>
+          <Pencil className="size-4" /> Edit
+        </Button>
         <Button variant="outline" size="sm" className="h-9 gap-1.5" onClick={() => window.print()}>
           <Printer className="size-4" /> Print
         </Button>
@@ -360,6 +407,14 @@ export function PartyStatement({
         </Button>
         <Button size="sm" className="h-9 gap-1.5" onClick={() => setLogOpen(true)}>
           <Plus className="size-4" /> Log Payment
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-9 gap-1.5 text-destructive hover:bg-destructive/10 hover:text-destructive"
+          onClick={() => setDeleteOpen(true)}
+        >
+          <Trash2 className="size-4" /> Delete
         </Button>
       </div>
 
@@ -383,6 +438,16 @@ export function PartyStatement({
             {party.gstNumber && (
               <div className="flex items-center gap-2 text-muted-foreground">
                 <Receipt className="size-3.5" /> GST: {party.gstNumber}
+              </div>
+            )}
+            {party.creditLimit !== null && (
+              <div className="flex items-center gap-2 text-muted-foreground">
+                <CreditCard className="size-3.5" /> Credit limit: {formatCurrency(party.creditLimit, shop.currency)}
+              </div>
+            )}
+            {party.notes && (
+              <div className="flex items-start gap-2 text-muted-foreground">
+                <StickyNote className="size-3.5 shrink-0 mt-0.5" /> <span>{party.notes}</span>
               </div>
             )}
           </div>
@@ -553,6 +618,18 @@ export function PartyStatement({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <PartyFormDialog open={editOpen} onOpenChange={setEditOpen} editing={party} onSaved={refresh} />
+
+      <ConfirmDialog
+        open={deleteOpen}
+        onOpenChange={setDeleteOpen}
+        title="Delete party?"
+        description={`"${party.name}" and their payment history will be permanently removed.`}
+        confirmLabel="Delete"
+        destructive
+        onConfirm={handleDeleteParty}
+      />
     </div>
   );
 }

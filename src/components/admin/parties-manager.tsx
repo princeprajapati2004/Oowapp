@@ -2,11 +2,21 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { toast } from "sonner";
-import { Plus, Pencil, Trash2, Search, Users, Phone, Building2, MapPin, Receipt, MessageCircle, ArrowUpDown } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import {
+  Plus,
+  Pencil,
+  Trash2,
+  Search,
+  Users,
+  Phone,
+  MessageCircle,
+  ArrowUpDown,
+  SlidersHorizontal,
+  MoreVertical,
+  Eye,
+} from "lucide-react";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
@@ -16,25 +26,24 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from "@/components/ui/dialog";
-import { FormRow } from "@/components/shared/form-row";
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+} from "@/components/ui/dropdown-menu";
+import { PartyFormDialog } from "@/components/admin/party-form-dialog";
 import { EmptyState } from "@/components/shared/empty-state";
 import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 import { api, ApiError } from "@/lib/api-client";
 import { formatCurrency } from "@/lib/utils/currency";
 import { cn } from "@/lib/utils";
+import { toast } from "sonner";
 import type { listPartiesWithBalances } from "@/lib/services/party";
 
 type PartyRow = Awaited<ReturnType<typeof listPartiesWithBalances>>[number];
-// create/update API responses return the raw party row, without the
-// listing endpoint's computed orderCount/outstanding fields.
-type PartyDetail = Omit<PartyRow, "orderCount" | "outstanding">;
 
 type FilterValue = "all" | "CUSTOMER" | "SUPPLIER" | "VIP" | "WHOLESALE" | "RETAIL" | "DUE" | "ADVANCE";
 
@@ -62,19 +71,6 @@ function waLink(phone: string) {
   return `https://wa.me/${phone.replace(/[^\d]/g, "")}`;
 }
 
-const EMPTY_FORM = {
-  type: "CUSTOMER" as "CUSTOMER" | "SUPPLIER",
-  name: "",
-  phone: "",
-  gstNumber: "",
-  businessName: "",
-  address: "",
-  category: "GENERAL" as "VIP" | "WHOLESALE" | "RETAIL" | "GENERAL",
-  openingBalance: "0",
-  creditLimit: "",
-  notes: "",
-};
-
 function initials(name: string) {
   return name
     .trim()
@@ -82,6 +78,51 @@ function initials(name: string) {
     .slice(0, 2)
     .map((p) => p[0]?.toUpperCase())
     .join("");
+}
+
+// Deterministic pastel avatar color, keyed off the name so a given party
+// always gets the same color across renders/sessions.
+const AVATAR_PALETTE = [
+  "bg-rose-100 text-rose-700 dark:bg-rose-500/15 dark:text-rose-400",
+  "bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-400",
+  "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-400",
+  "bg-sky-100 text-sky-700 dark:bg-sky-500/15 dark:text-sky-400",
+  "bg-violet-100 text-violet-700 dark:bg-violet-500/15 dark:text-violet-400",
+  "bg-fuchsia-100 text-fuchsia-700 dark:bg-fuchsia-500/15 dark:text-fuchsia-400",
+  "bg-cyan-100 text-cyan-700 dark:bg-cyan-500/15 dark:text-cyan-400",
+  "bg-orange-100 text-orange-700 dark:bg-orange-500/15 dark:text-orange-400",
+];
+
+function avatarPalette(name: string) {
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) hash = (hash * 31 + name.charCodeAt(i)) >>> 0;
+  return AVATAR_PALETTE[hash % AVATAR_PALETTE.length];
+}
+
+function partyTypeLabel(party: { type: "CUSTOMER" | "SUPPLIER"; category: "GENERAL" | "VIP" | "WHOLESALE" | "RETAIL" }) {
+  const role = party.type === "CUSTOMER" ? "Customer" : "Supplier";
+  if (party.category === "GENERAL") return party.type === "CUSTOMER" ? "Regular Customer" : "Supplier";
+  const category = party.category.charAt(0) + party.category.slice(1).toLowerCase();
+  return `${category} ${role}`;
+}
+
+function outstandingBadge(outstanding: number, currency: string) {
+  if (outstanding > 0) {
+    return {
+      label: `Due ${formatCurrency(outstanding, currency)}`,
+      className: "bg-red-100 text-red-700 dark:bg-red-500/15 dark:text-red-400",
+    };
+  }
+  if (outstanding < 0) {
+    return {
+      label: `Advance ${formatCurrency(Math.abs(outstanding), currency)}`,
+      className: "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-400",
+    };
+  }
+  return {
+    label: "Settled",
+    className: "bg-blue-100 text-blue-700 dark:bg-blue-500/15 dark:text-blue-400",
+  };
 }
 
 export function PartiesManager({
@@ -98,8 +139,6 @@ export function PartiesManager({
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<PartyRow | null>(null);
-  const [form, setForm] = useState(EMPTY_FORM);
-  const [saving, setSaving] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<PartyRow | null>(null);
 
   const filtered = useMemo(() => {
@@ -136,70 +175,21 @@ export function PartiesManager({
 
   function openCreate() {
     setEditing(null);
-    setForm(EMPTY_FORM);
     setDialogOpen(true);
   }
 
   function openEdit(party: PartyRow) {
     setEditing(party);
-    setForm({
-      type: party.type,
-      name: party.name,
-      phone: party.phone,
-      gstNumber: party.gstNumber ?? "",
-      businessName: party.businessName ?? "",
-      address: party.address ?? "",
-      category: party.category,
-      openingBalance: String(party.openingBalance),
-      creditLimit: party.creditLimit === null ? "" : String(party.creditLimit),
-      notes: party.notes ?? "",
-    });
     setDialogOpen(true);
   }
 
-  async function handleSave() {
-    if (!form.name.trim()) return toast.error("Name is required");
-    if (!form.phone.trim()) return toast.error("Phone is required");
-
-    const payload = {
-      type: form.type,
-      name: form.name,
-      phone: form.phone,
-      gstNumber: form.gstNumber,
-      businessName: form.businessName,
-      address: form.address,
-      category: form.category,
-      openingBalance: form.openingBalance === "" ? 0 : Number(form.openingBalance),
-      creditLimit: form.creditLimit === "" ? null : Number(form.creditLimit),
-      notes: form.notes,
-    };
-
-    setSaving(true);
-    try {
-      if (editing) {
-        await api.patch<PartyDetail>(`/api/admin/parties/${editing.id}`, payload);
-        // Refetch rather than patch local state in place: editing openingBalance
-        // or type (customer<->supplier) changes the outstanding-balance formula
-        // itself, so only the server's recomputed value is trustworthy.
-        const refreshed = await api.get<PartyRow[]>("/api/admin/parties");
-        setParties(refreshed);
-        toast.success("Party updated");
-      } else {
-        await api.post<PartyDetail>("/api/admin/parties", payload);
-        // Refetch: a brand-new party's phone may already match pre-existing
-        // orders (e.g. a walk-in customer added as a Party after the fact),
-        // so outstanding isn't simply the opening balance — only the server
-        // computation accounts for that.
-        const refreshed = await api.get<PartyRow[]>("/api/admin/parties");
-        setParties(refreshed);
-        toast.success("Party added");
-      }
-      setDialogOpen(false);
-    } catch (error) {
-      toast.error(error instanceof ApiError ? error.message : "Failed to save");
-    } finally {
-      setSaving(false);
-    }
+  async function handlePartySaved() {
+    // Refetch rather than patch local state in place: a saved opening balance,
+    // type change, or brand-new party's phone matching pre-existing orders can
+    // all change the outstanding-balance formula — only the server's
+    // recomputed value is trustworthy.
+    const refreshed = await api.get<PartyRow[]>("/api/admin/parties");
+    setParties(refreshed);
   }
 
   async function handleDelete() {
@@ -227,41 +217,67 @@ export function PartiesManager({
         </Button>
       </div>
 
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+      <div className="flex items-center gap-2">
         <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+          <Search className="absolute left-4 top-1/2 size-4 -translate-y-1/2 text-muted-foreground pointer-events-none" />
           <Input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search name, phone, GST, business, address…"
-            className="pl-9 h-9 bg-muted/50 border-transparent focus:border-input focus:bg-background transition-colors"
+            placeholder="Search customer by name or phone…"
+            className="pl-10 h-11 rounded-full bg-muted/50 border-transparent focus:border-input focus:bg-background transition-colors"
           />
         </div>
-        <Select value={filter} onValueChange={(v) => setFilter((v as FilterValue) ?? "all")}>
-          <SelectTrigger className="w-40 h-9">
-            <SelectValue>{FILTER_OPTIONS.find((f) => f.value === filter)?.label}</SelectValue>
-          </SelectTrigger>
-          <SelectContent>
-            {FILTER_OPTIONS.map((f) => (
-              <SelectItem key={f.value} value={f.value}>
-                {f.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <Select value={sort} onValueChange={(v) => setSort((v as SortValue) ?? "newest")}>
-          <SelectTrigger className="w-44 h-9">
-            <ArrowUpDown className="size-3.5 text-muted-foreground" />
-            <SelectValue>{SORT_OPTIONS.find((s) => s.value === sort)?.label}</SelectValue>
-          </SelectTrigger>
-          <SelectContent>
-            {SORT_OPTIONS.map((s) => (
-              <SelectItem key={s.value} value={s.value}>
-                {s.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <Popover>
+          <PopoverTrigger
+            render={
+              <Button
+                variant="outline"
+                size="icon"
+                aria-label="Filter and sort"
+                className="relative h-11 w-11 shrink-0 rounded-full"
+              />
+            }
+          >
+            <SlidersHorizontal className="size-4" />
+            {(filter !== "all" || sort !== "newest") && (
+              <span className="absolute -top-0.5 -right-0.5 size-2.5 rounded-full bg-primary ring-2 ring-background" />
+            )}
+          </PopoverTrigger>
+          <PopoverContent className="w-64" align="end">
+            <div className="space-y-1.5">
+              <p className="text-xs font-medium text-muted-foreground">Filter</p>
+              <Select value={filter} onValueChange={(v) => setFilter((v as FilterValue) ?? "all")}>
+                <SelectTrigger className="w-full h-9">
+                  <SelectValue>{FILTER_OPTIONS.find((f) => f.value === filter)?.label}</SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  {FILTER_OPTIONS.map((f) => (
+                    <SelectItem key={f.value} value={f.value}>
+                      {f.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <p className="text-xs font-medium text-muted-foreground flex items-center gap-1">
+                <ArrowUpDown className="size-3" /> Sort by
+              </p>
+              <Select value={sort} onValueChange={(v) => setSort((v as SortValue) ?? "newest")}>
+                <SelectTrigger className="w-full h-9">
+                  <SelectValue>{SORT_OPTIONS.find((s) => s.value === sort)?.label}</SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  {SORT_OPTIONS.map((s) => (
+                    <SelectItem key={s.value} value={s.value}>
+                      {s.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </PopoverContent>
+        </Popover>
       </div>
 
       {filtered.length === 0 ? (
@@ -276,202 +292,65 @@ export function PartiesManager({
           action={parties.length === 0 ? <Button onClick={openCreate}>Add Party</Button> : undefined}
         />
       ) : (
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {filtered.map((party) => (
-            <div
-              key={party.id}
-              className="rounded-xl border bg-card p-4 space-y-3 transition-all duration-200 hover:shadow-md hover:-translate-y-0.5"
-            >
-              <Link href={`/admin/parties/${party.id}`} className="flex items-start gap-3">
-                <Avatar size="lg">
-                  <AvatarFallback>{initials(party.name)}</AvatarFallback>
-                </Avatar>
-                <div className="min-w-0 flex-1">
-                  <p className="font-semibold text-sm truncate">{party.name}</p>
-                  <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                    <Phone className="size-3" /> {party.phone}
-                  </div>
-                  {party.businessName && (
-                    <div className="flex items-center gap-1 text-xs text-muted-foreground truncate">
-                      <Building2 className="size-3 shrink-0" /> {party.businessName}
+        <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
+          {filtered.map((party) => {
+            const badge = outstandingBadge(party.outstanding, currency);
+            return (
+              <div
+                key={party.id}
+                className="group flex items-center gap-3 rounded-[20px] border bg-card p-4 shadow-sm transition-all duration-200 hover:shadow-md hover:-translate-y-0.5 active:scale-[0.99]"
+              >
+                <Link href={`/admin/parties/${party.id}`} className="flex flex-1 min-w-0 items-center gap-3">
+                  <Avatar size="lg" className="h-12 w-12 shrink-0">
+                    <AvatarFallback className={cn("text-base font-semibold", avatarPalette(party.name))}>
+                      {initials(party.name)}
+                    </AvatarFallback>
+                  </Avatar>
+                  <div className="min-w-0 flex-1 space-y-1">
+                    <p className="font-bold text-[15px] sm:text-lg leading-tight truncate">{party.name}</p>
+                    <p className="text-xs sm:text-sm text-muted-foreground truncate">{partyTypeLabel(party)}</p>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Badge className={cn("border-0 font-semibold", badge.className)}>{badge.label}</Badge>
+                      <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                        <Phone className="size-3" /> {party.phone}
+                      </span>
                     </div>
-                  )}
-                </div>
-              </Link>
+                  </div>
+                </Link>
 
-              <div className="flex flex-wrap items-center gap-1">
-                <Badge variant="secondary" className="text-xs">
-                  {party.type === "CUSTOMER" ? "Customer" : "Supplier"}
-                </Badge>
-                {party.category !== "GENERAL" && (
-                  <Badge variant="outline" className="text-xs">
-                    {party.category.charAt(0) + party.category.slice(1).toLowerCase()}
-                  </Badge>
-                )}
+                <DropdownMenu>
+                  <DropdownMenuTrigger
+                    className={cn(buttonVariants({ variant: "ghost", size: "icon-sm" }), "shrink-0 text-muted-foreground")}
+                    aria-label="More actions"
+                  >
+                    <MoreVertical className="size-4" />
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem render={<Link href={`/admin/parties/${party.id}`} />}>
+                      <Eye className="size-4" /> View details
+                    </DropdownMenuItem>
+                    <DropdownMenuItem render={<a href={`tel:${party.phone}`} />}>
+                      <Phone className="size-4" /> Call
+                    </DropdownMenuItem>
+                    <DropdownMenuItem render={<a href={waLink(party.phone)} target="_blank" rel="noopener noreferrer" />}>
+                      <MessageCircle className="size-4" /> WhatsApp
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => openEdit(party)}>
+                      <Pencil className="size-4" /> Edit
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem variant="destructive" onClick={() => setDeleteTarget(party)}>
+                      <Trash2 className="size-4" /> Delete
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
               </div>
-
-              {party.address && (
-                <div className="flex items-start gap-1 text-xs text-muted-foreground">
-                  <MapPin className="size-3 shrink-0 mt-0.5" /> <span className="line-clamp-2">{party.address}</span>
-                </div>
-              )}
-              {party.gstNumber && (
-                <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                  <Receipt className="size-3 shrink-0" /> GST: {party.gstNumber}
-                </div>
-              )}
-
-              <div className="flex items-center justify-between border-t pt-2.5">
-                <div>
-                  <p className="text-xs text-muted-foreground">Outstanding</p>
-                  <p
-                    className={cn(
-                      "font-bold text-sm tabular-nums",
-                      party.outstanding > 0
-                        ? "text-amber-600 dark:text-amber-400"
-                        : party.outstanding < 0
-                          ? "text-emerald-600 dark:text-emerald-400"
-                          : "text-muted-foreground"
-                    )}
-                  >
-                    {formatCurrency(party.outstanding, currency)}
-                  </p>
-                </div>
-                <div className="flex items-center gap-0.5">
-                  <Button
-                    variant="ghost"
-                    size="icon-sm"
-                    render={<a href={`tel:${party.phone}`} onClick={(e) => e.stopPropagation()} />}
-                    nativeButton={false}
-                    aria-label="Call"
-                    className="text-muted-foreground hover:text-foreground"
-                  >
-                    <Phone className="size-3.5" />
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="icon-sm"
-                    render={<a href={waLink(party.phone)} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} />}
-                    nativeButton={false}
-                    aria-label="WhatsApp"
-                    className="text-muted-foreground hover:text-emerald-600"
-                  >
-                    <MessageCircle className="size-3.5" />
-                  </Button>
-                  <Button variant="ghost" size="icon-sm" onClick={() => openEdit(party)} aria-label="Edit" className="text-muted-foreground hover:text-foreground">
-                    <Pencil className="size-3.5" />
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="icon-sm"
-                    onClick={() => setDeleteTarget(party)}
-                    aria-label="Delete"
-                    className="text-muted-foreground hover:text-destructive"
-                  >
-                    <Trash2 className="size-3.5" />
-                  </Button>
-                </div>
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="flex flex-col p-0 gap-0 sm:max-w-lg max-h-[92dvh] overflow-hidden">
-          <DialogHeader className="flex-shrink-0 px-5 py-4 border-b">
-            <DialogTitle>{editing ? "Edit party" : "Add party"}</DialogTitle>
-          </DialogHeader>
-
-          <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
-            <div className="flex overflow-hidden rounded-md border text-sm">
-              {(["CUSTOMER", "SUPPLIER"] as const).map((t) => (
-                <button
-                  key={t}
-                  type="button"
-                  onClick={() => setForm((f) => ({ ...f, type: t }))}
-                  className={cn(
-                    "flex-1 px-3 py-2 font-medium transition-colors",
-                    form.type === t ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted"
-                  )}
-                >
-                  {t === "CUSTOMER" ? "Customer" : "Supplier"}
-                </button>
-              ))}
-            </div>
-
-            <FormRow label="Name" htmlFor="party-name" required>
-              <Input id="party-name" value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} />
-            </FormRow>
-
-            <FormRow label="Phone number" htmlFor="party-phone" required>
-              <Input id="party-phone" value={form.phone} onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))} />
-            </FormRow>
-
-            <div className="grid grid-cols-2 gap-3">
-              <FormRow label="GST" htmlFor="party-gst">
-                <Input id="party-gst" value={form.gstNumber} onChange={(e) => setForm((f) => ({ ...f, gstNumber: e.target.value }))} />
-              </FormRow>
-              <FormRow label="Business name" htmlFor="party-business">
-                <Input id="party-business" value={form.businessName} onChange={(e) => setForm((f) => ({ ...f, businessName: e.target.value }))} />
-              </FormRow>
-            </div>
-
-            <FormRow label="Address" htmlFor="party-address">
-              <Textarea id="party-address" rows={2} value={form.address} onChange={(e) => setForm((f) => ({ ...f, address: e.target.value }))} />
-            </FormRow>
-
-            <FormRow label="Category" htmlFor="party-category">
-              <Select value={form.category} onValueChange={(v) => setForm((f) => ({ ...f, category: (v as typeof f.category) ?? "GENERAL" }))}>
-                <SelectTrigger id="party-category" className="w-full">
-                  <SelectValue>{form.category.charAt(0) + form.category.slice(1).toLowerCase()}</SelectValue>
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="GENERAL">General</SelectItem>
-                  <SelectItem value="VIP">VIP</SelectItem>
-                  <SelectItem value="WHOLESALE">Wholesale</SelectItem>
-                  <SelectItem value="RETAIL">Retail</SelectItem>
-                </SelectContent>
-              </Select>
-            </FormRow>
-
-            <div className="grid grid-cols-2 gap-3">
-              <FormRow label="Opening balance" htmlFor="party-opening" description="What they already owe (or you owe them)">
-                <Input
-                  id="party-opening"
-                  type="number"
-                  step="0.01"
-                  value={form.openingBalance}
-                  onChange={(e) => setForm((f) => ({ ...f, openingBalance: e.target.value }))}
-                />
-              </FormRow>
-              <FormRow label="Credit limit" htmlFor="party-credit" description="Optional">
-                <Input
-                  id="party-credit"
-                  type="number"
-                  step="0.01"
-                  min={0}
-                  value={form.creditLimit}
-                  onChange={(e) => setForm((f) => ({ ...f, creditLimit: e.target.value }))}
-                />
-              </FormRow>
-            </div>
-
-            <FormRow label="Notes" htmlFor="party-notes" description="Optional">
-              <Textarea id="party-notes" rows={2} value={form.notes} onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))} />
-            </FormRow>
-          </div>
-
-          <DialogFooter className="flex-shrink-0 border-t bg-muted/50 px-5 py-4">
-            <Button variant="outline" onClick={() => setDialogOpen(false)} disabled={saving}>
-              Cancel
-            </Button>
-            <Button onClick={handleSave} disabled={saving}>
-              {saving ? "Saving…" : "Save"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <PartyFormDialog open={dialogOpen} onOpenChange={setDialogOpen} editing={editing} onSaved={handlePartySaved} />
 
       <ConfirmDialog
         open={!!deleteTarget}
