@@ -105,11 +105,6 @@ enum OrderMode {
   DIRECT
 }
 
-enum PaymentStatus {
-  PENDING
-  PAID
-}
-
 enum StaffRole {
   MANAGER
   KITCHEN
@@ -175,7 +170,6 @@ enum AuditAction {
   ORDER_CREATED
   ORDER_MARKED_PAID
   TABLE_SESSION_MARKED_PAID
-  ORDER_MARKED_PAID
   // Platform
   PLATFORM_SETTINGS_UPDATED
   SUBSCRIPTION_CHANGED
@@ -467,11 +461,6 @@ model Order {
   taxBreakdown    Json
   status          OrderStatus @default(PENDING)
   paymentMethod   String?
-  // Present in the live database (pre-dating this schema file) but not yet
-  // wired into any application code — kept in sync here rather than dropped.
-  paymentStatus      PaymentStatus @default(PENDING)
-  paymentConfirmedAt DateTime?
-  paymentConfirmedBy String?
   // "qr" = customer-scanned, "waiter" = placed by waiter staff
   source          String      @default("qr")
   // Discount (Feature 3)
