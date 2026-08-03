@@ -26,7 +26,7 @@ export default async function TablesPage() {
   }
 
   const configuredTables: string[] = shop.tableNames ? JSON.parse(shop.tableNames) : [];
-  const [taxRows, openSessions] = await Promise.all([
+  const [taxRows, openSessions, tableStates] = await Promise.all([
     db.tax.findMany({ where: { shopId: shop.id, isEnabled: true } }),
     db.tableSession.findMany({
       where: { shopId: shop.id, status: { in: ["ACTIVE", "AWAITING_PAYMENT"] } },
@@ -37,6 +37,7 @@ export default async function TablesPage() {
         },
       },
     }),
+    db.tableState.findMany({ where: { shopId: shop.id } }),
   ]);
   const taxes = taxRows.map((t) => ({ ...t, value: Number(t.value) }));
 
@@ -48,6 +49,8 @@ export default async function TablesPage() {
       status: s.status,
       createdAt: s.createdAt,
       billRequestedAt: s.billRequestedAt,
+      customerName: s.customerName,
+      guestCount: s.guestCount,
       orders: s.orders.map((o) => ({
         status: o.status,
         items: o.items.map((item) => ({
@@ -59,7 +62,8 @@ export default async function TablesPage() {
         })),
       })),
     })),
-    taxes
+    taxes,
+    tableStates.map((s) => ({ tableNumber: s.tableNumber, state: s.state, note: s.note }))
   );
 
   return <TablesBoard initialTables={board} currency={shop.currency} />;

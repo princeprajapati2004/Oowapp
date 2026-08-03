@@ -67,6 +67,7 @@ export default async function BillDetailPage({
         paymentQrImageUrl: shop.paymentQrImageUrl,
         paymentDisplayName: (shopAny.paymentDisplayName as string | null) ?? null,
         enableTableNumber: (shopAny.enableTableNumber as boolean) ?? true,
+        enableOrderBarcodeLabels: (shopAny.enableOrderBarcodeLabels as boolean) ?? false,
       }}
     />
   );

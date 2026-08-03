@@ -8,7 +8,7 @@ export const productSchema = z.object({
   imageUrl: z.string().nullable().optional(),
   unit: z.string().trim().max(30).optional().or(z.literal("")),
   barcode: z.string().trim().max(64).optional().or(z.literal("")),
-  foodType: z.enum(["VEG", "NON_VEG", "NA"]).default("NA"),
+  foodType: z.enum(["VEG", "NON_VEG", "EGG", "NA"]).default("NA"),
   isAvailable: z.boolean().default(true),
   isVisible: z.boolean().default(true),
   stock: z.coerce.number().int().nonnegative().nullable().optional(),

@@ -34,7 +34,6 @@ export const paymentSettingsSchema = z.object({
   bankIfsc: z.string().trim().max(15).optional().or(z.literal("")),
   bankName: z.string().trim().max(100).optional().or(z.literal("")),
   paymentQrImageUrl: z.string().nullable().optional(),
-  paymentDisplayName: z.string().trim().max(100).optional().or(z.literal("")),
   googlePayUpi: z.string().trim().max(100).optional().or(z.literal("")),
   phonePeUpi: z.string().trim().max(100).optional().or(z.literal("")),
   paytmUpi: z.string().trim().max(100).optional().or(z.literal("")),
@@ -51,8 +50,23 @@ export const orderSettingsSchema = z.object({
   allowNotes: z.boolean(),
   saveOrdersToDb: z.boolean(),
   isPublished: z.boolean(),
+  enableOrderBarcodeLabels: z.boolean(),
 });
 export type OrderSettingsInput = z.infer<typeof orderSettingsSchema>;
+
+// Order/bill number prefix — freely re-editable, safe to resubmit anytime.
+export const billNumberingSchema = z.object({
+  billNumberPrefix: z.string().trim().max(10).optional().or(z.literal("")),
+});
+export type BillNumberingInput = z.infer<typeof billNumberingSchema>;
+
+// Resetting the live counter is a deliberate, separate action from saving the
+// prefix — kept in its own schema/endpoint so a routine settings save can
+// never accidentally roll it back to a stale value.
+export const billNumberResetSchema = z.object({
+  billNumberNext: z.coerce.number().int().positive().max(999_999_999),
+});
+export type BillNumberResetInput = z.infer<typeof billNumberResetSchema>;
 
 export const notificationSettingsSchema = z.object({
   notifyNewOrders: z.boolean(),

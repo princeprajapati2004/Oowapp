@@ -9,6 +9,7 @@ import { publishOrderEvent, toOrderEvent } from "@/lib/server/order-events";
 import { getCustomerSession } from "@/lib/customer-session";
 import { readPhoneVerifiedCookie } from "@/lib/phone-verify-auth";
 import { resolveOrCreateSession, computeSessionBill } from "@/lib/services/table-session";
+import { nextBillNumber } from "@/lib/services/bill-number";
 import { createNotification } from "@/lib/services/notification";
 import { formatCurrency } from "@/lib/utils/currency";
 import type { Prisma } from "@/generated/prisma/client";
@@ -23,7 +24,6 @@ const orderItemSchema = z.object({
 
 const createOrderSchema = z.object({
   shopSlug: z.string(),
-  billNumber: z.string().optional(),
   customerName: z.string().optional(),
   customerPhone: z.string().optional(),
   tableNumber: z.string().optional(),
@@ -130,7 +130,7 @@ export async function POST(request: Request) {
         input.items.map((item) => ({ ...item, id: item.productId })),
         taxes
       );
-      const billNumber = input.billNumber ?? `${shop.slug.slice(0, 4).toUpperCase()}-${Date.now()}`;
+      const billNumber = await nextBillNumber(tx, shop.id);
 
       const created = await tx.order.create({
         data: {

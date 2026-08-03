@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
 import { requireAdminSession } from "@/lib/session";
 import { handleApiError } from "@/lib/api-utils";
 import { db } from "@/lib/db";
@@ -17,15 +18,18 @@ export async function GET() {
     const configuredTables: string[] = shop.tableNames ? JSON.parse(shop.tableNames) : [];
     const taxes = shop.taxes.map((t) => ({ ...t, value: Number(t.value) }));
 
-    const openSessions = await db.tableSession.findMany({
-      where: { shopId: shop.id, status: { in: ["ACTIVE", "AWAITING_PAYMENT"] } },
-      include: {
-        orders: {
-          where: { status: { not: "CANCELLED" } },
-          include: { items: { include: { product: { select: { categoryId: true } } } } },
+    const [openSessions, tableStates] = await Promise.all([
+      db.tableSession.findMany({
+        where: { shopId: shop.id, status: { in: ["ACTIVE", "AWAITING_PAYMENT"] } },
+        include: {
+          orders: {
+            where: { status: { not: "CANCELLED" } },
+            include: { items: { include: { product: { select: { categoryId: true } } } } },
+          },
         },
-      },
-    });
+      }),
+      db.tableState.findMany({ where: { shopId: shop.id } }),
+    ]);
 
     const board = buildTableBoard(
       configuredTables,
@@ -35,6 +39,8 @@ export async function GET() {
         status: s.status,
         createdAt: s.createdAt,
         billRequestedAt: s.billRequestedAt,
+        customerName: s.customerName,
+        guestCount: s.guestCount,
         orders: s.orders.map((o) => ({
           status: o.status,
           items: o.items.map((item) => ({
@@ -46,10 +52,52 @@ export async function GET() {
           })),
         })),
       })),
-      taxes
+      taxes,
+      tableStates.map((s) => ({ tableNumber: s.tableNumber, state: s.state, note: s.note }))
     );
 
     return NextResponse.json({ enableTableQr: shop.enableTableQr, currency: shop.currency, tables: board });
+  } catch (error) {
+    return handleApiError(error);
+  }
+}
+
+const setTableStateSchema = z.object({
+  tableNumber: z.string().trim().min(1),
+  state: z.enum(["RESERVED", "CLEANING", "DISABLED"]).nullable(),
+  note: z.string().trim().max(200).optional(),
+});
+
+// PATCH sets or clears (state: null) a table's manual state — Reserved,
+// Cleaning, or Disabled. Only meaningful for tables with no active session;
+// callers are responsible for not offering this on an occupied table.
+export async function PATCH(request: Request) {
+  try {
+    const session = await requireAdminSession();
+    const body = await request.json();
+    const input = setTableStateSchema.parse(body);
+
+    if (input.state === null) {
+      await db.tableState.deleteMany({ where: { shopId: session.shopId, tableNumber: input.tableNumber } });
+      return NextResponse.json({ ok: true });
+    }
+
+    const tableState = await db.tableState.upsert({
+      where: { shopId_tableNumber: { shopId: session.shopId, tableNumber: input.tableNumber } },
+      create: {
+        shopId: session.shopId,
+        tableNumber: input.tableNumber,
+        state: input.state,
+        note: input.note || null,
+        updatedBy: session.adminId,
+      },
+      update: {
+        state: input.state,
+        note: input.note || null,
+        updatedBy: session.adminId,
+      },
+    });
+    return NextResponse.json({ ok: true, tableState });
   } catch (error) {
     return handleApiError(error);
   }

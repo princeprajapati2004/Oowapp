@@ -14,16 +14,19 @@ import {
   Building2,
   MapPin,
   Receipt,
-  ReceiptText,
-  Wallet,
+  ShoppingBag,
+  ArrowDownCircle,
+  ArrowUpCircle,
   Pencil,
   MessageCircle,
   Trash2,
   CreditCard,
   StickyNote,
   X,
+  Filter,
+  MoreVertical,
 } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
@@ -35,6 +38,14 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
+import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+} from "@/components/ui/dropdown-menu";
 import { FormRow } from "@/components/shared/form-row";
 import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 import { PartyFormDialog } from "@/components/admin/party-form-dialog";
@@ -51,17 +62,19 @@ function waLink(phone: string) {
 
 type Statement = Awaited<ReturnType<typeof getPartyStatement>>;
 
-type Period = "today" | "week" | "month" | "year" | "all";
+type Period = "all" | "today" | "yesterday" | "week" | "month" | "year" | "custom";
 
 const PERIODS: { value: Period; label: string }[] = [
+  { value: "all", label: "All time" },
   { value: "today", label: "Today" },
-  { value: "week", label: "Week" },
-  { value: "month", label: "Month" },
-  { value: "year", label: "Year" },
-  { value: "all", label: "All" },
+  { value: "yesterday", label: "Yesterday" },
+  { value: "week", label: "This week" },
+  { value: "month", label: "This month" },
+  { value: "year", label: "This year" },
+  { value: "custom", label: "Custom date" },
 ];
 
-const PERIOD_DAYS: Record<Exclude<Period, "all">, number> = { today: 1, week: 7, month: 30, year: 365 };
+const PERIOD_DAYS: Record<"week" | "month" | "year", number> = { week: 7, month: 30, year: 365 };
 
 const METHOD_LABELS: Record<string, string> = {
   CASH: "Cash",
@@ -73,6 +86,44 @@ const METHOD_LABELS: Record<string, string> = {
 
 function isUnpaid(paymentMethod: string | null) {
   return paymentMethod === null || paymentMethod === "PENDING";
+}
+
+type EntryStatus = "unpaid" | "paid" | "received" | "paidOut";
+
+// Icon color reflects the transaction TYPE (green = sale, blue/gray = payment
+// direction); the badge reflects its STATUS — the two are independent, so an
+// unpaid order still gets the green shopping-bag icon, just an orange badge.
+const STATUS_STYLES: Record<EntryStatus, { badgeLabel: string; badgeClass: string; icon: typeof ShoppingBag; iconClass: string }> = {
+  unpaid: {
+    badgeLabel: "Unpaid",
+    badgeClass: "bg-orange-100 text-orange-700 dark:bg-orange-500/15 dark:text-orange-400",
+    icon: ShoppingBag,
+    iconClass: "bg-emerald-100 text-emerald-600 dark:bg-emerald-500/15 dark:text-emerald-400",
+  },
+  paid: {
+    badgeLabel: "Paid",
+    badgeClass: "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-400",
+    icon: ShoppingBag,
+    iconClass: "bg-emerald-100 text-emerald-600 dark:bg-emerald-500/15 dark:text-emerald-400",
+  },
+  received: {
+    badgeLabel: "Received",
+    badgeClass: "bg-blue-100 text-blue-700 dark:bg-blue-500/15 dark:text-blue-400",
+    icon: ArrowDownCircle,
+    iconClass: "bg-blue-100 text-blue-600 dark:bg-blue-500/15 dark:text-blue-400",
+  },
+  paidOut: {
+    badgeLabel: "Paid out",
+    badgeClass: "bg-muted text-muted-foreground",
+    icon: ArrowUpCircle,
+    iconClass: "bg-muted text-muted-foreground",
+  },
+};
+
+function outstandingClass(outstanding: number) {
+  if (outstanding > 0) return "text-red-600 dark:text-red-400";
+  if (outstanding < 0) return "text-emerald-600 dark:text-emerald-400";
+  return "text-foreground";
 }
 
 export function PartyStatement({
@@ -92,6 +143,8 @@ export function PartyStatement({
   const router = useRouter();
   const [statement, setStatement] = useState(initialStatement);
   const [period, setPeriod] = useState<Period>("all");
+  const [customFrom, setCustomFrom] = useState("");
+  const [customTo, setCustomTo] = useState("");
   // Date.now() can't be read during render (React purity rule) — captured
   // once on mount instead, same pattern as catalogLoadedAt in create-order-page.tsx.
   const [nowMs, setNowMs] = useState(0);
@@ -118,8 +171,7 @@ export function PartyStatement({
       kind: "order" | "payment";
       label: string;
       amount: number;
-      badge: string;
-      badgeTone: "amber" | "emerald" | "muted";
+      status: EntryStatus;
       href?: string;
     };
     const orderEntries: Entry[] = statement.orders.map((o) => ({
@@ -128,8 +180,7 @@ export function PartyStatement({
       kind: "order",
       label: `Order #${o.billNumber} · ${o.itemCount} item${o.itemCount !== 1 ? "s" : ""}`,
       amount: o.discountedTotal ?? o.grandTotal,
-      badge: isUnpaid(o.paymentMethod) ? "Unpaid" : "Paid",
-      badgeTone: isUnpaid(o.paymentMethod) ? "amber" : "emerald",
+      status: isUnpaid(o.paymentMethod) ? "unpaid" : "paid",
       href: `/admin/orders/${o.id}`,
     }));
     const paymentEntries: Entry[] = statement.payments.map((p) => ({
@@ -138,16 +189,38 @@ export function PartyStatement({
       kind: "payment",
       label: `${p.direction === "RECEIVED" ? "Received" : "Paid"} via ${METHOD_LABELS[p.method] ?? p.method}${p.note ? ` — ${p.note}` : ""}`,
       amount: p.amount,
-      badge: p.direction === "RECEIVED" ? "Received" : "Paid out",
-      badgeTone: p.direction === "RECEIVED" ? "emerald" : "muted",
+      status: p.direction === "RECEIVED" ? "received" : "paidOut",
     }));
     const merged = [...orderEntries, ...paymentEntries].sort(
       (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
     );
     if (period === "all" || nowMs === 0) return merged;
+
+    if (period === "today" || period === "yesterday") {
+      const start = new Date(nowMs);
+      start.setHours(0, 0, 0, 0);
+      if (period === "yesterday") start.setDate(start.getDate() - 1);
+      const end = new Date(start);
+      end.setDate(end.getDate() + 1);
+      return merged.filter((e) => {
+        const t = new Date(e.date).getTime();
+        return t >= start.getTime() && t < end.getTime();
+      });
+    }
+
+    if (period === "custom") {
+      if (!customFrom && !customTo) return merged;
+      const fromMs = customFrom ? new Date(`${customFrom}T00:00:00`).getTime() : -Infinity;
+      const toMs = customTo ? new Date(`${customTo}T23:59:59.999`).getTime() : Infinity;
+      return merged.filter((e) => {
+        const t = new Date(e.date).getTime();
+        return t >= fromMs && t <= toMs;
+      });
+    }
+
     const cutoff = nowMs - PERIOD_DAYS[period] * 24 * 60 * 60 * 1000;
     return merged.filter((e) => new Date(e.date).getTime() >= cutoff);
-  }, [statement, period, nowMs]);
+  }, [statement, period, nowMs, customFrom, customTo]);
 
   // Monthly totals for the last 6 calendar months (oldest first), reusing the
   // dashboard's RevenueChart — spending here means orders only, not payments.
@@ -369,65 +442,104 @@ export function PartyStatement({
         </div>
       </div>
 
-      <div className="flex flex-wrap items-center gap-2 print:hidden">
-        <Button
-          variant="outline"
-          size="sm"
-          className="h-9 gap-1.5"
-          render={<a href={`tel:${party.phone}`} />}
-          nativeButton={false}
-        >
-          <Phone className="size-4" /> Call
-        </Button>
-        <Button
-          variant="outline"
-          size="sm"
-          className="h-9 gap-1.5"
-          render={<a href={waLink(party.phone)} target="_blank" rel="noopener noreferrer" />}
-          nativeButton={false}
-        >
-          <MessageCircle className="size-4" /> WhatsApp
-        </Button>
-        <Button variant="outline" size="sm" className="h-9 gap-1.5" onClick={() => setEditOpen(true)}>
-          <Pencil className="size-4" /> Edit
-        </Button>
-        <Button variant="outline" size="sm" className="h-9 gap-1.5" onClick={() => window.print()}>
-          <Printer className="size-4" /> Print
-        </Button>
-        <Button variant="outline" size="sm" className="h-9 gap-1.5" disabled={sharing} onClick={handleShare}>
-          <Share2 className="size-4" /> {sharing ? "Sharing…" : "Share"}
-        </Button>
-        <Button variant="outline" size="sm" className="h-9 gap-1.5" disabled={downloadingPdf} onClick={handleDownloadPdf}>
-          <Download className="size-4" /> {downloadingPdf ? "Generating…" : "Export PDF"}
-        </Button>
-        <Button size="sm" className="h-9 gap-1.5" onClick={() => setLogOpen(true)}>
+      <div className="flex items-center gap-2 print:hidden">
+        <Button className="h-10 flex-1 gap-1.5 sm:flex-none" onClick={() => setLogOpen(true)}>
           <Plus className="size-4" /> Log Payment
         </Button>
-        <Button
-          variant="outline"
-          size="sm"
-          className="h-9 gap-1.5 text-destructive hover:bg-destructive/10 hover:text-destructive"
-          onClick={() => setDeleteOpen(true)}
-        >
-          <Trash2 className="size-4" /> Delete
-        </Button>
+
+        <Popover>
+          <PopoverTrigger
+            render={
+              <Button
+                variant="outline"
+                size="icon"
+                aria-label="Filter by date"
+                className="relative h-10 w-10 shrink-0"
+              />
+            }
+          >
+            <Filter className="size-4" />
+            {period !== "all" && (
+              <span className="absolute -top-0.5 -right-0.5 size-2.5 rounded-full bg-primary ring-2 ring-background" />
+            )}
+          </PopoverTrigger>
+          <PopoverContent className="w-56" align="end">
+            <div className="space-y-0.5">
+              {PERIODS.map((p) => (
+                <button
+                  key={p.value}
+                  type="button"
+                  onClick={() => setPeriod(p.value)}
+                  className={cn(
+                    "w-full rounded-md px-2.5 py-1.5 text-left text-sm font-medium transition-colors",
+                    period === p.value ? "bg-primary text-primary-foreground" : "hover:bg-muted"
+                  )}
+                >
+                  {p.label}
+                </button>
+              ))}
+            </div>
+            {period === "custom" && (
+              <div className="mt-2 grid grid-cols-2 gap-2 border-t pt-2.5">
+                <FormRow label="From" htmlFor="statement-from">
+                  <Input id="statement-from" type="date" value={customFrom} onChange={(e) => setCustomFrom(e.target.value)} className="h-8 text-xs" />
+                </FormRow>
+                <FormRow label="To" htmlFor="statement-to">
+                  <Input id="statement-to" type="date" value={customTo} onChange={(e) => setCustomTo(e.target.value)} className="h-8 text-xs" />
+                </FormRow>
+              </div>
+            )}
+          </PopoverContent>
+        </Popover>
+
+        <DropdownMenu>
+          <DropdownMenuTrigger className={cn(buttonVariants({ variant: "outline", size: "icon" }), "h-10 w-10 shrink-0")} aria-label="More actions">
+            <MoreVertical className="size-4" />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem render={<a href={`tel:${party.phone}`} />}>
+              <Phone className="size-4" /> Call
+            </DropdownMenuItem>
+            <DropdownMenuItem render={<a href={waLink(party.phone)} target="_blank" rel="noopener noreferrer" />}>
+              <MessageCircle className="size-4" /> WhatsApp
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => setEditOpen(true)}>
+              <Pencil className="size-4" /> Edit
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => window.print()}>
+              <Printer className="size-4" /> Print
+            </DropdownMenuItem>
+            <DropdownMenuItem disabled={sharing} onClick={handleShare}>
+              <Share2 className="size-4" /> {sharing ? "Sharing…" : "Share"}
+            </DropdownMenuItem>
+            <DropdownMenuItem disabled={downloadingPdf} onClick={handleDownloadPdf}>
+              <Download className="size-4" /> {downloadingPdf ? "Generating…" : "Export PDF"}
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem variant="destructive" onClick={() => setDeleteOpen(true)}>
+              <Trash2 className="size-4" /> Delete
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
 
       {/* Party info card */}
       <div className="rounded-2xl border bg-card overflow-hidden print:rounded-none print:border-0">
-        <div className="px-5 py-4 border-b bg-muted/30 flex items-center justify-between gap-2 flex-wrap">
-          <div className="space-y-1 text-sm">
-            <div className="flex items-center gap-2 text-muted-foreground">
-              <Phone className="size-3.5" /> {party.phone}
+        <div className="px-5 py-4 border-b bg-muted/30 flex items-start justify-between gap-2 flex-wrap">
+          <div className="space-y-1.5 text-sm">
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-muted-foreground">
+              <span className="flex items-center gap-1.5">
+                <Phone className="size-3.5" /> {party.phone}
+              </span>
+              {party.address && (
+                <span className="flex items-center gap-1.5">
+                  <MapPin className="size-3.5" /> {party.address}
+                </span>
+              )}
             </div>
             {party.businessName && (
               <div className="flex items-center gap-2 text-muted-foreground">
                 <Building2 className="size-3.5" /> {party.businessName}
-              </div>
-            )}
-            {party.address && (
-              <div className="flex items-center gap-2 text-muted-foreground">
-                <MapPin className="size-3.5" /> {party.address}
               </div>
             )}
             {party.gstNumber && (
@@ -446,24 +558,22 @@ export function PartyStatement({
               </div>
             )}
           </div>
-          <Badge variant="secondary" className="text-xs">
-            {party.category === "GENERAL" ? "General" : party.category.charAt(0) + party.category.slice(1).toLowerCase()}
+          <Badge
+            className={cn(
+              "border-0 text-xs font-semibold shrink-0",
+              party.category === "VIP"
+                ? "bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-400"
+                : "bg-secondary text-secondary-foreground"
+            )}
+          >
+            {party.category === "VIP" ? "VIP" : party.category.charAt(0) + party.category.slice(1).toLowerCase()}
           </Badge>
         </div>
 
         {/* Summary cards */}
         <div className="grid grid-cols-3 divide-x">
           <div className="px-4 py-4 text-center">
-            <p
-              className={cn(
-                "text-lg font-bold tabular-nums",
-                statement.summary.outstanding > 0
-                  ? "text-amber-600 dark:text-amber-400"
-                  : statement.summary.outstanding < 0
-                    ? "text-emerald-600 dark:text-emerald-400"
-                    : "text-foreground"
-              )}
-            >
+            <p className={cn("text-lg font-bold tabular-nums", outstandingClass(statement.summary.outstanding))}>
               {formatCurrency(statement.summary.outstanding, shop.currency)}
             </p>
             <p className="text-xs text-muted-foreground mt-0.5">Outstanding</p>
@@ -489,41 +599,22 @@ export function PartyStatement({
         </div>
       )}
 
-      {/* Period filter */}
-      <div className="flex overflow-hidden rounded-md border text-xs w-fit print:hidden">
-        {PERIODS.map((p) => (
-          <button
-            key={p.value}
-            type="button"
-            onClick={() => setPeriod(p.value)}
-            className={cn(
-              "px-3 py-1.5 font-medium transition-colors",
-              period === p.value ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted"
-            )}
-          >
-            {p.label}
-          </button>
-        ))}
-      </div>
-
-      {/* Timeline */}
+      {/* Activity & transactions timeline */}
       <div className="rounded-xl border overflow-hidden">
         <div className="bg-muted/30 px-4 py-2.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-          Activity
+          Activity &amp; Transactions
         </div>
         {timeline.length === 0 ? (
           <p className="px-4 py-6 text-sm text-muted-foreground text-center">No activity in this period.</p>
         ) : (
           <div className="divide-y">
             {timeline.map((entry) => {
+              const style = STATUS_STYLES[entry.status];
+              const EntryIcon = style.icon;
               const content = (
                 <div className="flex items-center gap-3 px-4 py-3 text-sm">
-                  <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-muted">
-                    {entry.kind === "order" ? (
-                      <ReceiptText className="size-4 text-muted-foreground" />
-                    ) : (
-                      <Wallet className="size-4 text-muted-foreground" />
-                    )}
+                  <div className={cn("flex size-9 shrink-0 items-center justify-center rounded-full", style.iconClass)}>
+                    <EntryIcon className="size-4" />
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="font-medium truncate">{entry.label}</p>
@@ -531,18 +622,9 @@ export function PartyStatement({
                       {new Date(entry.date).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
                     </p>
                   </div>
-                  <div className="text-right shrink-0">
+                  <div className="text-right shrink-0 space-y-1">
                     <p className="font-semibold tabular-nums">{formatCurrency(entry.amount, shop.currency)}</p>
-                    <span
-                      className={cn(
-                        "text-xs font-medium",
-                        entry.badgeTone === "amber" && "text-amber-600 dark:text-amber-400",
-                        entry.badgeTone === "emerald" && "text-emerald-600 dark:text-emerald-400",
-                        entry.badgeTone === "muted" && "text-muted-foreground"
-                      )}
-                    >
-                      {entry.badge}
-                    </span>
+                    <Badge className={cn("border-0 font-semibold", style.badgeClass)}>{style.badgeLabel}</Badge>
                   </div>
                 </div>
               );

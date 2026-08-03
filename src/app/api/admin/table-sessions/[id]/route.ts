@@ -5,12 +5,13 @@ import { handleApiError, NotFoundError } from "@/lib/api-utils";
 import { db } from "@/lib/db";
 import { createNotification } from "@/lib/services/notification";
 import { publishOrderEvent, toOrderEvent, toTableSessionEvent } from "@/lib/server/order-events";
+import { OPEN_STATUSES } from "@/lib/services/table-session";
 
 const patchSchema = z.discriminatedUnion("action", [
   z.object({
     action: z.literal("mark_paid"),
     // QR = customer scanned restaurant's payment QR; UPI = UPI deep link; VOID = release without payment
-    paymentMethod: z.enum(["CASH", "UPI", "QR", "CARD", "OTHER", "VOID"]),
+    paymentMethod: z.enum(["CASH", "UPI", "QR", "CARD", "WALLET", "SPLIT", "OTHER"]),
     paymentNote: z.string().trim().max(200).optional(),
   }),
   z.object({ action: z.literal("request_bill") }),
@@ -19,6 +20,18 @@ const patchSchema = z.discriminatedUnion("action", [
     paymentNote: z.string().trim().max(200).optional(),
   }),
   z.object({ action: z.literal("reject_payment") }),
+  z.object({
+    action: z.literal("transfer_table"),
+    newTableNumber: z.string().trim().min(1).max(50),
+  }),
+  z.object({
+    action: z.literal("merge_into"),
+    targetTableNumber: z.string().trim().min(1).max(50),
+  }),
+  z.object({
+    action: z.literal("set_guest_count"),
+    guestCount: z.number().int().min(0).max(100).nullable(),
+  }),
 ]);
 
 // Ticket statuses swept to COMPLETED when the table is closed.
@@ -114,12 +127,92 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       return NextResponse.json({ ok: true, session: toTableSessionEvent(updated) });
     }
 
+    if (input.action === "set_guest_count") {
+      const updated = await db.tableSession.update({ where: { id }, data: { guestCount: input.guestCount } });
+      publishOrderEvent(session.shopId, { type: "session.updated", session: toTableSessionEvent(updated) });
+      return NextResponse.json({ ok: true, session: toTableSessionEvent(updated) });
+    }
+
     // release_table — same as mark_paid with VOID, labelled separately for UX
     if (input.action === "release_table") {
       if (tableSession.status === "PAID") {
         return NextResponse.json({ error: "This table has already been released." }, { status: 409 });
       }
       return closeTable(id, "VOID", input.paymentNote, session.shopId, session.adminId);
+    }
+
+    if (input.action === "transfer_table") {
+      if (tableSession.status === "PAID" || tableSession.status === "MERGED") {
+        return NextResponse.json({ error: "This table has no open order to transfer." }, { status: 409 });
+      }
+      if (input.newTableNumber === tableSession.tableNumber) {
+        return NextResponse.json({ error: "That's already this table." }, { status: 400 });
+      }
+      const clash = await db.tableSession.findFirst({
+        where: { shopId: session.shopId, tableNumber: input.newTableNumber, status: { in: [...OPEN_STATUSES] } },
+      });
+      if (clash) {
+        return NextResponse.json(
+          { error: `Table ${input.newTableNumber} already has an open order.` },
+          { status: 409 }
+        );
+      }
+
+      const [updatedSession, movedOrders] = await db.$transaction(async (tx) => {
+        const updated = await tx.tableSession.update({
+          where: { id },
+          data: { tableNumber: input.newTableNumber },
+        });
+        await tx.order.updateMany({ where: { tableSessionId: id }, data: { tableNumber: input.newTableNumber } });
+        const orders = await tx.order.findMany({ where: { tableSessionId: id }, include: { items: true } });
+        return [updated, orders] as const;
+      });
+
+      publishOrderEvent(session.shopId, { type: "session.updated", session: toTableSessionEvent(updatedSession) });
+      for (const order of movedOrders) {
+        publishOrderEvent(session.shopId, { type: "order.updated", order: toOrderEvent(order) });
+      }
+      return NextResponse.json({ ok: true, session: toTableSessionEvent(updatedSession) });
+    }
+
+    if (input.action === "merge_into") {
+      if (tableSession.status === "PAID" || tableSession.status === "MERGED") {
+        return NextResponse.json({ error: "This table has no open order to merge." }, { status: 409 });
+      }
+      if (input.targetTableNumber === tableSession.tableNumber) {
+        return NextResponse.json({ error: "Can't merge a table into itself." }, { status: 400 });
+      }
+      const targetSession = await db.tableSession.findFirst({
+        where: { shopId: session.shopId, tableNumber: input.targetTableNumber, status: { in: [...OPEN_STATUSES] } },
+      });
+      if (!targetSession) {
+        return NextResponse.json(
+          { error: `Table ${input.targetTableNumber} doesn't have an open order to merge into.` },
+          { status: 409 }
+        );
+      }
+
+      const [mergedSourceSession, updatedTargetSession, movedOrders] = await db.$transaction(async (tx) => {
+        // Reassign every order on the source table to the target's session —
+        // this is what actually combines the two tables into one bill.
+        await tx.order.updateMany({
+          where: { tableSessionId: id },
+          data: { tableSessionId: targetSession.id, tableNumber: targetSession.tableNumber },
+        });
+        const source = await tx.tableSession.update({ where: { id }, data: { status: "MERGED" } });
+        // Bump updatedAt on the target so board consumers relying on it as a
+        // change signal (rather than just the order events) also notice.
+        const target = await tx.tableSession.update({ where: { id: targetSession.id }, data: {} });
+        const orders = await tx.order.findMany({ where: { tableSessionId: targetSession.id }, include: { items: true } });
+        return [source, target, orders] as const;
+      });
+
+      publishOrderEvent(session.shopId, { type: "session.updated", session: toTableSessionEvent(mergedSourceSession) });
+      publishOrderEvent(session.shopId, { type: "session.updated", session: toTableSessionEvent(updatedTargetSession) });
+      for (const order of movedOrders) {
+        publishOrderEvent(session.shopId, { type: "order.updated", order: toOrderEvent(order) });
+      }
+      return NextResponse.json({ ok: true, session: toTableSessionEvent(updatedTargetSession) });
     }
 
     // action === "mark_paid"
@@ -182,13 +275,20 @@ async function closeTable(
     publishOrderEvent(shopId, { type: "order.updated", order: toOrderEvent(order) });
   }
 
-  // closeTable() is shared by both mark_paid and release_table (void) — only
-  // a real payment should notify, never a released/voided table.
+  // closeTable() is shared by both mark_paid and release_table (void) —
+  // notify with whichever of the two actually happened.
   if (paymentMethod !== "VOID") {
     createNotification(shopId, {
       type: "PAYMENT_RECEIVED",
       title: `Table ${updatedSession.tableNumber} — Payment received`,
       body: `Paid via ${paymentMethod}`,
+      link: "/admin/tables",
+    }).catch(() => {});
+  } else {
+    createNotification(shopId, {
+      type: "TABLE_RELEASED",
+      title: `Table ${updatedSession.tableNumber} released`,
+      body: "Released without payment (void).",
       link: "/admin/tables",
     }).catch(() => {});
   }
