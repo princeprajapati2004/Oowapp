@@ -20,6 +20,7 @@ import {
   Table2,
   BookUser,
   Users,
+  Barcode,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger, SheetTitle } from "@/components/ui/sheet";
@@ -36,6 +37,7 @@ const NAV_ITEMS = [
   { href: "/admin/settings", label: "Settings", icon: Settings },
   { href: "/admin/categories", label: "Categories", icon: FolderTree },
   { href: "/admin/products", label: "Products", icon: UtensilsCrossed },
+  { href: "/admin/barcodes", label: "Barcodes", icon: Barcode },
   { href: "/admin/taxes", label: "Taxes", icon: Percent },
   { href: "/admin/qr", label: "QR Code", icon: QrCode },
   { href: "/admin/orders", label: "Orders", icon: ClipboardList },
