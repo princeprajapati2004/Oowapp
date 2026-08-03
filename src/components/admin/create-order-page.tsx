@@ -173,6 +173,16 @@ export function CreateOrderPage({
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [draftBanner, setDraftBanner] = useState<DraftOrder | null>(null);
 
+  // Read-only preview of what's already on an occupied table — lets the
+  // owner see the running order before adding to it, same visibility a
+  // customer already gets when they scan the QR at that table.
+  const [occupiedTablePreview, setOccupiedTablePreview] = useState<{
+    items: { name: string; quantity: number }[];
+    grandTotal: number;
+    label: string;
+  } | null>(null);
+  const [loadingTablePreview, setLoadingTablePreview] = useState(false);
+
   const pendingDuplicateRef = useRef<DuplicateOrderData | null>(null);
   const hasCheckedDuplicateRef = useRef(false);
 
@@ -220,6 +230,51 @@ export function CreateOrderPage({
       .then((res) => setTables(res.tables))
       .catch(() => {});
   }, []);
+
+  // Whenever an occupied table is selected, load what's already on it so the
+  // owner can see the running order before adding to it.
+  useEffect(() => {
+    let cancelled = false;
+
+    async function load() {
+      if (orderType !== "DINE_IN" || !tableNumber) {
+        if (!cancelled) setOccupiedTablePreview(null);
+        return;
+      }
+      const table = tables.find((t) => t.tableNumber === tableNumber);
+      if (!table?.occupied || !table.session) {
+        if (!cancelled) setOccupiedTablePreview(null);
+        return;
+      }
+      const session = table.session;
+      setLoadingTablePreview(true);
+      try {
+        const detail = await api.get<{
+          orders: { status: string; items: { productId: string | null; name: string; quantity: number }[] }[];
+        }>(`/api/admin/table-sessions/${session.id}`);
+        if (cancelled) return;
+        const map = new Map<string, { name: string; quantity: number }>();
+        detail.orders
+          .filter((o) => o.status !== "CANCELLED")
+          .flatMap((o) => o.items)
+          .forEach((item) => {
+            const key = item.productId ?? item.name;
+            const existing = map.get(key);
+            map.set(key, { name: item.name, quantity: (existing?.quantity ?? 0) + item.quantity });
+          });
+        setOccupiedTablePreview({ items: Array.from(map.values()), grandTotal: session.grandTotal, label: session.label });
+      } catch {
+        if (!cancelled) setOccupiedTablePreview(null);
+      } finally {
+        if (!cancelled) setLoadingTablePreview(false);
+      }
+    }
+
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, [tableNumber, orderType, tables]);
 
   // Offer to resume a saved draft on first load, unless a duplicate-order
   // request takes priority.
@@ -844,7 +899,7 @@ export function CreateOrderPage({
                             {tables.map((t) => {
                               const label = t.occupied && t.session ? t.session.label : "Available";
                               return (
-                                <SelectItem key={t.tableNumber} value={t.tableNumber} disabled={t.occupied}>
+                                <SelectItem key={t.tableNumber} value={t.tableNumber}>
                                   <span className="flex flex-1 items-center justify-between gap-2">
                                     <span>Table {t.tableNumber}</span>
                                     <span
@@ -863,6 +918,29 @@ export function CreateOrderPage({
                             })}
                           </SelectContent>
                         </Select>
+                      )}
+
+                      {loadingTablePreview && (
+                        <p className="text-xs text-muted-foreground">Loading this table&apos;s current order…</p>
+                      )}
+                      {occupiedTablePreview && (
+                        <div className="space-y-1.5 rounded-lg border bg-muted/30 p-2.5 text-xs">
+                          <div className="flex items-center justify-between font-medium">
+                            <span>Already on this table — {occupiedTablePreview.label}</span>
+                            <span>{formatCurrency(occupiedTablePreview.grandTotal, currency)}</span>
+                          </div>
+                          <ul className="space-y-0.5 text-muted-foreground">
+                            {occupiedTablePreview.items.map((item) => (
+                              <li key={item.name}>
+                                {item.quantity}× {item.name}
+                              </li>
+                            ))}
+                          </ul>
+                          <p className="text-muted-foreground">
+                            New items you add below will join this table&apos;s running order — keep Payment Method as
+                            Pending to add to the tab instead of starting a separate sale.
+                          </p>
+                        </div>
                       )}
                     </div>
                   )}
