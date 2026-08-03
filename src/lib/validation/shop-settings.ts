@@ -20,7 +20,14 @@ export const businessInfoSchema = z.object({
 export type BusinessInfoInput = z.infer<typeof businessInfoSchema>;
 
 export const paymentSettingsSchema = z.object({
-  upiId: z.string().trim().max(100).optional().or(z.literal("")),
+  upiId: z
+    .string()
+    .trim()
+    .max(100)
+    .refine((v) => !v || /^[a-zA-Z0-9._-]+@[a-zA-Z0-9]+$/.test(v), { message: "Enter a valid UPI ID (e.g. yourshop@upi)" })
+    .optional()
+    .or(z.literal("")),
+  paymentDisplayName: z.string().trim().max(100).optional().or(z.literal("")),
   acceptCash: z.boolean(),
   bankAccountName: z.string().trim().max(100).optional().or(z.literal("")),
   bankAccountNumber: z.string().trim().max(30).optional().or(z.literal("")),

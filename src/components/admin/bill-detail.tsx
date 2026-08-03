@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import QRCode from "qrcode";
-import { ArrowLeft, Download, Tag, X, ReceiptText, QrCode as QrCodeIcon, Printer, Share2, CheckCircle2, PartyPopper } from "lucide-react";
+import { ArrowLeft, Download, Tag, X, ReceiptText, QrCode as QrCodeIcon, Printer, Share2, CheckCircle2, PartyPopper, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -47,6 +47,7 @@ export type BillOrderData = {
   taxBreakdown: TaxLine[];
   status: OrderStatus;
   paymentMethod?: string | null;
+  paymentStatus?: string | null;
   discountType: string | null;
   discountValue: number | null;
   discountReason: string | null;
@@ -70,6 +71,7 @@ export type BillShopData = {
   bankName: string | null;
   bankIfsc: string | null;
   paymentQrImageUrl: string | null;
+  paymentDisplayName: string | null;
   enableTableNumber: boolean;
 };
 
@@ -95,6 +97,112 @@ const STATUS_LABELS: Record<OrderStatus, string> = {
   COMPLETED: "Completed",
   CANCELLED: "Cancelled",
 };
+
+const BILL_PAYMENT_METHODS = [
+  { value: "CASH", label: "Cash" },
+  { value: "UPI", label: "UPI App" },
+  { value: "QR", label: "Scan QR" },
+  { value: "CARD", label: "Card" },
+  { value: "OTHER", label: "Other" },
+] as const;
+
+function MarkPaidSection({
+  order,
+  currency,
+  onMarkedPaid,
+}: {
+  order: BillOrderData;
+  currency: string;
+  onMarkedPaid: (method: string) => void;
+}) {
+  const [showForm, setShowForm] = useState(false);
+  const [method, setMethod] = useState<(typeof BILL_PAYMENT_METHODS)[number]["value"]>("CASH");
+  const [saving, setSaving] = useState(false);
+  const isPaid = order.paymentStatus === "PAID" || (!!order.paymentMethod && order.paymentMethod !== "PENDING");
+  const finalTotal = order.discountedTotal ?? (order.subtotal + order.taxTotal);
+
+  async function handleConfirm() {
+    setSaving(true);
+    try {
+      await api.patch(`/api/admin/orders/${order.id}`, { action: "mark_paid", paymentMethod: method });
+      onMarkedPaid(method);
+      setShowForm(false);
+      toast.success("Order marked as paid");
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Failed to mark as paid");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (isPaid) {
+    return (
+      <div className="flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 dark:border-emerald-900/50 dark:bg-emerald-900/20 px-4 py-3">
+        <CheckCircle2 className="size-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+        <p className="text-sm font-medium text-emerald-800 dark:text-emerald-400">
+          Paid via {order.paymentMethod ? order.paymentMethod.charAt(0) + order.paymentMethod.slice(1).toLowerCase() : "unknown method"}
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-xl border bg-card overflow-hidden">
+      <div className="px-4 py-2.5 bg-muted/30 border-b flex items-center gap-1.5">
+        <ReceiptText className="size-3.5 text-muted-foreground" />
+        <p className="font-semibold text-xs uppercase tracking-wide text-muted-foreground">Payment</p>
+        <span className="ml-auto text-xs rounded-full bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 px-2 py-0.5 font-medium">
+          Pending
+        </span>
+      </div>
+
+      {!showForm ? (
+        <div className="px-4 py-3 flex items-center justify-between gap-3">
+          <p className="text-sm text-muted-foreground">
+            Amount due: <span className="font-semibold text-foreground">{formatCurrency(finalTotal, currency)}</span>
+          </p>
+          <Button size="sm" className="h-8 gap-1.5 text-xs" onClick={() => setShowForm(true)}>
+            <CheckCircle2 className="size-3.5" /> Mark as Paid
+          </Button>
+        </div>
+      ) : (
+        <div className="px-4 py-3 space-y-3">
+          <div className="flex items-baseline justify-between rounded-lg bg-muted/40 px-3 py-2 text-sm">
+            <span className="text-muted-foreground">Amount due</span>
+            <span className="font-bold">{formatCurrency(finalTotal, currency)}</span>
+          </div>
+          <div className="space-y-1.5">
+            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">How did they pay?</p>
+            <div className="flex flex-wrap gap-1.5">
+              {BILL_PAYMENT_METHODS.map((m) => (
+                <button
+                  key={m.value}
+                  type="button"
+                  onClick={() => setMethod(m.value)}
+                  className={cn(
+                    "rounded-full px-3 py-1.5 text-sm font-medium transition-colors",
+                    method === m.value
+                      ? "bg-primary text-primary-foreground"
+                      : "bg-muted text-muted-foreground hover:bg-muted/80"
+                  )}
+                >
+                  {m.label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="flex gap-2">
+            <Button variant="outline" className="flex-1" onClick={() => setShowForm(false)} disabled={saving}>Cancel</Button>
+            <Button className="flex-1 gap-1.5" onClick={handleConfirm} disabled={saving}>
+              {saving ? <Loader2 className="size-4 animate-spin" /> : <CheckCircle2 className="size-4" />}
+              Confirm Paid
+            </Button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 function DiscountSection({
   order,
@@ -370,7 +478,9 @@ export function BillDetail({
   // doubles as the paid/pending signal (see the header badge below).
   const orderType =
     shop.enableTableNumber && order.tableNumber ? "Dine-in" : order.deliveryAddress ? "Delivery" : "Takeaway";
-  const isPaid = !!order.paymentMethod && order.paymentMethod !== "PENDING";
+  const isPaid =
+    order.paymentStatus === "PAID" ||
+    (!!order.paymentMethod && order.paymentMethod !== "PENDING");
 
   async function handleCompleteOrder() {
     setCompletingOrder(true);
@@ -663,7 +773,11 @@ export function BillDetail({
         doc.setFontSize(8.5);
         doc.setTextColor(80, 80, 80);
 
-        if (shop.upiId) { doc.text(`UPI: ${shop.upiId}`, margin, y); y += 12; }
+        if (shop.upiId) {
+          const payeeName = shop.paymentDisplayName || shop.businessName;
+          doc.text(`Pay to: ${payeeName}`, margin, y); y += 12;
+          doc.text(`UPI: ${shop.upiId}`, margin, y); y += 12;
+        }
         if (shop.bankAccountNumber) {
           doc.text(
             `Bank: ${shop.bankName ?? ""} | A/C: ${shop.bankAccountNumber}${shop.bankIfsc ? ` | IFSC: ${shop.bankIfsc}` : ""}`,
@@ -934,6 +1048,16 @@ export function BillDetail({
       {/* Everything below is editing UI / supplementary info, not part of
           the receipt itself — hidden when printing. */}
       <div className="space-y-6 print:hidden">
+      {/* Payment status — only for standalone orders (table sessions manage payment
+          at the session level via the Tables board). */}
+      {!order.tableNumber && (
+        <MarkPaidSection
+          order={order}
+          currency={shop.currency}
+          onMarkedPaid={(method) => updateOrder({ paymentMethod: method, paymentStatus: "PAID" })}
+        />
+      )}
+
       {/* Discount Section */}
       <DiscountSection
         order={order}

@@ -26,6 +26,11 @@ const updateOrderSchema = z.discriminatedUnion("action", [
     // quantity: 0 removes the item entirely
     items: z.array(z.object({ id: z.string(), quantity: z.number().int().min(0) })).min(1),
   }),
+  z.object({
+    action: z.literal("mark_paid"),
+    paymentMethod: z.enum(["CASH", "UPI", "QR", "CARD", "OTHER"]),
+    paymentNote: z.string().trim().max(200).optional(),
+  }),
 ]);
 
 export async function GET(
@@ -101,6 +106,13 @@ export async function PATCH(
           discountValue: null,
           discountReason: null,
           discountedTotal: null,
+        };
+      } else if (parsed.action === "mark_paid") {
+        data = {
+          paymentMethod: parsed.paymentMethod,
+          paymentStatus: "PAID",
+          paymentConfirmedBy: session.adminId,
+          paymentConfirmedAt: new Date(),
         };
       } else {
         // priority

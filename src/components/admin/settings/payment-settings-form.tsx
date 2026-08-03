@@ -50,10 +50,15 @@ export function PaymentSettingsForm({
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
       <FieldGroup className="sm:grid sm:grid-cols-2 sm:gap-4 sm:space-y-0">
         <FormRow label="UPI ID" htmlFor="upiId" description="e.g. yourshop@upi — used to generate the payment QR" error={errors.upiId}>
-          <Input id="upiId" {...register("upiId")} />
+          <Input id="upiId" placeholder="yourshop@upi" {...register("upiId")} />
         </FormRow>
-        <FormRow label="Merchant / display name" htmlFor="paymentDisplayName" description="Shown on the bill instead of the business name, if set" error={errors.paymentDisplayName}>
-          <Input id="paymentDisplayName" {...register("paymentDisplayName")} />
+        <FormRow
+          label="Payment display name"
+          htmlFor="paymentDisplayName"
+          description='Shown on the customer payment screen as "Pay to". Defaults to your business name.'
+          error={errors.paymentDisplayName}
+        >
+          <Input id="paymentDisplayName" placeholder={defaultValues.paymentDisplayName || "Your business name"} {...register("paymentDisplayName")} />
         </FormRow>
         <FormRow label="Bank name" htmlFor="bankName" error={errors.bankName}>
           <Input id="bankName" {...register("bankName")} />

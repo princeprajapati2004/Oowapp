@@ -13,6 +13,7 @@ export interface InvoicePdfShop {
   bankIfsc?: string | null;
   acceptCash?: boolean;
   paymentQrImageUrl?: string | null;
+  paymentDisplayName?: string | null;
 }
 
 export interface InvoicePdfItem {
@@ -200,7 +201,11 @@ export async function generateInvoicePdf(input: InvoicePdfInput): Promise<void> 
     doc.text("Payment", 40, y);
     y += 14;
     doc.setFont("helvetica", "normal");
-    if (shop.upiId) { doc.text(`UPI: ${shop.upiId}`, 40, y); y += 13; }
+    if (shop.upiId) {
+      const payeeName = shop.paymentDisplayName || shop.businessName;
+      doc.text(`Pay to: ${payeeName}`, 40, y); y += 13;
+      doc.text(`UPI ID: ${shop.upiId}`, 40, y); y += 13;
+    }
     if (shop.bankAccountNumber) {
       doc.text(`Bank: ${shop.bankName ?? ""} | A/C: ${shop.bankAccountNumber} | IFSC: ${shop.bankIfsc ?? ""}`, 40, y);
       y += 13;

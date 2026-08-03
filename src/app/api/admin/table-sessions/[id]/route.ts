@@ -9,7 +9,8 @@ import { publishOrderEvent, toOrderEvent, toTableSessionEvent } from "@/lib/serv
 const patchSchema = z.discriminatedUnion("action", [
   z.object({
     action: z.literal("mark_paid"),
-    paymentMethod: z.enum(["CASH", "UPI", "CARD", "OTHER", "VOID"]),
+    // QR = customer scanned restaurant's payment QR; UPI = UPI deep link; VOID = release without payment
+    paymentMethod: z.enum(["CASH", "UPI", "QR", "CARD", "OTHER", "VOID"]),
     paymentNote: z.string().trim().max(200).optional(),
   }),
   z.object({ action: z.literal("request_bill") }),
@@ -156,9 +157,20 @@ async function closeTable(
       include: { items: true },
     });
 
+    const isVoid = paymentMethod === "VOID";
     const orders = await Promise.all(
       openOrders.map((o) =>
-        tx.order.update({ where: { id: o.id }, data: { status: "COMPLETED" }, include: { items: true } })
+        tx.order.update({
+          where: { id: o.id },
+          data: {
+            status: "COMPLETED",
+            paymentStatus: isVoid ? "PENDING" : "PAID",
+            paymentMethod: isVoid ? null : paymentMethod,
+            paymentConfirmedBy: isVoid ? null : adminId,
+            paymentConfirmedAt: isVoid ? null : new Date(),
+          },
+          include: { items: true },
+        })
       )
     );
 
