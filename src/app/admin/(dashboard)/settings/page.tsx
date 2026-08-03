@@ -12,6 +12,7 @@ import { resolveFeatures } from "@/lib/services/feature-permission";
 import { BusinessInfoForm } from "@/components/admin/settings/business-info-form";
 import { PaymentSettingsForm } from "@/components/admin/settings/payment-settings-form";
 import { OrderSettingsForm } from "@/components/admin/settings/order-settings-form";
+import { BillNumberingForm } from "@/components/admin/settings/bill-numbering-form";
 import { RestaurantSettingsForm } from "@/components/admin/settings/restaurant-settings-form";
 import { NotificationSettingsForm } from "@/components/admin/settings/notification-settings-form";
 import { SubscriptionBillingSection } from "@/components/admin/settings/subscription-billing-section";
@@ -111,6 +112,18 @@ export default async function SettingsPage() {
             saveOrdersToDb: shop.saveOrdersToDb,
             isPublished: shop.isPublished,
           }}
+        />
+      ),
+    },
+    {
+      id: "billNumbering",
+      title: "Order numbering",
+      description: "Prefix and sequence used for order/bill numbers.",
+      content: (
+        <BillNumberingForm
+          bare
+          defaultValues={{ billNumberPrefix: shopAny.billNumberPrefix ?? "" }}
+          nextNumber={(shopAny.billNumberNext as number) ?? 1}
         />
       ),
     },

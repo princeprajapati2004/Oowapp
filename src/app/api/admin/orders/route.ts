@@ -5,6 +5,7 @@ import { handleApiError } from "@/lib/api-utils";
 import { db } from "@/lib/db";
 import { calculateBill } from "@/lib/services/billing";
 import { resolveOrCreateSession } from "@/lib/services/table-session";
+import { nextBillNumber } from "@/lib/services/bill-number";
 import { sendNewOrderNotification } from "@/lib/services/push";
 import { publishOrderEvent, toOrderEvent } from "@/lib/server/order-events";
 import { createNotification } from "@/lib/services/notification";
@@ -72,12 +73,11 @@ export async function POST(request: Request) {
       shop.taxes.map((t) => ({ ...t, value: Number(t.value) }))
     );
 
-    const billNumber = `${shop.slug.slice(0, 4).toUpperCase()}-${Date.now()}`;
-
     // Per-shop-per-day sequential display number for admin-created orders
-    // only (see prisma schema comment on Order.tokenNumber). Non-atomic —
-    // consistent with, not a regression from, billNumber's own Date.now()
-    // generation just above, which also has no DB-level uniqueness guarantee.
+    // only (see prisma schema comment on Order.tokenNumber) — separate from
+    // billNumber (now an atomic per-shop sequence, see nextBillNumber), this
+    // one is still a non-atomic count() since it's a cosmetic display number,
+    // not the uniqueness-bearing identifier.
     const startOfToday = new Date();
     startOfToday.setHours(0, 0, 0, 0);
     const tokenNumber =
@@ -107,6 +107,8 @@ export async function POST(request: Request) {
               customerId: null,
             })
           : null;
+
+      const billNumber = await nextBillNumber(tx, shop.id);
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       return (tx.order as any).create({

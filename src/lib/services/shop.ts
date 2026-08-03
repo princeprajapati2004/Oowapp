@@ -90,6 +90,8 @@ export type ShopSettingsInput = Partial<{
   notifyNewOrders: boolean;
   notifyOrderUpdates: boolean;
   orderMode: OrderMode;
+  billNumberPrefix: string;
+  billNumberNext: number;
 }>;
 
 export async function updateShopSettings(shopId: string, data: ShopSettingsInput) {

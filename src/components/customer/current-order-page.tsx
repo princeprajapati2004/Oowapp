@@ -39,7 +39,7 @@ import { tableSessionKey } from "@/components/customer/customer-menu";
 import { formatCurrency } from "@/lib/utils/currency";
 import { generateInvoicePdf } from "@/lib/utils/invoice-pdf";
 import { calculateBill, mergeLineItems, type BillLineItem } from "@/lib/services/billing";
-import { buildOrderMessage, buildIncrementalOrderMessage, buildWhatsAppUrl, generateBillNumber } from "@/lib/services/whatsapp";
+import { buildOrderMessage, buildIncrementalOrderMessage, buildWhatsAppUrl } from "@/lib/services/whatsapp";
 import { buildCheckoutSchema, type CheckoutInput } from "@/lib/validation/checkout";
 import { api, ApiError } from "@/lib/api-client";
 import { addStoredOrder } from "@/lib/order-history-storage";
@@ -341,7 +341,6 @@ export function CurrentOrderPage({
       ...values,
       tableNumber: shop.enableTableNumber ? (values.tableNumber || prefilledTable || "") : "",
     };
-    const newBillNumber = generateBillNumber(shop.slug);
     const newClientRequestId = crypto.randomUUID();
     setCheckoutValues(resolvedValues);
     setPlacing(true);
@@ -352,12 +351,12 @@ export function CurrentOrderPage({
           ok: boolean;
           saved: boolean;
           orderId?: string;
+          billNumber?: string;
           tableSessionId?: string | null;
           sessionStatus?: string | null;
           sessionOrders?: { status: string; items: { productId: string | null; name: string; price: number; quantity: number; categoryId?: string; imageUrl?: string | null }[] }[];
         }>("/api/orders", {
           shopSlug: shop.slug,
-          billNumber: newBillNumber,
           clientRequestId: newClientRequestId,
           customerName: resolvedValues.customerName,
           customerPhone: resolvedValues.customerPhone,
@@ -366,8 +365,8 @@ export function CurrentOrderPage({
           notes: resolvedValues.notes,
           items: cart.items,
         });
-        if (res.orderId) {
-          addStoredOrder(shop.slug, { orderId: res.orderId, billNumber: newBillNumber, placedAt: new Date().toISOString() });
+        if (res.orderId && res.billNumber) {
+          addStoredOrder(shop.slug, { orderId: res.orderId, billNumber: res.billNumber, placedAt: new Date().toISOString() });
         }
         if (res.tableSessionId && res.sessionOrders) {
           setSession({ id: res.tableSessionId, status: res.sessionStatus ?? "ACTIVE", orders: res.sessionOrders });
@@ -421,6 +420,7 @@ export function CurrentOrderPage({
         ok: boolean;
         saved: boolean;
         orderId?: string;
+        billNumber?: string;
         tableSessionId?: string | null;
         sessionStatus?: string | null;
         sessionOrders?: {
@@ -429,7 +429,6 @@ export function CurrentOrderPage({
         }[];
       }>("/api/orders", {
         shopSlug: shop.slug,
-        billNumber: newBillNumber,
         clientRequestId: newClientRequestId,
         customerName: resolvedValues.customerName,
         customerPhone: resolvedValues.customerPhone,
@@ -439,8 +438,8 @@ export function CurrentOrderPage({
         items: cart.items,
       })
       .then((res) => {
-        if (res.saved && res.orderId) {
-          addStoredOrder(shop.slug, { orderId: res.orderId, billNumber: newBillNumber, placedAt: new Date().toISOString() });
+        if (res.saved && res.orderId && res.billNumber) {
+          addStoredOrder(shop.slug, { orderId: res.orderId, billNumber: res.billNumber, placedAt: new Date().toISOString() });
         }
         if (res.tableSessionId && res.sessionOrders) {
           setSession({ id: res.tableSessionId, status: res.sessionStatus ?? "ACTIVE", orders: res.sessionOrders });

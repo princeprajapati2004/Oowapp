@@ -89,6 +89,11 @@ enum OrderStatus {
   CANCELLED
 }
 
+enum PaymentStatus {
+  PENDING
+  PAID
+}
+
 enum TableSessionStatus {
   ACTIVE
   AWAITING_PAYMENT
@@ -164,6 +169,7 @@ enum AuditAction {
   // Orders
   ORDER_CREATED
   TABLE_SESSION_MARKED_PAID
+  ORDER_MARKED_PAID
   // Platform
   PLATFORM_SETTINGS_UPDATED
   SUBSCRIPTION_CHANGED
@@ -236,6 +242,13 @@ model Shop {
   requireDeliveryAddress Boolean @default(false)
   allowNotes             Boolean @default(true)
   saveOrdersToDb         Boolean @default(false)
+
+  // Order/bill numbering — billNumberNext is the next sequential number to
+  // assign; incremented atomically (see nextBillNumber) each time an order is
+  // created, so it also serves as the running counter, not just a one-time
+  // "starting number".
+  billNumberPrefix String @default("")
+  billNumberNext   Int    @default(1)
 
   isPublished Boolean  @default(true)
 
@@ -448,6 +461,11 @@ model Order {
   taxBreakdown    Json
   status          OrderStatus @default(PENDING)
   paymentMethod   String?
+  // Present in the live database (pre-dating this schema file) but not yet
+  // wired into any application code — kept in sync here rather than dropped.
+  paymentStatus      PaymentStatus @default(PENDING)
+  paymentConfirmedAt DateTime?
+  paymentConfirmedBy String?
   // "qr" = customer-scanned, "waiter" = placed by waiter staff
   source          String      @default("qr")
   // Discount (Feature 3)
@@ -474,6 +492,7 @@ model Order {
   items OrderItem[]
 
   @@unique([shopId, clientRequestId])
+  @@unique([shopId, billNumber])
   @@index([shopId])
   @@index([customerId])
   @@index([tableSessionId])

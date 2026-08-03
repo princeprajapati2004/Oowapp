@@ -91,7 +91,3 @@ export function buildWhatsAppUrl(phoneNumber: string, message: string) {
   return `https://wa.me/${digits}?text=${encodeURIComponent(message)}`;
 }
 
-export function generateBillNumber(shopSlug: string) {
-  const prefix = shopSlug.slice(0, 4).toUpperCase();
-  return `${prefix}-${Date.now()}`;
-}

@@ -47,6 +47,20 @@ export const orderSettingsSchema = z.object({
 });
 export type OrderSettingsInput = z.infer<typeof orderSettingsSchema>;
 
+// Order/bill number prefix — freely re-editable, safe to resubmit anytime.
+export const billNumberingSchema = z.object({
+  billNumberPrefix: z.string().trim().max(10).optional().or(z.literal("")),
+});
+export type BillNumberingInput = z.infer<typeof billNumberingSchema>;
+
+// Resetting the live counter is a deliberate, separate action from saving the
+// prefix — kept in its own schema/endpoint so a routine settings save can
+// never accidentally roll it back to a stale value.
+export const billNumberResetSchema = z.object({
+  billNumberNext: z.coerce.number().int().positive().max(999_999_999),
+});
+export type BillNumberResetInput = z.infer<typeof billNumberResetSchema>;
+
 export const notificationSettingsSchema = z.object({
   notifyNewOrders: z.boolean(),
   notifyOrderUpdates: z.boolean(),
