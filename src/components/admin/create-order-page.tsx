@@ -912,9 +912,12 @@ export function CreateOrderPage({
                           </SelectTrigger>
                           <SelectContent>
                             {tables.map((t) => {
-                              const label = t.occupied && t.session ? t.session.label : "Available";
+                              const manualLabel =
+                                t.manualState === "RESERVED" ? "Reserved" : t.manualState === "CLEANING" ? "Cleaning" : "Disabled";
+                              const label = t.occupied && t.session ? t.session.label : t.manualState ? manualLabel : "Available";
+                              const disabled = !t.occupied && (t.manualState === "DISABLED" || t.manualState === "CLEANING");
                               return (
-                                <SelectItem key={t.tableNumber} value={t.tableNumber}>
+                                <SelectItem key={t.tableNumber} value={t.tableNumber} disabled={disabled}>
                                   <span className="flex flex-1 items-center justify-between gap-2">
                                     <span>Table {t.tableNumber}</span>
                                     <span
@@ -922,7 +925,9 @@ export function CreateOrderPage({
                                         "rounded-full px-1.5 py-0.5 text-[10px] font-semibold",
                                         t.occupied
                                           ? TABLE_LABEL_BADGE[label]
-                                          : "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400"
+                                          : t.manualState
+                                            ? "bg-slate-200 text-slate-700 dark:bg-slate-800 dark:text-slate-300"
+                                            : "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400"
                                       )}
                                     >
                                       {label}

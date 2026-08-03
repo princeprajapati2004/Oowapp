@@ -21,8 +21,23 @@ import {
   User,
   PackagePlus,
   Printer,
+  MoreVertical,
+  CalendarClock,
+  Droplets,
+  Ban,
+  ArrowLeftRight,
+  Merge,
 } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+} from "@/components/ui/dropdown-menu";
+import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { EmptyState } from "@/components/shared/empty-state";
@@ -32,22 +47,9 @@ import { formatCurrency } from "@/lib/utils/currency";
 import { cn } from "@/lib/utils";
 import { useOrderEvents } from "@/lib/hooks/use-order-events";
 import type { Product, CartItem } from "@/lib/types/manual-order";
+import type { TableBoardEntry, TableManualState } from "@/lib/services/table-session";
 
 type SessionLabel = "Preparing" | "Served" | "Awaiting payment" | "Paid";
-
-type TableBoardEntry = {
-  tableNumber: string;
-  occupied: boolean;
-  session: {
-    id: string;
-    status: string;
-    label: SessionLabel;
-    orderCount: number;
-    grandTotal: number;
-    createdAt: string;
-    billRequestedAt: string | null;
-  } | null;
-};
 
 type OrderItem = {
   id: string;
@@ -75,6 +77,7 @@ type SessionDetail = {
   status: string;
   customerName: string | null;
   customerPhone: string | null;
+  guestCount: number | null;
   createdAt: string;
   billRequestedAt: string | null;
   orders: DetailOrder[];
@@ -92,6 +95,8 @@ const PAYMENT_METHODS = [
   { value: "UPI", label: "UPI App" },
   { value: "QR", label: "Scan QR" },
   { value: "CARD", label: "Card" },
+  { value: "WALLET", label: "Wallet" },
+  { value: "SPLIT", label: "Split" },
   { value: "OTHER", label: "Other" },
 ] as const;
 
@@ -136,8 +141,17 @@ export function TablesBoard({ initialTables, currency }: { initialTables: TableB
     onSessionUpdated: () => refresh(),
   });
 
+  async function setTableState(tableNumber: string, state: TableManualState | null) {
+    try {
+      await api.patch("/api/admin/table-sessions", { tableNumber, state });
+      await refresh();
+    } catch (error) {
+      toast.error(error instanceof ApiError ? error.message : "Failed to update table");
+    }
+  }
+
   const total = tables.length;
-  const available = tables.filter((t) => !t.occupied).length;
+  const available = tables.filter((t) => !t.occupied && !t.manualState).length;
   const occupied = tables.filter((t) => t.occupied && t.session?.status === "ACTIVE").length;
   const awaitingPayment = tables.filter((t) => t.session?.status === "AWAITING_PAYMENT").length;
 
@@ -174,6 +188,7 @@ export function TablesBoard({ initialTables, currency }: { initialTables: TableB
               onMarkPaid={() => setMarkPaidTarget(table)}
               onViewDetail={() => setDetailTarget(table)}
               onCreateOrder={() => router.push(`/admin/orders/create?type=DINE_IN&table=${encodeURIComponent(table.tableNumber)}`)}
+              onSetState={(state) => setTableState(table.tableNumber, state)}
             />
           ))}
         </div>
@@ -192,6 +207,7 @@ export function TablesBoard({ initialTables, currency }: { initialTables: TableB
       <TableDetailDialog
         table={detailTarget}
         currency={currency}
+        allTables={tables}
         onClose={() => setDetailTarget(null)}
         onChanged={() => {
           setDetailTarget(null);
@@ -202,6 +218,29 @@ export function TablesBoard({ initialTables, currency }: { initialTables: TableB
   );
 }
 
+// Staff-set states for a table with no active session — an active session's
+// own status always wins over these (see toBoardEntry in table-session.ts).
+const STATE_META: Record<TableManualState, { label: string; badge: string; icon: typeof Ban; blocksOrder: boolean }> = {
+  RESERVED: {
+    label: "Reserved",
+    badge: "bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-400",
+    icon: CalendarClock,
+    blocksOrder: false,
+  },
+  CLEANING: {
+    label: "Cleaning",
+    badge: "bg-slate-200 text-slate-700 dark:bg-slate-800 dark:text-slate-300",
+    icon: Droplets,
+    blocksOrder: true,
+  },
+  DISABLED: {
+    label: "Out of service",
+    badge: "bg-neutral-300 text-neutral-800 dark:bg-neutral-800 dark:text-neutral-300",
+    icon: Ban,
+    blocksOrder: true,
+  },
+};
+
 // ── Table card ────────────────────────────────────────────────────────────────
 function TableCard({
   table,
@@ -209,28 +248,84 @@ function TableCard({
   onMarkPaid,
   onViewDetail,
   onCreateOrder,
+  onSetState,
 }: {
   table: TableBoardEntry;
   currency: string;
   onMarkPaid: () => void;
   onViewDetail: () => void;
   onCreateOrder: () => void;
+  onSetState: (state: TableManualState | null) => void;
 }) {
   if (!table.occupied || !table.session) {
+    const meta = table.manualState ? STATE_META[table.manualState] : null;
+    const blocked = meta?.blocksOrder ?? false;
+    const StateIcon = meta?.icon;
+
     return (
-      <button
-        type="button"
-        onClick={onCreateOrder}
-        className="w-full rounded-2xl border border-dashed bg-muted/20 p-4 space-y-2 text-left transition-colors hover:border-emerald-400 hover:bg-emerald-50/50 dark:hover:bg-emerald-900/10"
-      >
-        <div className="flex items-center justify-between gap-2">
+      <div className="w-full rounded-2xl border border-dashed bg-muted/20 p-4 space-y-2 transition-colors">
+        <button
+          type="button"
+          onClick={blocked ? undefined : onCreateOrder}
+          disabled={blocked}
+          className={cn(
+            "flex w-full items-center justify-between gap-2 text-left rounded-lg -m-1 p-1 transition-colors",
+            !blocked && "hover:bg-emerald-50/50 dark:hover:bg-emerald-900/10"
+          )}
+        >
           <p className="text-lg font-bold text-muted-foreground">Table {table.tableNumber}</p>
-          <Plus className="size-4 text-muted-foreground" />
+          {!blocked && <Plus className="size-4 text-muted-foreground" />}
+        </button>
+
+        <div className="flex items-center justify-between gap-2">
+          <span
+            className={cn(
+              "inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium",
+              meta ? meta.badge : "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400"
+            )}
+          >
+            {StateIcon && <StateIcon className="size-3" />}
+            {meta ? meta.label : "Available — tap to create order"}
+          </span>
+
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              className={cn(buttonVariants({ variant: "ghost", size: "icon-sm" }), "shrink-0 text-muted-foreground")}
+              aria-label="Table actions"
+            >
+              <MoreVertical className="size-3.5" />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              {!blocked && (
+                <DropdownMenuItem onClick={onCreateOrder}>
+                  <Plus className="size-4" /> Create order
+                </DropdownMenuItem>
+              )}
+              {(!blocked || meta) && <DropdownMenuSeparator />}
+              {table.manualState !== "RESERVED" && (
+                <DropdownMenuItem onClick={() => onSetState("RESERVED")}>
+                  <CalendarClock className="size-4" /> Mark Reserved
+                </DropdownMenuItem>
+              )}
+              {table.manualState !== "CLEANING" && (
+                <DropdownMenuItem onClick={() => onSetState("CLEANING")}>
+                  <Droplets className="size-4" /> Mark Cleaning
+                </DropdownMenuItem>
+              )}
+              {table.manualState !== "DISABLED" && (
+                <DropdownMenuItem onClick={() => onSetState("DISABLED")}>
+                  <Ban className="size-4" /> Disable table
+                </DropdownMenuItem>
+              )}
+              {meta && (
+                <DropdownMenuItem onClick={() => onSetState(null)}>
+                  <CircleCheck className="size-4" /> Set Available
+                </DropdownMenuItem>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
-        <span className="inline-flex items-center rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-medium text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400">
-          Available — tap to create order
-        </span>
-      </button>
+      </div>
     );
   }
 
@@ -252,6 +347,21 @@ function TableCard({
           {session.label}
         </span>
       </div>
+
+      {(session.customerName || session.guestCount) && (
+        <p className="flex items-center gap-1.5 text-sm text-muted-foreground">
+          {session.customerName && (
+            <span className="flex items-center gap-1">
+              <User className="size-3.5" /> {session.customerName}
+            </span>
+          )}
+          {session.guestCount && (
+            <span className="flex items-center gap-1">
+              <Users className="size-3.5" /> {session.guestCount} guest{session.guestCount !== 1 ? "s" : ""}
+            </span>
+          )}
+        </p>
+      )}
 
       <div className="flex items-baseline justify-between border-t pt-2">
         <span className="text-sm font-medium text-muted-foreground flex items-center gap-1">
@@ -361,7 +471,7 @@ function MarkPaidDialog({
         </div>
 
         <Textarea
-          placeholder="Note (optional)"
+          placeholder={method === "SPLIT" ? "How was it split? e.g. Cash ₹200 + UPI ₹250" : "Note (optional)"}
           value={note}
           onChange={(e) => setNote(e.target.value)}
           rows={2}
@@ -394,11 +504,13 @@ function MarkPaidDialog({
 function TableDetailDialog({
   table,
   currency,
+  allTables,
   onClose,
   onChanged,
 }: {
   table: TableBoardEntry | null;
   currency: string;
+  allTables: TableBoardEntry[];
   onClose: () => void;
   onChanged: () => void;
 }) {
@@ -412,6 +524,14 @@ function TableDetailDialog({
   const [releasing, setReleasing] = useState(false);
   const [releaseNote, setReleaseNote] = useState("");
   const [showReleaseConfirm, setShowReleaseConfirm] = useState(false);
+  const [showTransferDialog, setShowTransferDialog] = useState(false);
+  const [transferTarget, setTransferTarget] = useState("");
+  const [transferring, setTransferring] = useState(false);
+  const [showMergeDialog, setShowMergeDialog] = useState(false);
+  const [mergeTarget, setMergeTarget] = useState("");
+  const [merging, setMerging] = useState(false);
+  const [guestCountInput, setGuestCountInput] = useState("");
+  const [savingGuestCount, setSavingGuestCount] = useState(false);
   const [payMethod, setPayMethod] = useState<(typeof PAYMENT_METHODS)[number]["value"]>("CASH");
   const [payNote, setPayNote] = useState("");
   const [paying, setPaying] = useState(false);
@@ -438,12 +558,17 @@ function TableDetailDialog({
     setEditingOrder(null);
     setShowReleaseConfirm(false);
     setShowPayConfirm(false);
+    setShowTransferDialog(false);
+    setTransferTarget("");
+    setShowMergeDialog(false);
+    setMergeTarget("");
     setAddItemsOpen(false);
     setAddCart([]);
     setShowAddConfirm(false);
     try {
       const data = await api.get<SessionDetail>(`/api/admin/table-sessions/${sessionId}`);
       setDetail(data);
+      setGuestCountInput(data.guestCount != null ? String(data.guestCount) : "");
     } catch {
       setError(true);
     } finally {
@@ -501,6 +626,15 @@ function TableDetailDialog({
 
   const sessionTotal = mergedItems.reduce((sum, i) => sum + i.price * i.quantity, 0);
 
+  // Free tables this session could move to — excludes the current table,
+  // anything occupied, and anything explicitly out of service.
+  const destinationTables = allTables.filter(
+    (t) => t.tableNumber !== table?.tableNumber && !t.occupied && t.manualState !== "DISABLED"
+  );
+
+  // Other occupied tables this session's orders could be merged into.
+  const mergeCandidates = allTables.filter((t) => t.tableNumber !== table?.tableNumber && t.occupied && t.session);
+
   function startEditOrder(order: DetailOrder) {
     const qty: Record<string, number> = {};
     order.items.forEach((item) => { qty[item.id] = item.quantity; });
@@ -547,6 +681,59 @@ function TableDetailDialog({
       toast.error(err instanceof ApiError ? err.message : "Couldn't release table");
     } finally {
       setReleasing(false);
+    }
+  }
+
+  async function saveGuestCount() {
+    if (!table?.session) return;
+    const trimmed = guestCountInput.trim();
+    const num = trimmed === "" ? null : Number(trimmed);
+    if (trimmed !== "" && (!Number.isFinite(num) || (num as number) < 0)) {
+      toast.error("Enter a valid number of guests");
+      return;
+    }
+    setSavingGuestCount(true);
+    try {
+      await api.patch(`/api/admin/table-sessions/${table.session.id}`, { action: "set_guest_count", guestCount: num });
+      await loadDetail(table.session.id);
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Couldn't update guest count");
+    } finally {
+      setSavingGuestCount(false);
+    }
+  }
+
+  async function handleTransfer() {
+    if (!table?.session || !transferTarget) return;
+    setTransferring(true);
+    try {
+      await api.patch(`/api/admin/table-sessions/${table.session.id}`, {
+        action: "transfer_table",
+        newTableNumber: transferTarget,
+      });
+      toast.success(`Table ${table.tableNumber} moved to Table ${transferTarget}`);
+      onChanged();
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Couldn't transfer this table");
+    } finally {
+      setTransferring(false);
+    }
+  }
+
+  async function handleMerge() {
+    if (!table?.session || !mergeTarget) return;
+    setMerging(true);
+    try {
+      await api.patch(`/api/admin/table-sessions/${table.session.id}`, {
+        action: "merge_into",
+        targetTableNumber: mergeTarget,
+      });
+      toast.success(`Table ${table.tableNumber} merged into Table ${mergeTarget}`);
+      onChanged();
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Couldn't merge these tables");
+    } finally {
+      setMerging(false);
     }
   }
 
@@ -715,6 +902,26 @@ function TableDetailDialog({
                 </div>
               )}
 
+              {/* Guest count */}
+              {!isClosed && (
+                <div className="flex items-center gap-2 text-sm">
+                  <Users className="size-3.5 shrink-0 text-muted-foreground" />
+                  <Input
+                    type="number"
+                    min={0}
+                    placeholder="Guests"
+                    value={guestCountInput}
+                    onChange={(e) => setGuestCountInput(e.target.value)}
+                    onBlur={() => {
+                      if (guestCountInput.trim() !== String(detail.guestCount ?? "")) saveGuestCount();
+                    }}
+                    className="h-8 w-24 text-sm"
+                    disabled={savingGuestCount}
+                  />
+                  <span className="text-xs text-muted-foreground">guests</span>
+                </div>
+              )}
+
               {/* Time info */}
               <div className="flex items-center justify-between text-xs text-muted-foreground">
                 <span className="flex items-center gap-1">
@@ -873,6 +1080,112 @@ function TableDetailDialog({
                 </Button>
               </div>
 
+              {!isClosed && (
+                <div className="flex gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="flex-1 h-9 gap-1.5 text-xs"
+                    onClick={() => setShowTransferDialog((v) => !v)}
+                  >
+                    <ArrowLeftRight className="size-3.5" /> Transfer Table
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="flex-1 h-9 gap-1.5 text-xs"
+                    onClick={() => setShowMergeDialog((v) => !v)}
+                  >
+                    <Merge className="size-3.5" /> Merge Table
+                  </Button>
+                </div>
+              )}
+
+              {showTransferDialog && (
+                <div className="rounded-xl border bg-card p-4 space-y-3">
+                  <p className="text-sm font-semibold">Move Table {table?.tableNumber} to…</p>
+                  {destinationTables.length === 0 ? (
+                    <p className="text-xs text-muted-foreground">No other free tables right now.</p>
+                  ) : (
+                    <Select value={transferTarget} onValueChange={(v) => v && setTransferTarget(v as string)}>
+                      <SelectTrigger className="h-9 w-full text-sm">
+                        <SelectValue placeholder="Select destination table">
+                          {(v: string | null) => (v ? `Table ${v}` : "Select destination table")}
+                        </SelectValue>
+                      </SelectTrigger>
+                      <SelectContent>
+                        {destinationTables.map((t) => (
+                          <SelectItem key={t.tableNumber} value={t.tableNumber}>
+                            Table {t.tableNumber}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
+                  <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      className="flex-1"
+                      onClick={() => {
+                        setShowTransferDialog(false);
+                        setTransferTarget("");
+                      }}
+                      disabled={transferring}
+                    >
+                      Cancel
+                    </Button>
+                    <Button className="flex-1 gap-1.5" onClick={handleTransfer} disabled={transferring || !transferTarget}>
+                      {transferring ? <Loader2 className="size-4 animate-spin" /> : <ArrowLeftRight className="size-4" />}
+                      Move Table
+                    </Button>
+                  </div>
+                </div>
+              )}
+
+              {showMergeDialog && (
+                <div className="rounded-xl border bg-card p-4 space-y-3">
+                  <p className="text-sm font-semibold">Merge Table {table?.tableNumber} into…</p>
+                  <p className="text-xs text-muted-foreground">
+                    All of this table&apos;s rounds move onto the target table&apos;s bill. Table {table?.tableNumber} becomes available.
+                  </p>
+                  {mergeCandidates.length === 0 ? (
+                    <p className="text-xs text-muted-foreground">No other occupied tables to merge into right now.</p>
+                  ) : (
+                    <Select value={mergeTarget} onValueChange={(v) => v && setMergeTarget(v as string)}>
+                      <SelectTrigger className="h-9 w-full text-sm">
+                        <SelectValue placeholder="Select target table">
+                          {(v: string | null) => (v ? `Table ${v}` : "Select target table")}
+                        </SelectValue>
+                      </SelectTrigger>
+                      <SelectContent>
+                        {mergeCandidates.map((t) => (
+                          <SelectItem key={t.tableNumber} value={t.tableNumber}>
+                            Table {t.tableNumber} {t.session ? `— ${formatCurrency(t.session.grandTotal, currency)}` : ""}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
+                  <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      className="flex-1"
+                      onClick={() => {
+                        setShowMergeDialog(false);
+                        setMergeTarget("");
+                      }}
+                      disabled={merging}
+                    >
+                      Cancel
+                    </Button>
+                    <Button className="flex-1 gap-1.5" onClick={handleMerge} disabled={merging || !mergeTarget}>
+                      {merging ? <Loader2 className="size-4 animate-spin" /> : <Merge className="size-4" />}
+                      Merge Table
+                    </Button>
+                  </div>
+                </div>
+              )}
+
               {showAddConfirm && (
                 <div className="rounded-xl border bg-card p-4 space-y-3">
                   <p className="text-sm font-semibold">Add {addCart.length} item{addCart.length === 1 ? "" : "s"} to Table {table?.tableNumber}?</p>
@@ -922,7 +1235,12 @@ function TableDetailDialog({
                           </button>
                         ))}
                       </div>
-                      <Textarea placeholder="Note (optional)" value={payNote} onChange={(e) => setPayNote(e.target.value)} rows={2} />
+                      <Textarea
+                        placeholder={payMethod === "SPLIT" ? "How was it split? e.g. Cash ₹200 + UPI ₹250" : "Note (optional)"}
+                        value={payNote}
+                        onChange={(e) => setPayNote(e.target.value)}
+                        rows={2}
+                      />
                       <div className="flex gap-2">
                         <Button variant="outline" className="flex-1" onClick={() => setShowPayConfirm(false)} disabled={paying}>Cancel</Button>
                         <Button className="flex-1 gap-1.5" onClick={handleMarkPaid} disabled={paying}>
