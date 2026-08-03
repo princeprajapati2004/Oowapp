@@ -88,7 +88,8 @@ const LABEL_BADGE: Record<SessionLabel, string> = {
 
 const PAYMENT_METHODS = [
   { value: "CASH", label: "Cash" },
-  { value: "UPI", label: "UPI" },
+  { value: "UPI", label: "UPI App" },
+  { value: "QR", label: "Scan QR" },
   { value: "CARD", label: "Card" },
   { value: "OTHER", label: "Other" },
 ] as const;

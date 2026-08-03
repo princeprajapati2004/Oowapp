@@ -34,6 +34,8 @@ export default async function BillDetailPage({
     discountValue: order.discountValue !== null ? Number(order.discountValue) : null,
     discountedTotal: order.discountedTotal !== null ? Number(order.discountedTotal) : null,
     createdAt: order.createdAt.toISOString(),
+    paymentStatus: order.paymentStatus ?? "PENDING",
+    paymentConfirmedAt: order.paymentConfirmedAt ? order.paymentConfirmedAt.toISOString() : null,
     items: order.items.map((item: { price: unknown; lineTotal: unknown; [key: string]: unknown }) => ({
       ...item,
       price: Number(item.price),
@@ -63,6 +65,7 @@ export default async function BillDetailPage({
         bankName: shop.bankName,
         bankIfsc: shop.bankIfsc,
         paymentQrImageUrl: shop.paymentQrImageUrl,
+        paymentDisplayName: (shopAny.paymentDisplayName as string | null) ?? null,
         enableTableNumber: (shopAny.enableTableNumber as boolean) ?? true,
       }}
     />

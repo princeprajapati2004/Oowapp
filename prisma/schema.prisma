@@ -105,6 +105,11 @@ enum OrderMode {
   DIRECT
 }
 
+enum PaymentStatus {
+  PENDING
+  PAID
+}
+
 enum StaffRole {
   MANAGER
   KITCHEN
@@ -168,6 +173,7 @@ enum AuditAction {
   TAX_DELETED
   // Orders
   ORDER_CREATED
+  ORDER_MARKED_PAID
   TABLE_SESSION_MARKED_PAID
   ORDER_MARKED_PAID
   // Platform
@@ -487,6 +493,11 @@ model Order {
   // Manual priority marker for Kitchen Display badges ("VIP" | "RUSH"), set by
   // staff via a quick toggle — not derived from any other data. Null = no marker.
   priorityFlag    String?
+  // Payment tracking per-order — complements the TableSession-level payment tracking
+  // for table orders. For standalone orders (no session), this is the canonical source.
+  paymentStatus      PaymentStatus @default(PENDING)
+  paymentConfirmedBy String?
+  paymentConfirmedAt DateTime?
   createdAt       DateTime    @default(now())
 
   items OrderItem[]

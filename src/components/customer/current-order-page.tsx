@@ -70,6 +70,156 @@ function ItemThumbnail({ name, imageUrl }: { name: string; imageUrl?: string | n
   );
 }
 
+// ── Payment options ─────────────────────────────────────────────────────────
+// Shown after bill is generated (AWAITING_PAYMENT), before the admin confirms.
+// Three distinct paths: scan the restaurant's QR, open a UPI app, or pay cash.
+function PaymentOptions({
+  shop,
+  grandTotal,
+  upiQrDataUrl,
+  onPayViaUpi,
+  onPayCash,
+}: {
+  shop: CustomerShop;
+  grandTotal: number;
+  upiQrDataUrl: string | null;
+  onPayViaUpi: () => void;
+  onPayCash: () => void;
+}) {
+  const payeeName = shop.paymentDisplayName || shop.businessName;
+  const hasQr = !!(shop.paymentQrImageUrl || upiQrDataUrl);
+  const hasUpi = !!shop.upiId;
+  const hasCash = shop.acceptCash;
+  const hasBank = !!shop.bankAccountNumber;
+
+  if (!hasQr && !hasUpi && !hasCash && !hasBank) {
+    return (
+      <div className="rounded-xl border bg-muted/20 px-4 py-4 text-center text-sm text-muted-foreground">
+        Please pay at the counter or ask the staff for payment details.
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground text-center">Choose how to pay</p>
+
+      {/* Option 1 — Scan QR (restaurant's uploaded QR or auto-generated UPI QR) */}
+      {hasQr && (
+        <div className="rounded-xl border bg-card overflow-hidden">
+          <div className="px-4 py-2.5 bg-muted/30 border-b flex items-center gap-1.5">
+            <QrCodeIcon className="size-3.5 text-muted-foreground" />
+            <p className="font-semibold text-xs uppercase tracking-wide text-muted-foreground">Scan QR to Pay</p>
+          </div>
+          <div className="px-4 py-4 flex flex-col items-center gap-3">
+            <div className="rounded-2xl border-2 border-border bg-white p-3 shadow-sm">
+              {shop.paymentQrImageUrl ? (
+                <Image
+                  src={shop.paymentQrImageUrl}
+                  alt="Scan to pay"
+                  width={210}
+                  height={210}
+                  unoptimized
+                  className="object-contain"
+                />
+              ) : upiQrDataUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={upiQrDataUrl} alt="UPI payment QR code" width={210} height={210} />
+              ) : null}
+            </div>
+            <div className="text-center space-y-1">
+              <p className="text-xl font-bold text-foreground">
+                {formatCurrency(grandTotal, shop.currency)}
+              </p>
+              <p className="text-sm text-muted-foreground">
+                Pay to <span className="font-semibold text-foreground">{payeeName}</span>
+              </p>
+              {shop.upiId && (
+                <p className="text-xs text-muted-foreground font-mono">{shop.upiId}</p>
+              )}
+              <p className="text-xs text-muted-foreground pt-0.5">
+                Works with Google Pay · PhonePe · Paytm · BHIM · Amazon Pay · any UPI app
+              </p>
+              {(shop.googlePayUpi || shop.phonePeUpi || shop.paytmUpi || shop.bhimUpi) && (
+                <div className="w-full pt-2 mt-1 border-t space-y-0.5">
+                  <p className="text-[11px] font-medium text-muted-foreground text-center">Also accepts</p>
+                  {shop.googlePayUpi && (
+                    <p className="text-[11px] text-muted-foreground text-center">Google Pay: {shop.googlePayUpi}</p>
+                  )}
+                  {shop.phonePeUpi && (
+                    <p className="text-[11px] text-muted-foreground text-center">PhonePe: {shop.phonePeUpi}</p>
+                  )}
+                  {shop.paytmUpi && (
+                    <p className="text-[11px] text-muted-foreground text-center">Paytm: {shop.paytmUpi}</p>
+                  )}
+                  {shop.bhimUpi && (
+                    <p className="text-[11px] text-muted-foreground text-center">BHIM: {shop.bhimUpi}</p>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Option 2 — Pay via UPI App deep link */}
+      {hasUpi && (
+        <button
+          type="button"
+          onClick={onPayViaUpi}
+          className="flex w-full items-center gap-3 rounded-xl border bg-card px-4 py-3.5 text-left transition-colors hover:bg-muted/30 active:scale-[0.99]"
+        >
+          <div className="flex size-10 shrink-0 items-center justify-center rounded-full bg-violet-100 dark:bg-violet-900/30">
+            <QrCodeIcon className="size-5 text-violet-600 dark:text-violet-400" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="font-semibold text-sm">Pay via UPI App</p>
+            <p className="text-xs text-muted-foreground">Opens Google Pay, PhonePe, Paytm &amp; more</p>
+          </div>
+          <div className="text-right shrink-0">
+            <p className="font-bold text-sm">{formatCurrency(grandTotal, shop.currency)}</p>
+          </div>
+        </button>
+      )}
+
+      {/* Option 3 — Pay in Cash */}
+      {hasCash && (
+        <button
+          type="button"
+          onClick={onPayCash}
+          className="flex w-full items-center gap-3 rounded-xl border bg-card px-4 py-3.5 text-left transition-colors hover:bg-muted/30 active:scale-[0.99]"
+        >
+          <div className="flex size-10 shrink-0 items-center justify-center rounded-full bg-orange-100 dark:bg-orange-900/30">
+            <Banknote className="size-5 text-orange-600 dark:text-orange-400" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="font-semibold text-sm">Pay in Cash</p>
+            <p className="text-xs text-muted-foreground">Pay the bill at the counter or to the waiter</p>
+          </div>
+          <div className="text-right shrink-0">
+            <p className="font-bold text-sm">{formatCurrency(grandTotal, shop.currency)}</p>
+          </div>
+        </button>
+      )}
+
+      {/* Bank transfer (supplementary info) */}
+      {hasBank && (
+        <div className="rounded-lg bg-muted/40 px-3 py-2.5 text-xs space-y-0.5">
+          <p className="font-semibold text-foreground">Bank Transfer</p>
+          {shop.bankName && <p className="text-muted-foreground">{shop.bankName}</p>}
+          <p className="text-muted-foreground">A/C: {shop.bankAccountNumber}</p>
+          {shop.bankIfsc && <p className="text-muted-foreground">IFSC: {shop.bankIfsc}</p>}
+          {shop.bankAccountNumber && (
+            <p className="text-muted-foreground">
+              Amount: <span className="font-semibold text-foreground">{formatCurrency(grandTotal, shop.currency)}</span>
+            </p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function CurrentOrderPage({
   shop,
   taxes,
@@ -232,12 +382,15 @@ export function CurrentOrderPage({
   }
 
   useEffect(() => {
-    if (!shop.upiId || invoicePaymentStatus === "Paid" || hasUnsentItems) {
+    // Only generate a UPI QR when there's no uploaded payment QR — the uploaded
+    // QR is the primary "Scan to Pay" option; the generated one is a fallback.
+    if (!shop.upiId || shop.paymentQrImageUrl || invoicePaymentStatus === "Paid" || hasUnsentItems) {
       setUpiQrDataUrl(null);
       return;
     }
-    const note = [invoiceTableNumber ? `Table ${invoiceTableNumber}` : null, orderNumber || null].filter(Boolean).join(" ") || shop.businessName;
-    const upiUrl = `upi://pay?pa=${encodeURIComponent(shop.upiId)}&pn=${encodeURIComponent(payeeDisplayName)}&am=${finalInvoiceBill.grandTotal.toFixed(2)}&cu=INR&tn=${encodeURIComponent(note)}`;
+    const payeeName = shop.paymentDisplayName || shop.businessName;
+    const note = [invoiceTableNumber ? `Table ${invoiceTableNumber}` : null, orderNumber || null].filter(Boolean).join(" ") || payeeName;
+    const upiUrl = `upi://pay?pa=${encodeURIComponent(shop.upiId)}&pn=${encodeURIComponent(payeeName)}&am=${finalInvoiceBill.grandTotal.toFixed(2)}&cu=INR&tn=${encodeURIComponent(note)}`;
     let cancelled = false;
     QRCode.toDataURL(upiUrl, { width: 220, margin: 1 })
       .then((url) => {
@@ -249,11 +402,12 @@ export function CurrentOrderPage({
     return () => {
       cancelled = true;
     };
-  }, [shop.upiId, shop.businessName, payeeDisplayName, finalInvoiceBill.grandTotal, invoiceTableNumber, orderNumber, invoicePaymentStatus, hasUnsentItems]);
+  }, [shop.upiId, shop.paymentQrImageUrl, shop.paymentDisplayName, shop.businessName, finalInvoiceBill.grandTotal, invoiceTableNumber, orderNumber, invoicePaymentStatus, hasUnsentItems]);
 
   function buildUpiUrl() {
-    const note = [invoiceTableNumber ? `Table ${invoiceTableNumber}` : null, orderNumber || null].filter(Boolean).join(" ") || shop.businessName;
-    return `upi://pay?pa=${encodeURIComponent(shop.upiId ?? "")}&pn=${encodeURIComponent(payeeDisplayName)}&am=${finalInvoiceBill.grandTotal.toFixed(2)}&cu=INR&tn=${encodeURIComponent(note)}`;
+    const payeeName = shop.paymentDisplayName || shop.businessName;
+    const note = [invoiceTableNumber ? `Table ${invoiceTableNumber}` : null, orderNumber || null].filter(Boolean).join(" ") || payeeName;
+    return `upi://pay?pa=${encodeURIComponent(shop.upiId ?? "")}&pn=${encodeURIComponent(payeeName)}&am=${finalInvoiceBill.grandTotal.toFixed(2)}&cu=INR&tn=${encodeURIComponent(note)}`;
   }
 
   function handleCashPayment() {
@@ -810,100 +964,13 @@ export function CurrentOrderPage({
                     <p className="text-xs text-amber-700/80 dark:text-amber-400/80">Waiting for the restaurant to confirm your payment.</p>
                   </div>
                 ) : (
-                  <>
-                    {upiQrDataUrl && (
-                      <div className="rounded-xl border bg-card overflow-hidden">
-                        <div className="px-4 py-2.5 bg-muted/30 border-b flex items-center gap-1.5">
-                          <QrCodeIcon className="size-3.5 text-muted-foreground" />
-                          <p className="font-semibold text-xs uppercase tracking-wide text-muted-foreground">Scan to Pay via UPI</p>
-                        </div>
-                        <div className="px-4 py-4 flex flex-col items-center gap-2">
-                          <div className="rounded-2xl border-2 border-border bg-white p-3">
-                            {/* eslint-disable-next-line @next/next/no-img-element */}
-                            <img src={upiQrDataUrl} alt="UPI payment QR code" width={200} height={200} />
-                          </div>
-                          <p className="text-xs text-muted-foreground">
-                            Pay <span className="font-semibold text-foreground">{formatCurrency(finalInvoiceBill.grandTotal, shop.currency)}</span> to{" "}
-                            <span className="font-semibold text-foreground">{payeeDisplayName}</span> ({shop.upiId})
-                          </p>
-                          {(shop.googlePayUpi || shop.phonePeUpi || shop.paytmUpi || shop.bhimUpi) && (
-                            <div className="w-full pt-2 mt-1 border-t space-y-0.5">
-                              <p className="text-[11px] font-medium text-muted-foreground text-center">Also accepts</p>
-                              {shop.googlePayUpi && (
-                                <p className="text-[11px] text-muted-foreground text-center">Google Pay: {shop.googlePayUpi}</p>
-                              )}
-                              {shop.phonePeUpi && (
-                                <p className="text-[11px] text-muted-foreground text-center">PhonePe: {shop.phonePeUpi}</p>
-                              )}
-                              {shop.paytmUpi && (
-                                <p className="text-[11px] text-muted-foreground text-center">Paytm: {shop.paytmUpi}</p>
-                              )}
-                              {shop.bhimUpi && (
-                                <p className="text-[11px] text-muted-foreground text-center">BHIM: {shop.bhimUpi}</p>
-                              )}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    )}
-                    {/* Fallback for shops that uploaded a static QR screenshot
-                        (e.g. from their banking app) instead of typing a UPI
-                        ID — without this, those shops showed no QR at all,
-                        since the block above only renders a QR generated
-                        from shop.upiId. Doesn't encode the amount, so the
-                        customer is told to enter it manually. */}
-                    {!upiQrDataUrl && shop.paymentQrImageUrl && !uploadedQrFailed && (
-                      <div className="rounded-xl border bg-card overflow-hidden">
-                        <div className="px-4 py-2.5 bg-muted/30 border-b flex items-center gap-1.5">
-                          <QrCodeIcon className="size-3.5 text-muted-foreground" />
-                          <p className="font-semibold text-xs uppercase tracking-wide text-muted-foreground">Scan to Pay</p>
-                        </div>
-                        <div className="px-4 py-4 flex flex-col items-center gap-2">
-                          <div className="relative size-[200px] rounded-2xl border-2 border-border bg-white p-3">
-                            <Image
-                              src={shop.paymentQrImageUrl}
-                              alt="Payment QR code"
-                              fill
-                              className="object-contain p-2"
-                              unoptimized
-                              onError={() => setUploadedQrFailed(true)}
-                            />
-                          </div>
-                          <p className="text-xs text-muted-foreground">
-                            Scan and pay <span className="font-semibold text-foreground">{formatCurrency(finalInvoiceBill.grandTotal, shop.currency)}</span> to{" "}
-                            <span className="font-semibold text-foreground">{payeeDisplayName}</span>
-                          </p>
-                        </div>
-                      </div>
-                    )}
-                    {shop.bankAccountNumber && (
-                      <div className="rounded-lg bg-muted/40 px-3 py-2 text-xs space-y-0.5">
-                        <p className="font-medium text-foreground">Bank transfer</p>
-                        {shop.bankName && <p className="text-muted-foreground">{shop.bankName}</p>}
-                        <p className="text-muted-foreground">A/C: {shop.bankAccountNumber}</p>
-                        {shop.bankIfsc && <p className="text-muted-foreground">IFSC: {shop.bankIfsc}</p>}
-                      </div>
-                    )}
-                    {!upiQrDataUrl && (!shop.paymentQrImageUrl || uploadedQrFailed) && !shop.bankAccountNumber && !shop.acceptCash && (
-                      <div className="rounded-xl border border-dashed px-4 py-6 text-center text-sm text-muted-foreground">
-                        The restaurant hasn&apos;t set up online payment yet — please pay at the counter.
-                      </div>
-                    )}
-                    {(shop.acceptCash || shop.upiId) && (
-                      <div className="space-y-2">
-                        {shop.acceptCash && (
-                          <Button size="lg" className="h-12 w-full gap-2 bg-orange-500 text-white hover:bg-orange-600" onClick={handleCashPayment}>
-                            <Banknote className="size-4.5" /> Cash Payment ({formatCurrency(finalInvoiceBill.grandTotal, shop.currency)})
-                          </Button>
-                        )}
-                        {shop.upiId && (
-                          <Button size="lg" className="h-12 w-full gap-2 bg-emerald-600 text-white hover:bg-emerald-700" onClick={handlePayViaUpi}>
-                            <QrCodeIcon className="size-4.5" /> Pay {formatCurrency(finalInvoiceBill.grandTotal, shop.currency)} via GPay / UPI
-                          </Button>
-                        )}
-                      </div>
-                    )}
-                  </>
+                  <PaymentOptions
+                    shop={shop}
+                    grandTotal={finalInvoiceBill.grandTotal}
+                    upiQrDataUrl={upiQrDataUrl}
+                    onPayViaUpi={handlePayViaUpi}
+                    onPayCash={handleCashPayment}
+                  />
                 )}
 
                 <div className="flex gap-2">
