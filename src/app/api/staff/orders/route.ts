@@ -5,6 +5,7 @@ import { handleApiError } from "@/lib/api-utils";
 import { calculateBill } from "@/lib/services/billing";
 import { requireStaffRole } from "@/lib/staff-session";
 import { resolveOrCreateSession } from "@/lib/services/table-session";
+import { nextBillNumber } from "@/lib/services/bill-number";
 import { publishOrderEvent, toOrderEvent } from "@/lib/server/order-events";
 import { sendNewOrderNotification } from "@/lib/services/push";
 import type { Prisma } from "@/generated/prisma/client";
@@ -56,7 +57,7 @@ export async function POST(request: Request) {
         input.items.map((item) => ({ ...item, id: item.productId })),
         taxes
       );
-      const billNumber = `${shop.slug.slice(0, 4).toUpperCase()}-${Date.now()}`;
+      const billNumber = await nextBillNumber(tx, shop.id);
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const created = await (tx.order as any).create({

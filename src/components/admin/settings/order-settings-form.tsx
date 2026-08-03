@@ -88,6 +88,12 @@ export function OrderSettingsForm({
         checked={values.isPublished}
         onCheckedChange={(v) => setValue("isPublished", v)}
       />
+      <ToggleRow
+        label="Enable barcode labels for orders"
+        description="Adds a Print Barcode button on each order — one barcode label per item, for attaching to parcels."
+        checked={values.enableOrderBarcodeLabels}
+        onCheckedChange={(v) => setValue("enableOrderBarcodeLabels", v)}
+      />
 
       <Button type="submit" disabled={isSubmitting}>
         {isSubmitting ? "Saving…" : "Save order settings"}

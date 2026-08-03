@@ -12,7 +12,7 @@ export interface Product {
   isAvailable: boolean;
   isVisible: boolean;
   imageUrl?: string | null;
-  foodType?: "VEG" | "NON_VEG" | "NA";
+  foodType?: "VEG" | "NON_VEG" | "EGG" | "NA";
   stock?: number | null;
   barcode?: string | null;
   createdAt?: string;

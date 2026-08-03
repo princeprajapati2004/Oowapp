@@ -125,6 +125,11 @@ export function AddItemsPanel({
             <span className="size-full rounded-[1px] bg-red-600" />
           </span>
         )}
+        {product.foodType === "EGG" && (
+          <span className="flex size-3 items-center justify-center rounded-sm border border-amber-700 p-[1px]" title="Egg" aria-label="Egg">
+            <span className="size-full rounded-[1px] bg-amber-700" />
+          </span>
+        )}
         {isBestSeller && (
           <span className="inline-flex items-center gap-0.5 rounded-full border border-amber-300 px-1.5 py-0.5 text-[10px] text-amber-600">
             <Flame className="size-2.5" /> Best Seller

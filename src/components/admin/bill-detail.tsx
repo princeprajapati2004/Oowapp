@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import QRCode from "qrcode";
-import { ArrowLeft, Download, Tag, X, ReceiptText, QrCode as QrCodeIcon, Printer, Share2, CheckCircle2, PartyPopper, Loader2 } from "lucide-react";
+import { ArrowLeft, Download, Tag, X, ReceiptText, QrCode as QrCodeIcon, Printer, Share2, CheckCircle2, PartyPopper, Loader2, Barcode } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -73,6 +73,7 @@ export type BillShopData = {
   paymentQrImageUrl: string | null;
   paymentDisplayName: string | null;
   enableTableNumber: boolean;
+  enableOrderBarcodeLabels: boolean;
 };
 
 const STATUS_COLORS: Record<OrderStatus, string> = {
@@ -904,6 +905,17 @@ export function BillDetail({
           <Download className="size-4" />
           {downloadingPdf ? "Generating…" : "Download PDF"}
         </Button>
+        {shop.enableOrderBarcodeLabels && (
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-9 gap-1.5"
+            render={<a href={`/admin/orders/${order.id}/barcodes`} target="_blank" rel="noopener noreferrer" />}
+            nativeButton={false}
+          >
+            <Barcode className="size-4" /> Print Barcode
+          </Button>
+        )}
         {order.status !== "COMPLETED" && order.status !== "CANCELLED" && (
           <Button size="sm" className="h-9 gap-1.5" disabled={completingOrder} onClick={handleCompleteOrder}>
             <CheckCircle2 className="size-4" />

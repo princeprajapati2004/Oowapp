@@ -2,12 +2,10 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Bell, BellRing, CheckCheck, Volume2, VolumeX } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { Popover, PopoverTrigger, PopoverContent, PopoverHeader, PopoverTitle } from "@/components/ui/popover";
 import { useOrderEvents, type NotificationEventPayload } from "@/lib/hooks/use-order-events";
 import { useChime } from "@/lib/utils/chime";
@@ -18,7 +16,6 @@ import { cn } from "@/lib/utils";
 const SOUND_PREF_KEY = "admin-notif-sound-enabled";
 
 export function NotificationBell({ initialNotifications }: { initialNotifications: NotificationEventPayload[] }) {
-  const router = useRouter();
   const [notifications, setNotifications] = useState(initialNotifications);
   const [open, setOpen] = useState(false);
   const [soundEnabled, setSoundEnabled] = useState(false);
@@ -53,7 +50,6 @@ export function NotificationBell({ initialNotifications }: { initialNotification
       setNotifications((prev) => prev.map((x) => (x.id === n.id ? { ...x, isRead: true } : x)));
       api.patch(`/api/admin/notifications/${n.id}`).catch(() => {});
     }
-    if (n.link) router.push(n.link);
   }
 
   async function handleMarkAllRead() {
@@ -66,8 +62,6 @@ export function NotificationBell({ initialNotifications }: { initialNotification
       toast.error(err instanceof ApiError ? err.message : "Failed to mark all as read");
     }
   }
-
-  const recent = notifications.slice(0, 10);
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -104,33 +98,40 @@ export function NotificationBell({ initialNotifications }: { initialNotification
           </div>
         </PopoverHeader>
 
-        {recent.length === 0 ? (
+        {notifications.length === 0 ? (
           <p className="px-3 pb-4 text-sm text-muted-foreground">No notifications yet.</p>
         ) : (
-          <ScrollArea className="max-h-80">
+          <div className="max-h-80 overflow-y-auto overscroll-contain">
             <div className="space-y-0.5 px-1 pb-1">
-              {recent.map((n) => (
-                <button
-                  key={n.id}
-                  type="button"
-                  onClick={() => handleSelect(n)}
-                  className={cn(
-                    "flex w-full flex-col items-start gap-0.5 rounded-md px-2.5 py-2.5 text-left text-sm transition-colors hover:bg-muted/60",
-                    !n.isRead && "bg-primary/5"
-                  )}
-                >
-                  <div className="flex w-full items-center gap-1.5">
-                    {!n.isRead && <span className="size-1.5 shrink-0 rounded-full bg-primary" />}
-                    <span className="flex-1 truncate font-medium">{n.title}</span>
-                    <span className="shrink-0 text-xs text-muted-foreground">
-                      {nowMs ? formatRelativeTime(n.createdAt, nowMs) : ""}
-                    </span>
-                  </div>
-                  <p className="w-full truncate text-xs text-muted-foreground">{n.body}</p>
-                </button>
-              ))}
+              {notifications.map((n) => {
+                const itemClassName = cn(
+                  "flex w-full flex-col items-start gap-0.5 rounded-md px-2.5 py-2.5 text-left text-sm transition-colors hover:bg-muted/60",
+                  !n.isRead && "bg-primary/5"
+                );
+                const content = (
+                  <>
+                    <div className="flex w-full items-center gap-1.5">
+                      {!n.isRead && <span className="size-1.5 shrink-0 rounded-full bg-primary" />}
+                      <span className="flex-1 font-medium">{n.title}</span>
+                      <span className="shrink-0 text-xs text-muted-foreground">
+                        {nowMs ? formatRelativeTime(n.createdAt, nowMs) : ""}
+                      </span>
+                    </div>
+                    <p className="w-full whitespace-pre-line text-xs text-muted-foreground">{n.body}</p>
+                  </>
+                );
+                return n.link ? (
+                  <Link key={n.id} href={n.link} onClick={() => handleSelect(n)} className={itemClassName}>
+                    {content}
+                  </Link>
+                ) : (
+                  <button key={n.id} type="button" onClick={() => handleSelect(n)} className={itemClassName}>
+                    {content}
+                  </button>
+                );
+              })}
             </div>
-          </ScrollArea>
+          </div>
         )}
 
         <div className="border-t p-2">

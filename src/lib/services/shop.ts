@@ -85,11 +85,14 @@ export type ShopSettingsInput = Partial<{
   allowNotes: boolean;
   saveOrdersToDb: boolean;
   isPublished: boolean;
+  enableOrderBarcodeLabels: boolean;
   enableTableQr: boolean;
   tableNames: string | null;
   notifyNewOrders: boolean;
   notifyOrderUpdates: boolean;
   orderMode: OrderMode;
+  billNumberPrefix: string;
+  billNumberNext: number;
 }>;
 
 export async function updateShopSettings(shopId: string, data: ShopSettingsInput) {

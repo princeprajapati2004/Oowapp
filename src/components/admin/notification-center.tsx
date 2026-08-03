@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { toast } from "sonner";
 import { Bell, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -15,7 +15,6 @@ import { useOrderEvents, type NotificationEventPayload } from "@/lib/hooks/use-o
 type Filter = "all" | "unread";
 
 export function NotificationCenter({ initialNotifications }: { initialNotifications: NotificationEventPayload[] }) {
-  const router = useRouter();
   const [notifications, setNotifications] = useState(initialNotifications);
   const [filter, setFilter] = useState<Filter>("all");
   const [nowMs, setNowMs] = useState(0);
@@ -39,7 +38,6 @@ export function NotificationCenter({ initialNotifications }: { initialNotificati
       setNotifications((prev) => prev.map((x) => (x.id === n.id ? { ...x, isRead: true } : x)));
       api.patch(`/api/admin/notifications/${n.id}`).catch(() => {});
     }
-    if (n.link) router.push(n.link);
   }
 
   async function handleDelete(id: string) {
@@ -109,29 +107,43 @@ export function NotificationCenter({ initialNotifications }: { initialNotificati
         />
       ) : (
         <div className="overflow-hidden rounded-xl border bg-card divide-y">
-          {filtered.map((n) => (
-            <div key={n.id} className={cn("flex items-start gap-3 px-4 py-3 hover:bg-muted/40 transition-colors", !n.isRead && "bg-primary/5")}>
-              <button type="button" onClick={() => handleSelect(n)} className="flex-1 min-w-0 text-left space-y-0.5">
+          {filtered.map((n) => {
+            const itemClassName = "flex-1 min-w-0 text-left space-y-0.5 block";
+            const content = (
+              <>
                 <div className="flex items-center gap-1.5">
                   {!n.isRead && <span className="size-1.5 shrink-0 rounded-full bg-primary" />}
-                  <span className="font-medium text-sm truncate">{n.title}</span>
+                  <span className="font-medium text-sm">{n.title}</span>
                   <span className="shrink-0 text-xs text-muted-foreground">
                     {nowMs ? formatRelativeTime(n.createdAt, nowMs) : ""}
                   </span>
                 </div>
-                <p className="text-sm text-muted-foreground truncate">{n.body}</p>
-              </button>
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                onClick={() => handleDelete(n.id)}
-                aria-label="Delete notification"
-                className="text-muted-foreground hover:text-destructive shrink-0"
-              >
-                <Trash2 className="size-3.5" />
-              </Button>
-            </div>
-          ))}
+                <p className="text-sm text-muted-foreground whitespace-pre-line">{n.body}</p>
+              </>
+            );
+            return (
+              <div key={n.id} className={cn("flex items-start gap-3 px-4 py-3 hover:bg-muted/40 transition-colors", !n.isRead && "bg-primary/5")}>
+                {n.link ? (
+                  <Link href={n.link} onClick={() => handleSelect(n)} className={itemClassName}>
+                    {content}
+                  </Link>
+                ) : (
+                  <button type="button" onClick={() => handleSelect(n)} className={itemClassName}>
+                    {content}
+                  </button>
+                )}
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  onClick={() => handleDelete(n.id)}
+                  aria-label="Delete notification"
+                  className="text-muted-foreground hover:text-destructive shrink-0"
+                >
+                  <Trash2 className="size-3.5" />
+                </Button>
+              </div>
+            );
+          })}
         </div>
       )}
 

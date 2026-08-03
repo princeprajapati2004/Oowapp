@@ -26,6 +26,7 @@ enum BusinessType {
 enum FoodType {
   VEG
   NON_VEG
+  EGG
   NA
 }
 
@@ -89,20 +90,33 @@ enum OrderStatus {
   CANCELLED
 }
 
+enum PaymentStatus {
+  PENDING
+  PAID
+}
+
 enum TableSessionStatus {
   ACTIVE
   AWAITING_PAYMENT
   PAID
+  // Terminal state for a session whose orders were reassigned to another
+  // table's session via Merge Table — distinct from PAID so session history
+  // isn't misread as an actual completed sale.
+  MERGED
+}
+
+// Manual, staff-set table state — independent of whether a table has an
+// active order session. Only meaningful when no session is open; an active
+// order's derived status always takes visual priority over this.
+enum TableManualState {
+  RESERVED
+  CLEANING
+  DISABLED
 }
 
 enum OrderMode {
   WHATSAPP
   DIRECT
-}
-
-enum PaymentStatus {
-  PENDING
-  PAID
 }
 
 enum StaffRole {
@@ -142,6 +156,21 @@ enum NotificationType {
   PAYMENT_RECEIVED
   ORDER_STATUS_CHANGED
   TABLE_OCCUPIED
+  TABLE_RELEASED
+}
+
+enum MenuImportSourceType {
+  PHOTO
+  PDF
+  EXCEL
+  CSV
+  TEXT
+}
+
+enum MenuImportStatus {
+  COMPLETED
+  PARTIAL
+  FAILED
 }
 
 enum AuditAction {
@@ -235,13 +264,22 @@ model Shop {
   bhimUpi            String?
 
   // Order settings
-  requireCustomerName    Boolean @default(true)
-  requirePhone           Boolean @default(false)
-  enableTableNumber      Boolean @default(true)
-  requireTableNumber     Boolean @default(true)
-  requireDeliveryAddress Boolean @default(false)
-  allowNotes             Boolean @default(true)
-  saveOrdersToDb         Boolean @default(false)
+  requireCustomerName      Boolean @default(true)
+  requirePhone             Boolean @default(false)
+  enableTableNumber        Boolean @default(true)
+  requireTableNumber       Boolean @default(true)
+  requireDeliveryAddress   Boolean @default(false)
+  allowNotes               Boolean @default(true)
+  saveOrdersToDb           Boolean @default(false)
+  // Shows a "Print Barcode" button on each order (one label per line item).
+  enableOrderBarcodeLabels Boolean @default(false)
+
+  // Order/bill numbering — billNumberNext is the next sequential number to
+  // assign; incremented atomically (see nextBillNumber) each time an order is
+  // created, so it also serves as the running counter, not just a one-time
+  // "starting number".
+  billNumberPrefix String @default("")
+  billNumberNext   Int    @default(1)
 
   isPublished Boolean  @default(true)
 
@@ -266,6 +304,7 @@ model Shop {
   orders             Order[]
   customers          Customer[]
   tableSessions      TableSession[]
+  tableStates        TableState[]
   subscriptions      Subscription[]
   pushSubscriptions  PushSubscription[]
   featurePermissions BusinessFeaturePermission[]
@@ -274,6 +313,8 @@ model Shop {
   parties            Party[]
   partyPayments      PartyPayment[]
   notifications      Notification[]
+  menuImages         MenuImage[]
+  menuImports        MenuImport[]
 
   @@map("shops")
 }
@@ -485,6 +526,7 @@ model Order {
   items OrderItem[]
 
   @@unique([shopId, clientRequestId])
+  @@unique([shopId, billNumber])
   @@index([shopId])
   @@index([customerId])
   @@index([tableSessionId])
@@ -507,6 +549,7 @@ model TableSession {
   customerPhone   String?
   customerId      String?
   customer        Customer?           @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  guestCount      Int?
   billRequestedAt DateTime?
   // Informational only — there is no payment gateway integration. Admin
   // records what they observed being paid (cash/UPI/card/etc.), or "VOID" to
@@ -523,6 +566,24 @@ model TableSession {
   @@index([shopId])
   @@index([shopId, tableNumber])
   @@map("table_sessions")
+}
+
+// A manual staff override for a table with no active session — Reserved
+// ahead of a booking, Cleaning after guests leave, or Disabled/out of
+// service. Cleared (row deleted) to return the table to plain Available.
+model TableState {
+  id          String           @id @default(cuid())
+  shopId      String
+  shop        Shop             @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  tableNumber String
+  state       TableManualState
+  note        String?
+  updatedAt   DateTime         @updatedAt
+  updatedBy   String?
+
+  @@unique([shopId, tableNumber])
+  @@index([shopId])
+  @@map("table_states")
 }
 
 // Staff accounts scoped to a shop. Separate from the Admin (owner) account —
@@ -754,4 +815,41 @@ model Notification {
   @@index([shopId])
   @@index([shopId, isRead])
   @@map("notifications")
+}
+
+// Owner Image Library (Feature: AI Menu Import) — reusable food photos an
+// owner has uploaded or picked before, offered as matches for future
+// imported items instead of re-uploading the same dish photo each time.
+model MenuImage {
+  id        String   @id @default(cuid())
+  shopId    String
+  shop      Shop     @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  url       String
+  name      String
+  createdAt DateTime @default(now())
+
+  @@index([shopId])
+  @@map("menu_images")
+}
+
+// Import History (Feature: AI Menu Import) — one row per import run.
+// `snapshot` is the final list of items as committed (post-edit, post-dedup
+// resolution), kept so the history detail view doesn't need to reconstruct
+// which products came from which import after the fact.
+model MenuImport {
+  id            String               @id @default(cuid())
+  shopId        String
+  shop          Shop                 @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  sourceType    MenuImportSourceType
+  fileName      String?
+  status        MenuImportStatus
+  itemsImported Int                  @default(0)
+  itemsUpdated  Int                  @default(0)
+  itemsSkipped  Int                  @default(0)
+  snapshot      Json
+  createdBy     String?
+  createdAt     DateTime             @default(now())
+
+  @@index([shopId])
+  @@map("menu_imports")
 }
