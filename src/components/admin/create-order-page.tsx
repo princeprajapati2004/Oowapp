@@ -113,10 +113,12 @@ export function CreateOrderPage({
   currency,
   shopSlug,
   initialOrderType,
+  initialTableNumber,
 }: {
   currency: string;
   shopSlug: string;
   initialOrderType?: OrderType;
+  initialTableNumber?: string;
 }) {
   const router = useRouter();
 
@@ -131,7 +133,7 @@ export function CreateOrderPage({
   // "New" product badge has a stable reference point.
   const [catalogLoadedAt, setCatalogLoadedAt] = useState(0);
   const [submitting, setSubmitting] = useState(false);
-  const [addItemsOpen, setAddItemsOpen] = useState(false);
+  const [addItemsOpen, setAddItemsOpen] = useState(!!initialTableNumber);
 
   // Form state
   const [cart, setCart] = useState<CartItem[]>([]);
@@ -140,7 +142,7 @@ export function CreateOrderPage({
   const [customerPhone, setCustomerPhone] = useState("");
   const [showCustomerSuggestions, setShowCustomerSuggestions] = useState(false);
   const [orderType, setOrderType] = useState<OrderType>(initialOrderType ?? "DINE_IN");
-  const [tableNumber, setTableNumber] = useState("");
+  const [tableNumber, setTableNumber] = useState(initialTableNumber ?? "");
   const [deliveryAddress, setDeliveryAddress] = useState("");
   const [deliveryInstructions, setDeliveryInstructions] = useState("");
   const [referenceNumber, setReferenceNumber] = useState("");
@@ -201,6 +203,15 @@ export function CreateOrderPage({
     } catch {
       // ignore malformed hand-off
     }
+  }, []);
+
+  // One-shot: announce arriving here with a table pre-selected (from tapping
+  // an available table on the Tables board) — deliberately not re-fired on
+  // later manual table changes, so [] deps (not [initialTableNumber]) is
+  // correct here, not a missing-dep bug.
+  useEffect(() => {
+    if (initialTableNumber) toast.success(`Creating order for Table ${initialTableNumber}`);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {

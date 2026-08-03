@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useCallback, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { createPortal } from "react-dom";
 import { toast } from "sonner";
 import {
@@ -117,6 +118,7 @@ function StatCard({ label, value, accent }: { label: string; value: number; acce
 
 // ── Main board ────────────────────────────────────────────────────────────────
 export function TablesBoard({ initialTables, currency }: { initialTables: TableBoardEntry[]; currency: string }) {
+  const router = useRouter();
   const [tables, setTables] = useState(initialTables);
   const [markPaidTarget, setMarkPaidTarget] = useState<TableBoardEntry | null>(null);
   const [detailTarget, setDetailTarget] = useState<TableBoardEntry | null>(null);
@@ -171,6 +173,7 @@ export function TablesBoard({ initialTables, currency }: { initialTables: TableB
               currency={currency}
               onMarkPaid={() => setMarkPaidTarget(table)}
               onViewDetail={() => setDetailTarget(table)}
+              onCreateOrder={() => router.push(`/admin/orders/create?type=DINE_IN&table=${encodeURIComponent(table.tableNumber)}`)}
             />
           ))}
         </div>
@@ -205,20 +208,29 @@ function TableCard({
   currency,
   onMarkPaid,
   onViewDetail,
+  onCreateOrder,
 }: {
   table: TableBoardEntry;
   currency: string;
   onMarkPaid: () => void;
   onViewDetail: () => void;
+  onCreateOrder: () => void;
 }) {
   if (!table.occupied || !table.session) {
     return (
-      <div className="rounded-2xl border bg-muted/20 p-4 space-y-2">
-        <p className="text-lg font-bold text-muted-foreground">Table {table.tableNumber}</p>
-        <span className="inline-flex items-center rounded-full bg-muted px-2.5 py-1 text-xs font-medium text-muted-foreground">
-          Available
+      <button
+        type="button"
+        onClick={onCreateOrder}
+        className="w-full rounded-2xl border border-dashed bg-muted/20 p-4 space-y-2 text-left transition-colors hover:border-emerald-400 hover:bg-emerald-50/50 dark:hover:bg-emerald-900/10"
+      >
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-lg font-bold text-muted-foreground">Table {table.tableNumber}</p>
+          <Plus className="size-4 text-muted-foreground" />
+        </div>
+        <span className="inline-flex items-center rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-medium text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400">
+          Available — tap to create order
         </span>
-      </div>
+      </button>
     );
   }
 
