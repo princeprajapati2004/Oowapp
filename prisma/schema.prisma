@@ -235,13 +235,15 @@ model Shop {
   bhimUpi            String?
 
   // Order settings
-  requireCustomerName    Boolean @default(true)
-  requirePhone           Boolean @default(false)
-  enableTableNumber      Boolean @default(true)
-  requireTableNumber     Boolean @default(true)
-  requireDeliveryAddress Boolean @default(false)
-  allowNotes             Boolean @default(true)
-  saveOrdersToDb         Boolean @default(false)
+  requireCustomerName      Boolean @default(true)
+  requirePhone             Boolean @default(false)
+  enableTableNumber        Boolean @default(true)
+  requireTableNumber       Boolean @default(true)
+  requireDeliveryAddress   Boolean @default(false)
+  allowNotes               Boolean @default(true)
+  saveOrdersToDb           Boolean @default(false)
+  // Shows a "Print Barcode" button on each order (one label per line item).
+  enableOrderBarcodeLabels Boolean @default(false)
 
   // Order/bill numbering — billNumberNext is the next sequential number to
   // assign; incremented atomically (see nextBillNumber) each time an order is

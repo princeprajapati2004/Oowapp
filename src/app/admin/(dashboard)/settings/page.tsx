@@ -111,6 +111,7 @@ export default async function SettingsPage() {
             allowNotes: shop.allowNotes,
             saveOrdersToDb: shop.saveOrdersToDb,
             isPublished: shop.isPublished,
+            enableOrderBarcodeLabels: (shopAny.enableOrderBarcodeLabels as boolean) ?? false,
           }}
         />
       ),

@@ -50,6 +50,7 @@ export const orderSettingsSchema = z.object({
   allowNotes: z.boolean(),
   saveOrdersToDb: z.boolean(),
   isPublished: z.boolean(),
+  enableOrderBarcodeLabels: z.boolean(),
 });
 export type OrderSettingsInput = z.infer<typeof orderSettingsSchema>;
 

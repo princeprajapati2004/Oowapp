@@ -85,6 +85,7 @@ export type ShopSettingsInput = Partial<{
   allowNotes: boolean;
   saveOrdersToDb: boolean;
   isPublished: boolean;
+  enableOrderBarcodeLabels: boolean;
   enableTableQr: boolean;
   tableNames: string | null;
   notifyNewOrders: boolean;
