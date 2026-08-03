@@ -258,6 +258,10 @@ export function CreateOrderPage({
         return;
       }
       const session = table.session;
+      // This table already has an open tab — new items must join it, never
+      // settle as a separate sale, or the customer ends up with two bills
+      // for one visit. Locked in the UI too (see Payment Method section).
+      setPaymentMethod("PENDING");
       setLoadingTablePreview(true);
       try {
         const detail = await api.get<{
@@ -948,8 +952,8 @@ export function CreateOrderPage({
                             ))}
                           </ul>
                           <p className="text-muted-foreground">
-                            New items you add below will join this table&apos;s running order — keep Payment Method as
-                            Pending to add to the tab instead of starting a separate sale.
+                            New items you add below will join this table&apos;s running order — Payment Method is locked
+                            to Pending so this can&apos;t become a separate bill for the same visit.
                           </p>
                         </div>
                       )}
@@ -971,15 +975,22 @@ export function CreateOrderPage({
                   {/* Payment Method */}
                   <div className="space-y-1.5">
                     <Label className="text-xs">Payment Method</Label>
+                    {occupiedTablePreview && (
+                      <p className="text-xs text-muted-foreground">
+                        Locked to Pending — this table already has an open tab.
+                      </p>
+                    )}
                     <div className="flex flex-wrap gap-1.5">
                       {PAYMENT_METHODS.map((m) => (
                         <button
                           key={m.value}
                           onClick={() => setPaymentMethod(m.value)}
+                          disabled={!!occupiedTablePreview && m.value !== "PENDING"}
                           aria-pressed={paymentMethod === m.value}
                           className={cn(
                             "rounded-md border px-2.5 py-1 text-xs font-medium transition-colors",
-                            paymentMethod === m.value ? "border-primary bg-primary/10 text-primary" : "text-muted-foreground hover:bg-muted"
+                            paymentMethod === m.value ? "border-primary bg-primary/10 text-primary" : "text-muted-foreground hover:bg-muted",
+                            !!occupiedTablePreview && m.value !== "PENDING" && "opacity-40 cursor-not-allowed hover:bg-transparent"
                           )}
                         >
                           {m.label}
