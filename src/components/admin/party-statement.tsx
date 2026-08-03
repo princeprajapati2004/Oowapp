@@ -21,6 +21,7 @@ import {
   Trash2,
   CreditCard,
   StickyNote,
+  X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -33,13 +34,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { FormRow } from "@/components/shared/form-row";
 import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 import { PartyFormDialog } from "@/components/admin/party-form-dialog";
@@ -563,23 +558,40 @@ export function PartyStatement({
         )}
       </div>
 
-      {/* Log Payment dialog */}
+      {/* Log Payment dialog — full-screen bottom sheet on mobile, centered dialog on sm+ */}
       <Dialog open={logOpen} onOpenChange={setLogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Pencil className="size-4 text-primary" /> Log Payment — {party.name}
+        <DialogContent
+          showCloseButton={false}
+          className={cn(
+            "flex flex-col gap-0 overflow-hidden overscroll-contain p-0",
+            "top-auto right-0 bottom-0 left-0 h-[100dvh] max-h-[100dvh] w-full max-w-none translate-x-0 translate-y-0 rounded-t-[24px] rounded-b-none",
+            "duration-300 data-open:zoom-in-100 data-open:slide-in-from-bottom data-closed:zoom-out-100 data-closed:slide-out-to-bottom",
+            "sm:top-1/2 sm:right-auto sm:bottom-auto sm:left-1/2 sm:h-auto sm:max-h-[85vh] sm:max-w-md sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-2xl"
+          )}
+        >
+          {/* Sticky header */}
+          <div className="pt-safe flex shrink-0 items-center gap-1 border-b px-4 py-3.5">
+            <Button variant="ghost" size="icon" onClick={() => setLogOpen(false)} aria-label="Back" className="sm:hidden">
+              <ArrowLeft className="size-5" />
+            </Button>
+            <DialogTitle className="min-w-0 flex-1 truncate text-base font-semibold">
+              Log Payment — {party.name}
             </DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="flex overflow-hidden rounded-md border text-sm">
+            <Button variant="ghost" size="icon" onClick={() => setLogOpen(false)} aria-label="Close">
+              <X className="size-5" />
+            </Button>
+          </div>
+
+          {/* Scrollable body — the only part that scrolls; header/footer stay pinned */}
+          <div className="flex-1 space-y-5 overflow-y-auto overscroll-contain px-4 py-5">
+            <div className="flex h-[52px] overflow-hidden rounded-xl border text-sm">
               {(["RECEIVED", "PAID"] as const).map((d) => (
                 <button
                   key={d}
                   type="button"
                   onClick={() => setDirection(d)}
                   className={cn(
-                    "flex-1 px-3 py-2 font-medium transition-colors",
+                    "flex-1 px-4 font-medium transition-colors",
                     direction === d ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted"
                   )}
                 >
@@ -588,11 +600,20 @@ export function PartyStatement({
               ))}
             </div>
             <FormRow label="Amount" htmlFor="payment-amount" required>
-              <Input id="payment-amount" type="number" step="0.01" min={0} value={amount} onChange={(e) => setAmount(e.target.value)} autoFocus />
+              <Input
+                id="payment-amount"
+                type="number"
+                step="0.01"
+                min={0}
+                value={amount}
+                onChange={(e) => setAmount(e.target.value)}
+                autoFocus
+                className="h-[52px] rounded-xl px-4 text-base"
+              />
             </FormRow>
             <FormRow label="Method" htmlFor="payment-method">
               <Select value={method} onValueChange={(v) => setMethod((v as typeof method) ?? "CASH")}>
-                <SelectTrigger id="payment-method" className="w-full">
+                <SelectTrigger id="payment-method" className="h-[52px]! w-full rounded-xl px-4">
                   <SelectValue>{METHOD_LABELS[method]}</SelectValue>
                 </SelectTrigger>
                 <SelectContent>
@@ -605,17 +626,25 @@ export function PartyStatement({
               </Select>
             </FormRow>
             <FormRow label="Note" htmlFor="payment-note" description="Optional">
-              <Textarea id="payment-note" rows={2} value={note} onChange={(e) => setNote(e.target.value)} />
+              <Textarea
+                id="payment-note"
+                rows={3}
+                value={note}
+                onChange={(e) => setNote(e.target.value)}
+                className="rounded-xl px-4 py-3"
+              />
             </FormRow>
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setLogOpen(false)} disabled={saving}>
+
+          {/* Sticky footer */}
+          <div className="pb-safe flex shrink-0 flex-col-reverse gap-2 border-t bg-background px-4 py-3 sm:flex-row sm:justify-end">
+            <Button variant="outline" className="h-11" onClick={() => setLogOpen(false)} disabled={saving}>
               Cancel
             </Button>
-            <Button onClick={handleLogPayment} disabled={saving}>
+            <Button className="h-11" onClick={handleLogPayment} disabled={saving}>
               {saving ? "Saving…" : "Log payment"}
             </Button>
-          </DialogFooter>
+          </div>
         </DialogContent>
       </Dialog>
 
