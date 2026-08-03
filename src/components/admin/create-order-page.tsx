@@ -113,10 +113,12 @@ export function CreateOrderPage({
   currency,
   shopSlug,
   initialOrderType,
+  initialTableNumber,
 }: {
   currency: string;
   shopSlug: string;
   initialOrderType?: OrderType;
+  initialTableNumber?: string;
 }) {
   const router = useRouter();
 
@@ -131,7 +133,7 @@ export function CreateOrderPage({
   // "New" product badge has a stable reference point.
   const [catalogLoadedAt, setCatalogLoadedAt] = useState(0);
   const [submitting, setSubmitting] = useState(false);
-  const [addItemsOpen, setAddItemsOpen] = useState(false);
+  const [addItemsOpen, setAddItemsOpen] = useState(!!initialTableNumber);
 
   // Form state
   const [cart, setCart] = useState<CartItem[]>([]);
@@ -140,7 +142,7 @@ export function CreateOrderPage({
   const [customerPhone, setCustomerPhone] = useState("");
   const [showCustomerSuggestions, setShowCustomerSuggestions] = useState(false);
   const [orderType, setOrderType] = useState<OrderType>(initialOrderType ?? "DINE_IN");
-  const [tableNumber, setTableNumber] = useState("");
+  const [tableNumber, setTableNumber] = useState(initialTableNumber ?? "");
   const [deliveryAddress, setDeliveryAddress] = useState("");
   const [deliveryInstructions, setDeliveryInstructions] = useState("");
   const [referenceNumber, setReferenceNumber] = useState("");
@@ -201,6 +203,15 @@ export function CreateOrderPage({
     } catch {
       // ignore malformed hand-off
     }
+  }, []);
+
+  // One-shot: announce arriving here with a table pre-selected (from tapping
+  // an available table on the Tables board) — deliberately not re-fired on
+  // later manual table changes, so [] deps (not [initialTableNumber]) is
+  // correct here, not a missing-dep bug.
+  useEffect(() => {
+    if (initialTableNumber) toast.success(`Creating order for Table ${initialTableNumber}`);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -901,9 +912,12 @@ export function CreateOrderPage({
                           </SelectTrigger>
                           <SelectContent>
                             {tables.map((t) => {
-                              const label = t.occupied && t.session ? t.session.label : "Available";
+                              const manualLabel =
+                                t.manualState === "RESERVED" ? "Reserved" : t.manualState === "CLEANING" ? "Cleaning" : "Disabled";
+                              const label = t.occupied && t.session ? t.session.label : t.manualState ? manualLabel : "Available";
+                              const disabled = !t.occupied && (t.manualState === "DISABLED" || t.manualState === "CLEANING");
                               return (
-                                <SelectItem key={t.tableNumber} value={t.tableNumber}>
+                                <SelectItem key={t.tableNumber} value={t.tableNumber} disabled={disabled}>
                                   <span className="flex flex-1 items-center justify-between gap-2">
                                     <span>Table {t.tableNumber}</span>
                                     <span
@@ -911,7 +925,9 @@ export function CreateOrderPage({
                                         "rounded-full px-1.5 py-0.5 text-[10px] font-semibold",
                                         t.occupied
                                           ? TABLE_LABEL_BADGE[label]
-                                          : "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400"
+                                          : t.manualState
+                                            ? "bg-slate-200 text-slate-700 dark:bg-slate-800 dark:text-slate-300"
+                                            : "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400"
                                       )}
                                     >
                                       {label}

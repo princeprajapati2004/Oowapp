@@ -111,6 +111,8 @@ export async function resolveOrCreateSession(
   }
 }
 
+export type TableManualState = "RESERVED" | "CLEANING" | "DISABLED";
+
 export type TableBoardEntry = {
   tableNumber: string;
   occupied: boolean;
@@ -122,37 +124,74 @@ export type TableBoardEntry = {
     grandTotal: number;
     createdAt: string;
     billRequestedAt: string | null;
+    customerName: string | null;
+    guestCount: number | null;
   } | null;
+  // Staff-set state (Reserved/Cleaning/Disabled) — only meaningful when not
+  // occupied; an active session's own status always takes visual priority.
+  manualState: TableManualState | null;
+  manualStateNote: string | null;
 };
 
 /** Combines the shop's configured table names with any open sessions — including sessions for tables not in the configured list, so a mismatched/typo'd table number doesn't silently disappear from the board. */
 export function buildTableBoard(
   configuredTables: string[],
-  openSessions: { id: string; tableNumber: string; status: string; createdAt: Date; billRequestedAt: Date | null; orders: SessionOrderLike[] }[],
-  taxes: BillTax[]
+  openSessions: {
+    id: string;
+    tableNumber: string;
+    status: string;
+    createdAt: Date;
+    billRequestedAt: Date | null;
+    customerName: string | null;
+    guestCount: number | null;
+    orders: SessionOrderLike[];
+  }[],
+  taxes: BillTax[],
+  manualStates: { tableNumber: string; state: TableManualState; note: string | null }[] = []
 ): TableBoardEntry[] {
   const sessionByTable = new Map(openSessions.map((s) => [s.tableNumber, s]));
+  const stateByTable = new Map(manualStates.map((s) => [s.tableNumber, s]));
   const seen = new Set<string>();
   const entries: TableBoardEntry[] = [];
 
   for (const tableNumber of configuredTables) {
     seen.add(tableNumber);
     const session = sessionByTable.get(tableNumber);
-    entries.push(toBoardEntry(tableNumber, session, taxes));
+    entries.push(toBoardEntry(tableNumber, session, taxes, stateByTable.get(tableNumber)));
   }
   for (const session of openSessions) {
     if (seen.has(session.tableNumber)) continue;
-    entries.push(toBoardEntry(session.tableNumber, session, taxes));
+    entries.push(toBoardEntry(session.tableNumber, session, taxes, stateByTable.get(session.tableNumber)));
   }
   return entries;
 }
 
 function toBoardEntry(
   tableNumber: string,
-  session: { id: string; tableNumber: string; status: string; createdAt: Date; billRequestedAt: Date | null; orders: SessionOrderLike[] } | undefined,
-  taxes: BillTax[]
+  session:
+    | {
+        id: string;
+        tableNumber: string;
+        status: string;
+        createdAt: Date;
+        billRequestedAt: Date | null;
+        customerName: string | null;
+        guestCount: number | null;
+        orders: SessionOrderLike[];
+      }
+    | undefined,
+  taxes: BillTax[],
+  manualState: { state: TableManualState; note: string | null } | undefined
 ): TableBoardEntry {
-  if (!session) return { tableNumber, occupied: false, session: null };
+  if (!session) {
+    return {
+      tableNumber,
+      occupied: false,
+      session: null,
+      manualState: manualState?.state ?? null,
+      manualStateNote: manualState?.note ?? null,
+    };
+  }
   const bill = computeSessionBill(session.orders, taxes);
   return {
     tableNumber,
@@ -165,6 +204,10 @@ function toBoardEntry(
       grandTotal: bill.grandTotal,
       createdAt: session.createdAt.toISOString(),
       billRequestedAt: session.billRequestedAt?.toISOString() ?? null,
+      customerName: session.customerName,
+      guestCount: session.guestCount,
     },
+    manualState: null,
+    manualStateNote: null,
   };
 }
