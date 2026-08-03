@@ -2,6 +2,7 @@
 
 import { useMemo, useRef, useState } from "react";
 import Image from "next/image";
+import Link from "next/link";
 import { toast } from "sonner";
 import {
   Plus,
@@ -12,6 +13,7 @@ import {
   List as ListIcon,
   UtensilsCrossed,
   ImageOff,
+  Sparkles,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -55,7 +57,7 @@ const EMPTY_FORM = {
   imageUrl: null as string | null,
   unit: "",
   barcode: "",
-  foodType: "NA" as "VEG" | "NON_VEG" | "NA",
+  foodType: "NA" as "VEG" | "NON_VEG" | "EGG" | "NA",
   isAvailable: true,
   isVisible: true,
   stock: "" as string,
@@ -229,9 +231,14 @@ export function ProductsManager({
           <h1 className="text-2xl font-bold tracking-tight">Products</h1>
           <p className="text-muted-foreground">Everything customers can order.</p>
         </div>
-        <Button onClick={openCreate} disabled={categories.length === 0}>
-          <Plus className="size-4" /> Add product
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" render={<Link href="/admin/menu-import" />} nativeButton={false}>
+            <Sparkles className="size-4" /> Import with AI
+          </Button>
+          <Button onClick={openCreate} disabled={categories.length === 0}>
+            <Plus className="size-4" /> Add product
+          </Button>
+        </div>
       </div>
 
       {categories.length === 0 ? (
@@ -469,6 +476,9 @@ export function ProductsManager({
                   </label>
                   <label className="flex items-center gap-2 text-sm">
                     <RadioGroupItem value="NON_VEG" /> Non-veg
+                  </label>
+                  <label className="flex items-center gap-2 text-sm">
+                    <RadioGroupItem value="EGG" /> Egg
                   </label>
                   <label className="flex items-center gap-2 text-sm">
                     <RadioGroupItem value="NA" /> N/A

@@ -50,13 +50,21 @@ export function ProductCard({
           <span
             className={cn(
               "absolute left-2 top-2 flex size-4 items-center justify-center rounded border-2 bg-background/90",
-              product.foodType === "VEG" ? "border-emerald-600" : "border-red-600"
+              product.foodType === "VEG"
+                ? "border-emerald-600"
+                : product.foodType === "EGG"
+                  ? "border-amber-700"
+                  : "border-red-600"
             )}
           >
             <span
               className={cn(
                 "size-1.5 rounded-full",
-                product.foodType === "VEG" ? "bg-emerald-600" : "bg-red-600"
+                product.foodType === "VEG"
+                  ? "bg-emerald-600"
+                  : product.foodType === "EGG"
+                    ? "bg-amber-700"
+                    : "bg-red-600"
               )}
             />
           </span>
