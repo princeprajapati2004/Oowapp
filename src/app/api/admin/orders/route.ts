@@ -4,7 +4,7 @@ import { requireAdminSession } from "@/lib/session";
 import { handleApiError } from "@/lib/api-utils";
 import { db } from "@/lib/db";
 import { calculateBill } from "@/lib/services/billing";
-import { resolveOrCreateSession } from "@/lib/services/table-session";
+import { resolveOrCreateSession, OPEN_STATUSES } from "@/lib/services/table-session";
 import { nextBillNumber } from "@/lib/services/bill-number";
 import { sendNewOrderNotification } from "@/lib/services/push";
 import { publishOrderEvent, toOrderEvent } from "@/lib/server/order-events";
@@ -56,6 +56,22 @@ export async function POST(request: Request) {
         return NextResponse.json(
           { error: "This table wasn't recognized. Please select a valid table." },
           { status: 400 }
+        );
+      }
+    }
+
+    // A non-Pending order never joins a table's running session (see
+    // resolveOrCreateSession below) — so if this table already has one open,
+    // block it here rather than silently creating a second, disconnected
+    // bill for what's really the same customer visit.
+    if (input.tableNumber && input.paymentMethod !== "PENDING") {
+      const openSession = await db.tableSession.findFirst({
+        where: { shopId: shop.id, tableNumber: input.tableNumber, status: { in: [...OPEN_STATUSES] } },
+      });
+      if (openSession) {
+        return NextResponse.json(
+          { error: "This table already has an open order — use Pending to add to it instead of starting a separate bill." },
+          { status: 409 }
         );
       }
     }

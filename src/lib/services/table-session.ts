@@ -8,7 +8,7 @@ export class BillAlreadyRequestedError extends Error {
   }
 }
 
-const OPEN_STATUSES = ["ACTIVE", "AWAITING_PAYMENT"] as const;
+export const OPEN_STATUSES = ["ACTIVE", "AWAITING_PAYMENT"] as const;
 
 export type SessionOrderLike = {
   status: string;
