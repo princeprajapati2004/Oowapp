@@ -1,26 +1,8 @@
 "use client";
 
-import { useEffect, useRef } from "react";
-import JsBarcode from "jsbarcode";
 import { Printer } from "lucide-react";
 import { Button } from "@/components/ui/button";
-
-function BarcodeSvg({ value }: { value: string }) {
-  const ref = useRef<SVGSVGElement | null>(null);
-
-  useEffect(() => {
-    if (!ref.current) return;
-    JsBarcode(ref.current, value, {
-      format: "CODE128",
-      width: 1.6,
-      height: 50,
-      displayValue: false,
-      margin: 0,
-    });
-  }, [value]);
-
-  return <svg ref={ref} />;
-}
+import { BarcodeSvg } from "@/components/shared/barcode-svg";
 
 export function OrderBarcodeLabels({
   billNumber,
