@@ -33,6 +33,8 @@ function toProductData(input: ProductInput) {
     unit: input.unit || null,
     barcode: input.barcode || null,
     foodType: input.foodType,
+    isCombo: input.isCombo,
+    offerNote: input.offerNote || null,
     isAvailable: input.isAvailable,
     isVisible: input.isVisible,
     stock: input.stock ?? null,

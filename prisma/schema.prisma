@@ -430,6 +430,8 @@ model Product {
   unit        String?
   barcode     String?
   foodType    FoodType @default(NA)
+  isCombo     Boolean  @default(false)
+  offerNote   String?
   isAvailable Boolean  @default(true)
   isVisible   Boolean  @default(true)
   stock       Int?

@@ -10,6 +10,7 @@ import {
   History,
   ImageOff,
   Loader2,
+  Plus,
   Sparkles,
   Trash2,
   Upload,
@@ -17,6 +18,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Select,
   SelectContent,
@@ -45,6 +47,8 @@ interface ExtractedItem {
   category: string;
   foodType: FoodType;
   gstNote: string | null;
+  isCombo: boolean;
+  offerNote: string | null;
   confidence: "high" | "low";
   existingProductId: string | null;
   duplicateOf: { id: string; name: string; price: number; imageUrl: string | null } | null;
@@ -58,11 +62,32 @@ interface DraftItem {
   category: string;
   foodType: FoodType;
   gstNote: string | null;
+  isCombo: boolean;
+  offerNote: string;
   confidence: "high" | "low";
   imageUrl: string | null;
   existingProductId: string | null;
   duplicateOf: { id: string; name: string; price: number; imageUrl: string | null } | null;
   resolution: Resolution;
+}
+
+function blankDraftItem(category: string): DraftItem {
+  return {
+    key: newKey(),
+    name: "",
+    description: "",
+    price: "",
+    category,
+    foodType: "NA",
+    gstNote: null,
+    isCombo: false,
+    offerNote: "",
+    confidence: "high",
+    imageUrl: null,
+    existingProductId: null,
+    duplicateOf: null,
+    resolution: "keep_both",
+  };
 }
 
 interface CommitResult {
@@ -73,7 +98,7 @@ interface CommitResult {
 }
 
 const ACCEPT =
-  "image/*,.pdf,.xlsx,.xls,.csv,.txt,application/pdf,text/csv,text/plain,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel";
+  "image/*,.heic,.heif,.pdf,.xlsx,.xls,.csv,.txt,application/pdf,text/csv,text/plain,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel";
 
 function newKey() {
   return Math.random().toString(36).slice(2);
@@ -119,6 +144,8 @@ export function MenuImportManager({
           category: item.category,
           foodType: item.foodType,
           gstNote: item.gstNote,
+          isCombo: item.isCombo,
+          offerNote: item.offerNote ?? "",
           confidence: item.confidence,
           imageUrl: item.duplicateOf?.imageUrl ?? null,
           existingProductId: item.existingProductId,
@@ -139,6 +166,10 @@ export function MenuImportManager({
 
   function removeItem(key: string) {
     setItems((prev) => prev.filter((item) => item.key !== key));
+  }
+
+  function addBlankItem() {
+    setItems((prev) => [...prev, blankDraftItem(categories[0]?.name ?? "Uncategorized")]);
   }
 
   function reset() {
@@ -163,6 +194,8 @@ export function MenuImportManager({
           category: item.category,
           foodType: item.foodType,
           gstNote: item.gstNote,
+          isCombo: item.isCombo,
+          offerNote: item.offerNote.trim() || null,
           confidence: item.confidence,
           existingProductId: item.existingProductId,
           resolution: item.duplicateOf ? item.resolution : undefined,
@@ -286,6 +319,9 @@ export function MenuImportManager({
           </p>
         </div>
         <div className="flex gap-2">
+          <Button variant="outline" onClick={addBlankItem} disabled={phase === "committing"}>
+            <Plus className="size-4" /> Add item
+          </Button>
           <Button variant="outline" onClick={reset} disabled={phase === "committing"}>
             Cancel
           </Button>
@@ -306,6 +342,8 @@ export function MenuImportManager({
               <TableHead className="min-w-32">Category</TableHead>
               {showFoodType && <TableHead className="w-24">Type</TableHead>}
               <TableHead className="min-w-40">Description</TableHead>
+              <TableHead className="w-16 text-center">Combo</TableHead>
+              <TableHead className="min-w-32">Offer</TableHead>
               <TableHead className="min-w-44">Duplicate</TableHead>
               <TableHead className="w-10" />
             </TableRow>
@@ -389,6 +427,20 @@ export function MenuImportManager({
                   <Input
                     value={item.description}
                     onChange={(e) => updateItem(item.key, { description: e.target.value })}
+                    className="h-8"
+                  />
+                </TableCell>
+                <TableCell className="text-center">
+                  <Checkbox
+                    checked={item.isCombo}
+                    onCheckedChange={(checked) => updateItem(item.key, { isCombo: checked === true })}
+                  />
+                </TableCell>
+                <TableCell>
+                  <Input
+                    value={item.offerNote}
+                    onChange={(e) => updateItem(item.key, { offerNote: e.target.value })}
+                    placeholder="—"
                     className="h-8"
                   />
                 </TableCell>

@@ -25,6 +25,13 @@ const CATEGORY_HEADERS = new Set(["category", "section", "group"]);
 const DESCRIPTION_HEADERS = new Set(["description", "desc", "details"]);
 const FOODTYPE_HEADERS = new Set(["foodtype", "vegnonveg", "veg"]);
 const GST_HEADERS = new Set(["gst", "tax", "gstrate", "taxrate"]);
+const COMBO_HEADERS = new Set(["combo", "iscombo", "bundle"]);
+const OFFER_HEADERS = new Set(["offer", "offernote", "discount", "promo"]);
+
+function parseBoolean(raw: unknown): boolean {
+  const value = String(raw ?? "").trim().toLowerCase();
+  return value === "true" || value === "yes" || value === "y" || value === "1";
+}
 
 function parsePrice(raw: unknown): number | null {
   if (raw === null || raw === undefined || raw === "") return null;
@@ -46,7 +53,7 @@ function parseFoodType(raw: unknown): MenuImportItem["foodType"] {
 
 /**
  * Deterministic parse — no AI call. Spreadsheets are already structured data,
- * so column-header matching is enough; reserve the Claude extraction path for
+ * so column-header matching is enough; reserve the Gemini extraction path for
  * unstructured sources (photos, PDFs, free-form text).
  */
 export function parseSpreadsheet(buffer: Buffer, kind: "excel" | "csv"): MenuImportItem[] {
@@ -68,6 +75,8 @@ export function parseSpreadsheet(buffer: Buffer, kind: "excel" | "csv"): MenuImp
     let description: string | null = null;
     let foodType: MenuImportItem["foodType"] = "NA";
     let gstNote: string | null = null;
+    let isCombo = false;
+    let offerNote: string | null = null;
 
     for (const [rawHeader, rawValue] of Object.entries(row)) {
       const header = normalizeHeader(rawHeader);
@@ -83,6 +92,10 @@ export function parseSpreadsheet(buffer: Buffer, kind: "excel" | "csv"): MenuImp
         foodType = parseFoodType(rawValue);
       } else if (GST_HEADERS.has(header)) {
         gstNote = rawValue == null ? null : String(rawValue).trim();
+      } else if (COMBO_HEADERS.has(header)) {
+        isCombo = parseBoolean(rawValue);
+      } else if (OFFER_HEADERS.has(header)) {
+        offerNote = rawValue == null ? null : String(rawValue).trim();
       }
     }
 
@@ -94,6 +107,8 @@ export function parseSpreadsheet(buffer: Buffer, kind: "excel" | "csv"): MenuImp
       category: category || UNCATEGORIZED,
       foodType,
       gstNote: gstNote || null,
+      isCombo,
+      offerNote: offerNote || null,
       confidence: price === null ? "low" : "high",
     });
   }
@@ -178,6 +193,8 @@ export async function commitMenuImport(
         categoryId,
         imageUrl: item.imageUrl || null,
         foodType: item.foodType,
+        isCombo: item.isCombo,
+        offerNote: item.offerNote || null,
       };
 
       if (item.resolution === "update" && item.existingProductId) {

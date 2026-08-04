@@ -7,6 +7,8 @@ export const menuImportItemSchema = z.object({
   category: z.string().trim().min(1, "Category is required").max(60, "Category name is too long"),
   foodType: z.enum(["VEG", "NON_VEG", "EGG", "NA"]),
   gstNote: z.string().trim().max(60).nullable(),
+  isCombo: z.boolean(),
+  offerNote: z.string().trim().max(60).nullable(),
   confidence: z.enum(["high", "low"]),
   existingProductId: z.string().nullable().optional(),
   resolution: z.enum(["skip", "update", "keep_both"]).optional(),

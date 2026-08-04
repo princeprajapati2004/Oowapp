@@ -58,6 +58,8 @@ const EMPTY_FORM = {
   unit: "",
   barcode: "",
   foodType: "NA" as "VEG" | "NON_VEG" | "EGG" | "NA",
+  isCombo: false,
+  offerNote: "",
   isAvailable: true,
   isVisible: true,
   stock: "" as string,
@@ -127,6 +129,8 @@ export function ProductsManager({
       unit: product.unit ?? "",
       barcode: product.barcode ?? "",
       foodType: product.foodType,
+      isCombo: product.isCombo,
+      offerNote: product.offerNote ?? "",
       isAvailable: product.isAvailable,
       isVisible: product.isVisible,
       stock: product.stock === null || product.stock === undefined ? "" : String(product.stock),
@@ -150,6 +154,8 @@ export function ProductsManager({
       unit: form.unit,
       barcode: form.barcode,
       foodType: form.foodType,
+      isCombo: form.isCombo,
+      offerNote: form.offerNote,
       isAvailable: form.isAvailable,
       isVisible: form.isVisible,
       stock: form.stock === "" ? null : Number(form.stock),
@@ -497,6 +503,21 @@ export function ProductsManager({
               />
             </FormRow>
 
+            <FormRow label="Offer (optional)" htmlFor="product-offer" description='e.g. "20% off" or "Buy 1 Get 1"'>
+              <Input
+                id="product-offer"
+                value={form.offerNote}
+                onChange={(e) => setForm((f) => ({ ...f, offerNote: e.target.value }))}
+              />
+            </FormRow>
+
+            <div className="flex items-center justify-between rounded-xl border bg-card px-4 py-3 transition-colors hover:bg-muted/40">
+              <p className="text-sm font-medium select-none">Combo item</p>
+              <Switch
+                checked={form.isCombo}
+                onCheckedChange={(v) => setForm((f) => ({ ...f, isCombo: v }))}
+              />
+            </div>
             <div className="flex items-center justify-between rounded-xl border bg-card px-4 py-3 transition-colors hover:bg-muted/40">
               <p className="text-sm font-medium select-none">Available</p>
               <Switch
