@@ -1,8 +1,19 @@
 import * as XLSX from "xlsx";
 import { db } from "@/lib/db";
 import { NotFoundError } from "@/lib/api-utils";
-import type { ExtractedMenuItem } from "@/lib/services/menu-import-ai";
+import { z } from "zod";
 
+const ExtractedItemSchema = z.object({
+  name: z.string(),
+  description: z.string().nullable(),
+  price: z.number().nullable(),
+  category: z.string(),
+  foodType: z.enum(["VEG", "NON_VEG", "EGG", "NA"]),
+  gstNote: z.string().nullable(),
+  confidence: z.enum(["high", "low"]),
+});
+
+export type ExtractedMenuItem = z.infer<typeof ExtractedItemSchema>;
 export type MenuImportItem = ExtractedMenuItem;
 
 export type DuplicateResolution = "skip" | "update" | "keep_both";

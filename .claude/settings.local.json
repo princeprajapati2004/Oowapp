@@ -58,7 +58,9 @@
       "Bash(git stash *)",
       "Bash(git rm *)",
       "Bash(git commit *)",
-      "Bash(git config *)"
+      "Bash(git config *)",
+      "Bash(git mergetool *)",
+      "Bash(git diff *)"
     ]
   }
 }

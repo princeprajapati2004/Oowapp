@@ -2,44 +2,15 @@ import { NextResponse } from "next/server";
 import { requireAdminSession } from "@/lib/session";
 import { handleApiError } from "@/lib/api-utils";
 import { db } from "@/lib/db";
-import {
-  extractMenuItemsFromImage,
-  extractMenuItemsFromPdf,
-  extractMenuItemsFromText,
-  isSupportedImageType,
-  type ImageMediaType,
-} from "@/lib/services/menu-import-ai";
 import { parseSpreadsheet, findDuplicateProductIds, type MenuImportItem } from "@/lib/services/menu-import";
 
 const MAX_SIZE = 10 * 1024 * 1024;
 
-type SourceType = "PHOTO" | "PDF" | "EXCEL" | "CSV" | "TEXT";
+type SourceType = "EXCEL" | "CSV";
 
-// Some browsers/OSes report an empty or generic file.type for HEIC/HEIF
-// photos (the default format iPhones save in) — fall back to the file
-// extension so those uploads still classify correctly, same as PDF/Excel/CSV
-// below already do.
-const IMAGE_EXTENSION_TYPES: Record<string, ImageMediaType> = {
-  ".jpg": "image/jpeg",
-  ".jpeg": "image/jpeg",
-  ".png": "image/png",
-  ".webp": "image/webp",
-  ".heic": "image/heic",
-  ".heif": "image/heif",
-};
-
-function resolveImageMediaType(file: File): ImageMediaType | null {
-  if (isSupportedImageType(file.type)) return file.type;
+function classify(file: File): SourceType | null {
   const name = file.name.toLowerCase();
-  const ext = Object.keys(IMAGE_EXTENSION_TYPES).find((e) => name.endsWith(e));
-  return ext ? IMAGE_EXTENSION_TYPES[ext] : null;
-}
 
-function classify(file: File, imageMediaType: ImageMediaType | null): SourceType | null {
-  const name = file.name.toLowerCase();
-  if (imageMediaType) return "PHOTO";
-
-  if (file.type === "application/pdf" || name.endsWith(".pdf")) return "PDF";
   if (
     file.type === "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" ||
     file.type === "application/vnd.ms-excel" ||
@@ -49,7 +20,6 @@ function classify(file: File, imageMediaType: ImageMediaType | null): SourceType
     return "EXCEL";
   }
   if (file.type === "text/csv" || name.endsWith(".csv")) return "CSV";
-  if (file.type === "text/plain" || name.endsWith(".txt")) return "TEXT";
   return null;
 }
 
@@ -66,11 +36,10 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "File must be smaller than 10MB" }, { status: 400 });
     }
 
-    const imageMediaType = resolveImageMediaType(file);
-    const sourceType = classify(file, imageMediaType);
+    const sourceType = classify(file);
     if (!sourceType) {
       return NextResponse.json(
-        { error: "Unsupported file type — use a photo, PDF, Excel, CSV, or text file." },
+        { error: "Unsupported file type — use Excel or CSV file." },
         { status: 400 }
       );
     }
@@ -79,15 +48,6 @@ export async function POST(request: Request) {
 
     let items: MenuImportItem[];
     switch (sourceType) {
-      case "PHOTO":
-        items = await extractMenuItemsFromImage(buffer.toString("base64"), imageMediaType!);
-        break;
-      case "PDF":
-        items = await extractMenuItemsFromPdf(buffer.toString("base64"));
-        break;
-      case "TEXT":
-        items = await extractMenuItemsFromText(buffer.toString("utf-8"));
-        break;
       case "EXCEL":
         items = parseSpreadsheet(buffer, "excel");
         break;
