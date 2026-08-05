@@ -156,6 +156,7 @@ export async function getPublicShopBundle(slug: string) {
   }
 
   // Strip internal gate fields before forwarding to the RSC — they must not reach the browser.
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const { isPublished: _pub, status: _status, ...publicBundle } = shop;
 
   // Load orderMode separately: the generated Prisma types don't include it yet —

@@ -1,9 +1,11 @@
 import { redirect } from "next/navigation";
+import Link from "next/link";
 import { Table2 } from "lucide-react";
 import { getAdminSession } from "@/lib/session";
 import { getShopById } from "@/lib/services/shop";
 import { db } from "@/lib/db";
 import { buildTableBoard } from "@/lib/services/table-session";
+import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/shared/empty-state";
 import { TablesBoard } from "@/components/admin/tables-board";
 
@@ -15,11 +17,16 @@ export default async function TablesPage() {
 
   if (!shop.enableTableQr) {
     return (
-      <div className="flex min-h-screen items-center justify-center px-4">
+      <div className="flex h-[60vh] items-center justify-center px-4">
         <EmptyState
           icon={Table2}
           title="Table QR ordering is off"
-          description='Turn on "Table QR ordering" in Settings to use the Tables board.'
+          description='Enable "Table QR ordering" in Settings → Restaurant settings to start using the Tables board.'
+          action={
+            <Button render={<Link href="/admin/settings" />}>
+              Go to Settings
+            </Button>
+          }
         />
       </div>
     );

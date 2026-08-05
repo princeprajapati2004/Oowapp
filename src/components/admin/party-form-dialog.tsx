@@ -70,6 +70,7 @@ export function PartyFormDialog({
   useEffect(() => {
     if (!open) return;
     if (editing) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setForm({
         type: editing.type,
         name: editing.name,

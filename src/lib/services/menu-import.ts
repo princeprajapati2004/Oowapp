@@ -3,7 +3,7 @@ import { db } from "@/lib/db";
 import { NotFoundError } from "@/lib/api-utils";
 import { z } from "zod";
 
-const ExtractedItemSchema = z.object({
+export const extractedItemSchema = z.object({
   name: z.string(),
   description: z.string().nullable(),
   price: z.number().nullable(),
@@ -13,7 +13,7 @@ const ExtractedItemSchema = z.object({
   confidence: z.enum(["high", "low"]),
 });
 
-export type ExtractedMenuItem = z.infer<typeof ExtractedItemSchema>;
+export type ExtractedMenuItem = z.infer<typeof extractedItemSchema>;
 export type MenuImportItem = ExtractedMenuItem;
 
 export type DuplicateResolution = "skip" | "update" | "keep_both";

@@ -85,10 +85,15 @@ export function ProductCard({
           <p className="line-clamp-2 text-xs text-muted-foreground leading-relaxed">{product.description}</p>
         ) : null}
         <div className="mt-auto space-y-2 pt-2">
-          <div className="flex items-baseline gap-1">
+          <div className="flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5">
             <span className="text-sm font-bold">{formatCurrency(product.price, currency)}</span>
             {product.unit ? <span className="text-xs text-muted-foreground">/{product.unit}</span> : null}
           </div>
+          {product.offerNote ? (
+            <p className="text-xs font-medium text-emerald-600 dark:text-emerald-400 leading-tight">
+              {product.offerNote}
+            </p>
+          ) : null}
           {product.isAvailable && (
             <div className="flex justify-center border-t pt-2">
               <QtyStepper value={quantityInCart} min={minQuantity} max={MAX_QUANTITY} onChange={onQuantityChange} />

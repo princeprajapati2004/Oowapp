@@ -21,9 +21,9 @@ export default async function OrderPage({
 
   const prefilledTable = resolvedSearch.table?.trim() || undefined;
   // taxes carries Prisma Decimal fields and isn't needed here — the bill math
-  // lives on the Current Order page (/order/[slug]/bill), which fetches its
-  // own copy — so it's dropped rather than forwarded to a Client Component.
-  const { categories, products, taxes: _taxes, ...shopInfo } = shop;
+  // lives on the Current Order page (/order/[slug]/bill), which fetches its own copy.
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const { categories, products, taxes: _t, ...shopInfo } = shop;
 
   const shopRow = await db.shop.findUnique({ where: { slug }, select: { id: true } });
 

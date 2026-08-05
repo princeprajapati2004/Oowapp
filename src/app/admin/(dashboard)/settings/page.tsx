@@ -101,7 +101,6 @@ export default async function SettingsPage() {
       content: (
         <OrderSettingsForm
           bare
-          businessType={shop.businessType}
           defaultValues={{
             requireCustomerName: shop.requireCustomerName,
             requirePhone: shop.requirePhone,

@@ -4,7 +4,6 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "sonner";
 import { orderSettingsSchema, type OrderSettingsInput } from "@/lib/validation/shop-settings";
-import type { BusinessType } from "@/lib/business-types";
 import { api, ApiError } from "@/lib/api-client";
 import { Button } from "@/components/ui/button";
 import { ToggleRow } from "@/components/shared/toggle-row";
@@ -12,11 +11,9 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 
 export function OrderSettingsForm({
   defaultValues,
-  businessType,
   bare,
 }: {
   defaultValues: OrderSettingsInput;
-  businessType: BusinessType;
   bare?: boolean;
 }) {
   const {

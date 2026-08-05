@@ -5,6 +5,7 @@ import {
   Area,
   BarChart,
   Bar,
+  Cell,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -47,7 +48,7 @@ function CustomTooltip({
   );
 }
 
-export function RevenueChart({ data, granularity, currency, onPointClick, selectedIndex }: Props) {
+export function RevenueChart({ data, granularity, currency, onPointClick, selectedIndex = null }: Props) {
   const hasData = data.some((p) => p.revenue > 0);
 
   if (!hasData) {
@@ -91,12 +92,15 @@ export function RevenueChart({ data, granularity, currency, onPointClick, select
             }
           />
           <Tooltip content={<CustomTooltip currency={currency} />} cursor={{ fill: "var(--muted)", opacity: 0.5 }} />
-          <Bar
-            dataKey="revenue"
-            fill="var(--color-primary)"
-            radius={[3, 3, 0, 0]}
-            maxBarSize={32}
-          />
+          <Bar dataKey="revenue" radius={[3, 3, 0, 0]} maxBarSize={32}>
+            {data.map((_, idx) => (
+              <Cell
+                key={idx}
+                fill="var(--color-primary)"
+                opacity={selectedIndex === null || selectedIndex === idx ? 1 : 0.35}
+              />
+            ))}
+          </Bar>
         </BarChart>
       </ResponsiveContainer>
     );

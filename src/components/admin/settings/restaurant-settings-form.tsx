@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { toast } from "sonner";
 import { Plus, Trash2, QrCode, MessageCircle, Monitor } from "lucide-react";
 import { restaurantSettingsSchema, type RestaurantSettingsInput } from "@/lib/validation/shop-settings";
@@ -111,7 +112,7 @@ export function RestaurantSettingsForm({
               variant="ghost"
               size="sm"
               className="h-8 gap-1.5 text-xs text-muted-foreground"
-              render={<a href="/admin/qr" />}
+              render={<Link href="/admin/qr" />}
             >
               <QrCode className="size-3.5" />
               Generate QRs

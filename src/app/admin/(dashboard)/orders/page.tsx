@@ -1,9 +1,11 @@
 import { redirect } from "next/navigation";
+import Link from "next/link";
 import { ClipboardList } from "lucide-react";
 import { getAdminSession } from "@/lib/session";
 import { getShopById } from "@/lib/services/shop";
 import { db } from "@/lib/db";
 import { serializeOrders } from "@/lib/serialize";
+import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/shared/empty-state";
 import { OrdersManager } from "@/components/admin/orders-manager";
 
@@ -25,8 +27,11 @@ export default async function OrdersPage({
         <EmptyState
           icon={ClipboardList}
           title="Order history is off"
-          description={
-            'Turn on "Save orders to database" in Settings to start logging orders here. Orders always reach you on WhatsApp either way.'
+          description='Turn on "Save orders to database" in Settings — orders always reach you on WhatsApp either way.'
+          action={
+            <Button render={<Link href="/admin/settings" />}>
+              Go to Settings
+            </Button>
           }
         />
       </div>

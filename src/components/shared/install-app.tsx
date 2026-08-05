@@ -26,6 +26,7 @@ export function InstallApp({ className, alwaysShow = false }: InstallAppProps) {
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setMounted(true);
 
     if (window.matchMedia("(display-mode: standalone)").matches) {

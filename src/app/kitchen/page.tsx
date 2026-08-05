@@ -1,6 +1,5 @@
 import { redirect } from "next/navigation";
 import { ChefHat } from "lucide-react";
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
 import { getStaffSession } from "@/lib/staff-session";
 import { getAdminSession } from "@/lib/session";
 import { getShopById } from "@/lib/services/shop";

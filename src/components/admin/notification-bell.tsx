@@ -25,6 +25,7 @@ export function NotificationBell({ initialNotifications }: { initialNotification
   const { play } = useChime();
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setSoundEnabled(localStorage.getItem(SOUND_PREF_KEY) === "1");
     setNowMs(Date.now());
   }, []);

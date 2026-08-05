@@ -189,6 +189,18 @@ export function ProductsManager({
     }
   }
 
+  async function handleToggleAvailable(product: ProductRow) {
+    const prev = [...products];
+    const next = !product.isAvailable;
+    setProducts((p) => p.map((x) => (x.id === product.id ? { ...x, isAvailable: next } : x)));
+    try {
+      await api.patch(`/api/admin/products/${product.id}`, { isAvailable: next });
+    } catch (error) {
+      setProducts(prev);
+      toast.error(error instanceof ApiError ? error.message : "Failed to update");
+    }
+  }
+
   function handleDeleteRequest(product: ProductRow) {
     setDeleteTarget(product);
   }
@@ -353,7 +365,14 @@ export function ProductsManager({
                       {!product.isVisible && <Badge variant="outline" className="text-xs">Hidden</Badge>}
                     </div>
                   </div>
-                  <div className={cn("flex items-center gap-0.5 shrink-0", view === "grid" && "px-3 pb-3")}>
+                  <div className={cn("flex items-center gap-1.5 shrink-0", view === "grid" && "px-3 pb-3")}>
+                    {view === "list" && (
+                      <Switch
+                        checked={product.isAvailable}
+                        onCheckedChange={() => handleToggleAvailable(product)}
+                        aria-label={product.isAvailable ? "Mark out of stock" : "Mark available"}
+                      />
+                    )}
                     <Button variant="ghost" size="icon-sm" onClick={() => openEdit(product)} aria-label="Edit" className="text-muted-foreground hover:text-foreground">
                       <Pencil className="size-3.5" />
                     </Button>
@@ -535,6 +554,9 @@ export function ProductsManager({
           </div>
 
           <div className="flex-shrink-0 border-t bg-muted/50 px-5 py-4 flex justify-end gap-2 rounded-b-xl">
+            <Button variant="outline" onClick={() => setDialogOpen(false)} disabled={saving}>
+              Cancel
+            </Button>
             <Button onClick={handleSave} disabled={saving}>
               {saving ? "Saving…" : "Save product"}
             </Button>

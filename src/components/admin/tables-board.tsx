@@ -176,7 +176,7 @@ export function TablesBoard({ initialTables, currency }: { initialTables: TableB
         <EmptyState
           icon={Table2}
           title="No tables configured"
-          description="Add table names in Settings to start using the Tables board."
+          description="Add table names in Settings → Restaurant settings to get started."
         />
       ) : (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
@@ -600,8 +600,6 @@ function TableDetailDialog({
     if (!open || !table?.session?.id) return;
     // eslint-disable-next-line react-hooks/set-state-in-effect
     loadDetail(table.session.id);
-    // loadDetail only uses stable setState setters + api (module-level), safe to omit.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, table?.session?.id]);
 
   // All non-cancelled items merged for the summary view

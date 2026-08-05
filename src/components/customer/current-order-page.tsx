@@ -248,7 +248,6 @@ export function CurrentOrderPage({
   // mark_paid). There is no customer self-confirm step.
   const [paymentIntent, setPaymentIntent] = useState<"idle" | "cash_pending" | "upi_confirm" | "upi_pending">("idle");
   const [upiQrDataUrl, setUpiQrDataUrl] = useState<string | null>(null);
-  const [uploadedQrFailed, setUploadedQrFailed] = useState(false);
   const [checkoutValues, setCheckoutValues] = useState<CheckoutInput | null>(null);
   const [directOrderPlaced, setDirectOrderPlaced] = useState(false);
 
@@ -333,7 +332,6 @@ export function CurrentOrderPage({
   // customer has requested the bill (or it's already paid) — matches the
   // same moment showPaymentSection below starts rendering payment options.
   const isFinalBillView = session?.status === "AWAITING_PAYMENT" || session?.status === "PAID";
-  const payeeDisplayName = shop.paymentDisplayName || shop.businessName;
 
   const orderNumber = session ? `INV-${session.id.slice(-8).toUpperCase()}` : "";
   const invoiceCustomerName = checkoutValues?.customerName || customer?.name || undefined;
@@ -908,7 +906,7 @@ export function CurrentOrderPage({
             {readyToGenerateBill && !requestingBill && (
               <Button
                 size="lg"
-                className="h-12 w-full gap-2 bg-[#007bff] text-white hover:bg-[#0069d9]"
+                className="h-12 w-full gap-2"
                 onClick={() => session && requestBill(session.id)}
               >
                 <ReceiptText className="size-4.5" /> Generate Final Bill

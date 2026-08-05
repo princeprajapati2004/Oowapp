@@ -177,7 +177,7 @@ export function OrdersManager({
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Orders</h1>
-          <p className="text-muted-foreground">Last {orders.length} orders placed through your menu.</p>
+          <p className="text-muted-foreground">{orders.length} order{orders.length !== 1 ? "s" : ""} placed through your menu.</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <div className="relative">

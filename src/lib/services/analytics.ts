@@ -93,7 +93,6 @@ function pct(current: number, prev: number): number | null {
 async function fetchSummary(shopId: string, from: Date, to: Date): Promise<DashboardSummary> {
   const where = { shopId, createdAt: { gte: from, lt: to } };
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [agg, completed, cancelled] = await Promise.all([
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (db.order as any).aggregate({

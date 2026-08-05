@@ -116,6 +116,7 @@ export function DashboardClient({ initialData, initialGranularity, currency, sho
   }, []);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchTableStats();
   }, [fetchTableStats]);
 

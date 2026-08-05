@@ -148,6 +148,7 @@ export function PartyStatement({
   // Date.now() can't be read during render (React purity rule) — captured
   // once on mount instead, same pattern as catalogLoadedAt in create-order-page.tsx.
   const [nowMs, setNowMs] = useState(0);
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => setNowMs(Date.now()), []);
   const [downloadingPdf, setDownloadingPdf] = useState(false);
   const [sharing, setSharing] = useState(false);

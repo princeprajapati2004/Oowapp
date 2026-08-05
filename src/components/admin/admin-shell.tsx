@@ -35,24 +35,27 @@ import type { NotificationEventPayload } from "@/lib/hooks/use-order-events";
 
 const NAV_ITEMS = [
   { href: "/admin", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/admin/settings", label: "Settings", icon: Settings },
+  { href: "/admin/orders", label: "Orders", icon: ClipboardList },
+  { href: "/admin/tables", label: "Tables", icon: Table2 },
   { href: "/admin/categories", label: "Categories", icon: FolderTree },
   { href: "/admin/products", label: "Products", icon: UtensilsCrossed },
   { href: "/admin/menu-import", label: "Menu Import", icon: Sparkles },
-  { href: "/admin/barcodes", label: "Barcodes", icon: Barcode },
   { href: "/admin/taxes", label: "Taxes", icon: Percent },
   { href: "/admin/qr", label: "QR Code", icon: QrCode },
-  { href: "/admin/orders", label: "Orders", icon: ClipboardList },
-  { href: "/admin/tables", label: "Tables", icon: Table2 },
+  { href: "/admin/barcodes", label: "Barcodes", icon: Barcode },
   { href: "/admin/parties", label: "Parties", icon: BookUser },
   { href: "/admin/staff", label: "Staff", icon: Users },
+  { href: "/admin/settings", label: "Settings", icon: Settings },
 ];
 
 function NavLinks({ pathname, onNavigate }: { pathname: string; onNavigate?: () => void }) {
   return (
     <nav className="space-y-0.5">
       {NAV_ITEMS.map((item) => {
-        const active = pathname === item.href;
+        const active =
+          item.href === "/admin"
+            ? pathname === "/admin"
+            : pathname === item.href || pathname.startsWith(item.href + "/");
         const Icon = item.icon;
         return (
           <Link
@@ -75,33 +78,18 @@ function NavLinks({ pathname, onNavigate }: { pathname: string; onNavigate?: () 
   );
 }
 
-export function AdminShell({
-  shopName,
+function SidebarContent({
+  pathname,
   shopSlug,
-  initialNotifications,
-  children,
+  onNavigate,
+  onLogout,
 }: {
-  shopName: string;
+  pathname: string;
   shopSlug: string;
-  initialNotifications: NotificationEventPayload[];
-  children: React.ReactNode;
+  onNavigate?: () => void;
+  onLogout: () => void;
 }) {
-  const pathname = usePathname();
-  const router = useRouter();
-  const [mobileOpen, setMobileOpen] = useState(false);
-
-  const currentItem = NAV_ITEMS.find(
-    (item) => item.href === pathname || (item.href !== "/admin" && pathname.startsWith(item.href + "/"))
-  );
-  const pageTitle = currentItem?.label ?? "Dashboard";
-
-  async function handleLogout() {
-    await api.post("/api/auth/logout");
-    router.push("/login");
-    router.refresh();
-  }
-
-  const SidebarContent = ({ onNavigate }: { onNavigate?: () => void }) => (
+  return (
     <>
       <NavLinks pathname={pathname} onNavigate={onNavigate} />
       <div className="mt-auto space-y-0.5 border-t pt-3">
@@ -112,7 +100,7 @@ export function AdminShell({
           className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-muted-foreground transition-all duration-150 hover:bg-muted hover:text-foreground"
         >
           <ExternalLink className="size-4 shrink-0" />
-          Preview customer view
+          Preview menu
         </Link>
         <Link
           href="/admin/kitchen"
@@ -133,7 +121,7 @@ export function AdminShell({
           Cash counter
         </Link>
         <button
-          onClick={() => { onNavigate?.(); handleLogout(); }}
+          onClick={() => { onNavigate?.(); onLogout(); }}
           className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-muted-foreground transition-all duration-150 hover:bg-muted hover:text-foreground"
         >
           <LogOut className="size-4 shrink-0" />
@@ -142,6 +130,36 @@ export function AdminShell({
       </div>
     </>
   );
+}
+
+export function AdminShell({
+  shopName,
+  shopSlug,
+  initialNotifications,
+  children,
+}: {
+  shopName: string;
+  shopSlug: string;
+  initialNotifications: NotificationEventPayload[];
+  children: React.ReactNode;
+}) {
+  const pathname = usePathname();
+  const router = useRouter();
+  const [mobileOpen, setMobileOpen] = useState(false);
+
+  const currentItem = NAV_ITEMS.find(
+    (item) =>
+      item.href === "/admin"
+        ? pathname === "/admin"
+        : pathname === item.href || pathname.startsWith(item.href + "/")
+  );
+  const pageTitle = currentItem?.label ?? "Dashboard";
+
+  async function handleLogout() {
+    await api.post("/api/auth/logout");
+    router.push("/login");
+    router.refresh();
+  }
 
   return (
     <div className="flex min-h-screen">
@@ -161,7 +179,7 @@ export function AdminShell({
           </div>
         </div>
         <div className="flex-1 overflow-y-auto p-3">
-          <SidebarContent />
+          <SidebarContent pathname={pathname} shopSlug={shopSlug} onLogout={handleLogout} />
         </div>
       </aside>
 
@@ -184,7 +202,12 @@ export function AdminShell({
                   <SheetTitle className="text-sm font-semibold truncate">{shopName}</SheetTitle>
                 </div>
                 <div className="flex-1 overflow-y-auto p-3">
-                  <SidebarContent onNavigate={() => setMobileOpen(false)} />
+                  <SidebarContent
+                    pathname={pathname}
+                    shopSlug={shopSlug}
+                    onNavigate={() => setMobileOpen(false)}
+                    onLogout={handleLogout}
+                  />
                 </div>
               </SheetContent>
             </Sheet>

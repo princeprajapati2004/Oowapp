@@ -39,6 +39,7 @@ export function QrCodeGenerator({
   useEffect(() => {
     const base = process.env.NEXT_PUBLIC_APP_URL || window.location.origin;
     const url = `${base}/order/${slug}`;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setOrderUrl(url);
     QRCode.toDataURL(url, { width: 480, margin: 2 }).then(setPngDataUrl);
     QRCode.toString(url, { type: "svg", width: 480, margin: 2 }).then(setSvgMarkup);

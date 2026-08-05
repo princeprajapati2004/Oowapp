@@ -20,10 +20,10 @@ export default async function BillPage({
   }
 
   const prefilledTable = resolvedSearch.table?.trim() || undefined;
-  // categories/products carry Prisma Decimal price fields, which can't cross
-  // the Server->Client boundary — this page doesn't need them, unlike the
-  // menu page which serializes and forwards them.
-  const { categories: _categories, products: _products, taxes, ...shopInfo } = shop;
+  // categories/products carry Prisma Decimal price fields which can't cross
+  // the Server->Client boundary — dropped here; menu page serializes and forwards them.
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const { categories: _c, products: _p, taxes, ...shopInfo } = shop;
 
   const shopRow = await db.shop.findUnique({ where: { slug }, select: { id: true } });
 

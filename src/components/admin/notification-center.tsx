@@ -21,6 +21,7 @@ export function NotificationCenter({ initialNotifications }: { initialNotificati
   const [clearing, setClearing] = useState(false);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
 
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => setNowMs(Date.now()), []);
 
   useOrderEvents("/api/admin/orders/stream", {
