@@ -9,6 +9,8 @@ export const productSchema = z.object({
   unit: z.string().trim().max(30).optional().or(z.literal("")),
   barcode: z.string().trim().max(64).optional().or(z.literal("")),
   foodType: z.enum(["VEG", "NON_VEG", "EGG", "NA"]).default("NA"),
+  isCombo: z.boolean().default(false),
+  offerNote: z.string().trim().max(60).optional().or(z.literal("")),
   isAvailable: z.boolean().default(true),
   isVisible: z.boolean().default(true),
   stock: z.coerce.number().int().nonnegative().nullable().optional(),
