@@ -4,8 +4,10 @@ import { useRef, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { toast } from "sonner";
+import * as XLSX from "xlsx";
 import {
   AlertTriangle,
+  Download,
   FileSpreadsheet,
   History,
   ImageOff,
@@ -97,6 +99,18 @@ export function MenuImportManager({
   const [result, setResult] = useState<CommitResult | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const showFoodType = isFoodBusiness(businessType);
+
+  function downloadTemplate() {
+    const ws = XLSX.utils.aoa_to_sheet([
+      ["Name", "Category", "Price"],
+      ["Paneer Butter Masala", "Main Course", 280],
+      ["Masala Chai", "Beverages", 30],
+      ["Gulab Jamun", "Desserts", 50],
+    ]);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Menu");
+    XLSX.writeFile(wb, "menu-template.xlsx");
+  }
 
   async function handleFile(file: File) {
     setPhase("extracting");
@@ -236,6 +250,13 @@ export function MenuImportManager({
               <p className="max-w-sm text-xs text-muted-foreground">
                 Supports photos of handwritten/printed menus, PDF menus, Excel/CSV sheets, and plain text lists.
               </p>
+              <button
+                type="button"
+                onClick={downloadTemplate}
+                className="flex items-center gap-1 text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground transition-colors"
+              >
+                <Download className="size-3" /> Download sample template
+              </button>
             </>
           )}
           <input

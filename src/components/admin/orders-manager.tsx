@@ -4,14 +4,21 @@ import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { ClipboardList, ExternalLink, Search, X, Copy } from "lucide-react";
+import { ClipboardList, ExternalLink, Search, X, Copy, MoreVertical } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { buttonVariants } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { EmptyState } from "@/components/shared/empty-state";
 import type { DuplicateOrderData } from "@/components/admin/create-order-page";
 import { api, ApiError } from "@/lib/api-client";
 import { formatCurrency } from "@/lib/utils/currency";
+import { cn } from "@/lib/utils";
 import { useOrderEvents, type OrderEventOrder } from "@/lib/hooks/use-order-events";
 import {
   Table,
@@ -303,26 +310,20 @@ export function OrdersManager({
                       </div>
                     </TableCell>
                     <TableCell className="p-1">
-                      <div className="flex items-center justify-end gap-0.5">
-                        <Button
-                          variant="ghost"
-                          size="icon-sm"
-                          className="text-muted-foreground hover:text-foreground"
-                          onClick={() => handleDuplicate(order)}
-                          aria-label="Duplicate order"
-                          title="Duplicate order"
-                        >
-                          <Copy className="size-3.5" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon-sm"
-                          className="text-muted-foreground hover:text-foreground"
-                          render={<Link href={`/admin/orders/${order.id}`} />}
-                          aria-label="View bill"
-                        >
-                          <ExternalLink className="size-3.5" />
-                        </Button>
+                      <div className="flex items-center justify-end">
+                        <DropdownMenu>
+                          <DropdownMenuTrigger className={cn(buttonVariants({ variant: "ghost", size: "icon-sm" }), "text-muted-foreground")} aria-label="Actions">
+                            <MoreVertical className="size-3.5" />
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end" className="w-44">
+                            <DropdownMenuItem render={<Link href={`/admin/orders/${order.id}`} />}>
+                              <ExternalLink className="size-3.5" /> View Bill
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => handleDuplicate(order)}>
+                              <Copy className="size-3.5" /> Duplicate
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
                       </div>
                     </TableCell>
                   </TableRow>

@@ -152,6 +152,22 @@ export async function PATCH(
   }
 }
 
+export async function DELETE(
+  _request: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const session = await requireAdminSession();
+    const { id } = await params;
+    const order = await db.order.findFirst({ where: { id, shopId: session.shopId } });
+    if (!order) throw new NotFoundError("Order not found");
+    await db.order.delete({ where: { id } });
+    return NextResponse.json({ ok: true });
+  } catch (error) {
+    return handleApiError(error);
+  }
+}
+
 async function handleEditItems(
   orderId: string,
   updates: { id: string; quantity: number }[],

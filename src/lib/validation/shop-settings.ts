@@ -51,6 +51,7 @@ export const orderSettingsSchema = z.object({
   saveOrdersToDb: z.boolean(),
   isPublished: z.boolean(),
   enableOrderBarcodeLabels: z.boolean(),
+  enableQrOrdering: z.boolean(),
 });
 export type OrderSettingsInput = z.infer<typeof orderSettingsSchema>;
 
@@ -73,6 +74,11 @@ export const notificationSettingsSchema = z.object({
   notifyOrderUpdates: z.boolean(),
 });
 export type NotificationSettingsInput = z.infer<typeof notificationSettingsSchema>;
+
+export const menuSettingsSchema = z.object({
+  showProductImages: z.boolean(),
+});
+export type MenuSettingsInput = z.infer<typeof menuSettingsSchema>;
 
 export const restaurantSettingsSchema = z.object({
   enableTableQr: z.boolean(),

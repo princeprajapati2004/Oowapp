@@ -6,6 +6,7 @@ import {
   businessInfoSchema,
   paymentSettingsSchema,
   orderSettingsSchema,
+  menuSettingsSchema,
   restaurantSettingsSchema,
   notificationSettingsSchema,
   billNumberingSchema,
@@ -38,7 +39,8 @@ export async function PATCH(request: Request) {
         tableNames: JSON.stringify(parsed.tableNames),
         orderMode: parsed.orderMode,
       };
-    } else if (section === "notifications") {
+    } else if (section === "menu") data = menuSettingsSchema.parse(rest);
+    else if (section === "notifications") {
       data = notificationSettingsSchema.parse(rest);
     } else if (section === "billNumbering") {
       const parsed = billNumberingSchema.parse(rest);

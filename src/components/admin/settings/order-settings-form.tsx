@@ -91,6 +91,12 @@ export function OrderSettingsForm({
         checked={values.enableOrderBarcodeLabels}
         onCheckedChange={(v) => setValue("enableOrderBarcodeLabels", v)}
       />
+      <ToggleRow
+        label="Enable QR ordering"
+        description="When disabled, customers scanning QR codes see a staff-only message and cannot place orders."
+        checked={values.enableQrOrdering}
+        onCheckedChange={(v) => setValue("enableQrOrdering", v)}
+      />
 
       <Button type="submit" disabled={isSubmitting}>
         {isSubmitting ? "Saving…" : "Save order settings"}

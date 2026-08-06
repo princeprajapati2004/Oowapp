@@ -86,6 +86,8 @@ export type ShopSettingsInput = Partial<{
   saveOrdersToDb: boolean;
   isPublished: boolean;
   enableOrderBarcodeLabels: boolean;
+  enableQrOrdering: boolean;
+  showProductImages: boolean;
   enableTableQr: boolean;
   tableNames: string | null;
   notifyNewOrders: boolean;
@@ -132,6 +134,9 @@ export async function getPublicShopBundle(slug: string) {
       phonePeUpi: true,
       paytmUpi: true,
       bhimUpi: true,
+      // Feature flags — forwarded to the customer UI
+      enableQrOrdering: true,
+      showProductImages: true,
       // Gate checks — stripped before the value is returned to the caller
       isPublished: true,
       status: true,

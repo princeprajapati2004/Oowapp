@@ -283,6 +283,12 @@ model Shop {
 
   isPublished Boolean  @default(true)
 
+  // QR ordering — when false customers see a "staff only" message
+  enableQrOrdering Boolean @default(true)
+
+  // Show product images in menu and order-taking panels
+  showProductImages Boolean @default(true)
+
   // Restaurant-specific settings
   enableTableQr Boolean @default(false)
   tableNames    String? // JSON-encoded string[]
@@ -315,6 +321,7 @@ model Shop {
   notifications      Notification[]
   menuImages         MenuImage[]
   menuImports        MenuImport[]
+  expenses           Expense[]
 
   @@map("shops")
 }
@@ -800,6 +807,25 @@ model PushSubscription {
 // OrderEvent over the existing per-shop SSE channel (see
 // lib/server/order-events.ts), so an already-open dashboard tab updates
 // live; this row is what makes it durable across reloads. Writes are
+// Expense tracking — owner-only, not visible to staff
+model Expense {
+  id            String   @id @default(cuid())
+  shopId        String
+  shop          Shop     @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  name          String
+  category      String
+  amount        Decimal  @db.Decimal(10, 2)
+  date          DateTime
+  paymentMethod String   // CASH | UPI | CARD | BANK
+  notes         String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([shopId])
+  @@index([shopId, date])
+  @@map("expenses")
+}
+
 // unconditional — not gated by the notifyNewOrders/notifyOrderUpdates push
 // toggles, which only affect the separate push call. No "archived" status —
 // delete (single or clearAll) is the only removal path.

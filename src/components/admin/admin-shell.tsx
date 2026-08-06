@@ -22,6 +22,7 @@ import {
   Users,
   Barcode,
   Sparkles,
+  Receipt,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger, SheetTitle } from "@/components/ui/sheet";
@@ -36,6 +37,7 @@ import type { NotificationEventPayload } from "@/lib/hooks/use-order-events";
 const NAV_ITEMS = [
   { href: "/admin", label: "Dashboard", icon: LayoutDashboard },
   { href: "/admin/orders", label: "Orders", icon: ClipboardList },
+  { href: "/admin/expenses", label: "Expenses", icon: Receipt },
   { href: "/admin/tables", label: "Tables", icon: Table2 },
   { href: "/admin/categories", label: "Categories", icon: FolderTree },
   { href: "/admin/products", label: "Products", icon: UtensilsCrossed },

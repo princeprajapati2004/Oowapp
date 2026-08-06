@@ -35,6 +35,7 @@ interface AddItemsPanelProps {
   onUpdateQty: (productId: string, delta: number) => void;
   onCommitSearch: (query: string) => void;
   onClose: () => void;
+  showImages?: boolean;
 }
 
 function stockLabel(product: Product) {
@@ -61,6 +62,7 @@ export function AddItemsPanel({
   onUpdateQty,
   onCommitSearch,
   onClose,
+  showImages = true,
 }: AddItemsPanelProps) {
   const [search, setSearch] = useState("");
   const [searchFocused, setSearchFocused] = useState(false);
@@ -402,15 +404,17 @@ export function AddItemsPanel({
                   key={product.id}
                   className="flex items-center gap-3 rounded-xl border bg-card p-2.5 shadow-sm transition-shadow hover:shadow-md"
                 >
-                  <div className="relative size-14 shrink-0 overflow-hidden rounded-lg border bg-muted">
-                    {product.imageUrl ? (
-                      <Image src={product.imageUrl} alt={product.name} fill sizes="56px" className="object-cover" unoptimized />
-                    ) : (
-                      <div className="flex size-full items-center justify-center">
-                        <ImageOff className="size-5 text-muted-foreground/50" />
-                      </div>
-                    )}
-                  </div>
+                  {showImages && (
+                    <div className="relative size-14 shrink-0 overflow-hidden rounded-lg border bg-muted">
+                      {product.imageUrl ? (
+                        <Image src={product.imageUrl} alt={product.name} fill sizes="56px" className="object-cover" unoptimized />
+                      ) : (
+                        <div className="flex size-full items-center justify-center">
+                          <ImageOff className="size-5 text-muted-foreground/50" />
+                        </div>
+                      )}
+                    </div>
+                  )}
 
                   <div className="min-w-0 flex-1">
                     <div className="truncate text-sm font-medium">{highlightMatch(product.name, search)}</div>

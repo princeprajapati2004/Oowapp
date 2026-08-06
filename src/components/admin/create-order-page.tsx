@@ -114,11 +114,13 @@ export function CreateOrderPage({
   shopSlug,
   initialOrderType,
   initialTableNumber,
+  showProductImages = true,
 }: {
   currency: string;
   shopSlug: string;
   initialOrderType?: OrderType;
   initialTableNumber?: string;
+  showProductImages?: boolean;
 }) {
   const router = useRouter();
 
@@ -1167,6 +1169,7 @@ export function CreateOrderPage({
           onUpdateQty={updateQty}
           onCommitSearch={commitSearch}
           onClose={() => setAddItemsOpen(false)}
+          showImages={showProductImages}
         />
       )}
     </div>

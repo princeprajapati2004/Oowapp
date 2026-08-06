@@ -12,6 +12,7 @@ import { resolveFeatures } from "@/lib/services/feature-permission";
 import { BusinessInfoForm } from "@/components/admin/settings/business-info-form";
 import { PaymentSettingsForm } from "@/components/admin/settings/payment-settings-form";
 import { OrderSettingsForm } from "@/components/admin/settings/order-settings-form";
+import { MenuSettingsForm } from "@/components/admin/settings/menu-settings-form";
 import { BillNumberingForm } from "@/components/admin/settings/bill-numbering-form";
 import { RestaurantSettingsForm } from "@/components/admin/settings/restaurant-settings-form";
 import { NotificationSettingsForm } from "@/components/admin/settings/notification-settings-form";
@@ -111,7 +112,19 @@ export default async function SettingsPage() {
             saveOrdersToDb: shop.saveOrdersToDb,
             isPublished: shop.isPublished,
             enableOrderBarcodeLabels: (shopAny.enableOrderBarcodeLabels as boolean) ?? false,
+            enableQrOrdering: (shopAny.enableQrOrdering as boolean) ?? true,
           }}
+        />
+      ),
+    },
+    {
+      id: "menu",
+      title: "Menu display",
+      description: "Control what customers and staff see on the menu.",
+      content: (
+        <MenuSettingsForm
+          bare
+          defaultValues={{ showProductImages: (shopAny.showProductImages as boolean) ?? true }}
         />
       ),
     },

@@ -35,12 +35,16 @@ export default async function CreateManualOrderPage({
     );
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const shopAny = shop as any;
+
   return (
     <CreateOrderPage
       currency={shop.currency}
       shopSlug={shop.slug}
       initialOrderType={initialTableNumber ? "DINE_IN" : initialOrderType}
       initialTableNumber={initialTableNumber}
+      showProductImages={(shopAny.showProductImages as boolean) ?? true}
     />
   );
 }

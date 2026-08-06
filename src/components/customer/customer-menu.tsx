@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Search, ShoppingCart, PackageSearch, History, LogIn, LogOut, Lock, AlertTriangle } from "lucide-react";
+import { Search, ShoppingCart, PackageSearch, History, LogIn, LogOut, Lock, AlertTriangle, Users } from "lucide-react";
 import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -218,6 +218,25 @@ export function CustomerMenu({
     router.refresh();
   }
 
+  // ── QR ordering disabled screen ───────────────────────────────────────────
+  if (shop.enableQrOrdering === false) {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center bg-muted/20 px-6 text-center">
+        <div className="max-w-sm space-y-5">
+          <div className="mx-auto flex size-16 items-center justify-center rounded-full bg-muted">
+            <Users className="size-8 text-muted-foreground" />
+          </div>
+          <div className="space-y-2">
+            <h1 className="text-2xl font-bold">Orders via Staff Only</h1>
+            <p className="text-muted-foreground">
+              This restaurant currently accepts orders through staff only. Please ask a staff member to take your order.
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   // ── Table occupied screen ─────────────────────────────────────────────────
   // Show after localStorage hydration confirms this browser doesn't own the session.
   if (isTableOwner === false && activeSession) {
@@ -329,7 +348,12 @@ export function CustomerMenu({
             description="Try a different search or category."
           />
         ) : (
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+          <div className={cn(
+            "gap-3",
+            shop.showProductImages ?? true
+              ? "grid grid-cols-2 sm:grid-cols-3"
+              : "flex flex-col"
+          )}>
             {filtered.map((product) => (
               <ProductCard
                 key={product.id}
@@ -338,6 +362,7 @@ export function CustomerMenu({
                 quantityInCart={effectiveQty(product.id)}
                 minQuantity={lockedQuantities.get(product.id) ?? 0}
                 onQuantityChange={(quantity) => handleQuantityChange(product, quantity)}
+                showImages={shop.showProductImages ?? true}
               />
             ))}
           </div>

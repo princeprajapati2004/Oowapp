@@ -67,4 +67,6 @@ export type CustomerShop = Pick<
   | "phonePeUpi"
   | "paytmUpi"
   | "bhimUpi"
+  | "enableQrOrdering"
+  | "showProductImages"
 > & { orderMode: OrderMode };

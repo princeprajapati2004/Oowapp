@@ -2,13 +2,22 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import Image from "next/image";
 import QRCode from "qrcode";
-import { ArrowLeft, Download, Tag, X, ReceiptText, QrCode as QrCodeIcon, Printer, Share2, CheckCircle2, PartyPopper, Loader2, Barcode } from "lucide-react";
+import { ArrowLeft, Download, Tag, X, ReceiptText, QrCode as QrCodeIcon, Printer, Share2, CheckCircle2, PartyPopper, Loader2, Barcode, MoreVertical, Trash2 } from "lucide-react";
 import { toast } from "sonner";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+} from "@/components/ui/dropdown-menu";
+import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 import { api, ApiError } from "@/lib/api-client";
 import { formatCurrency } from "@/lib/utils/currency";
 import { cn } from "@/lib/utils";
@@ -450,9 +459,12 @@ export function BillDetail({
   shop: BillShopData;
   justCreated?: boolean;
 }) {
+  const router = useRouter();
   const [order, setOrder] = useState(initialOrder);
   const [downloadingPdf, setDownloadingPdf] = useState(false);
   const [completingOrder, setCompletingOrder] = useState(false);
+  const [deletingOrder, setDeletingOrder] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showCreatedBanner, setShowCreatedBanner] = useState(!!justCreated);
   const [trackingQr, setTrackingQr] = useState<string | null>(null);
 
@@ -511,6 +523,19 @@ export function BillDetail({
       toast.success("Invoice summary copied to clipboard");
     } catch {
       toast.error("Sharing isn't supported on this browser");
+    }
+  }
+
+  async function handleDeleteOrder() {
+    setDeletingOrder(true);
+    try {
+      await api.delete(`/api/admin/orders/${order.id}`);
+      router.push("/admin/orders");
+      toast.success("Order deleted");
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Failed to delete order");
+    } finally {
+      setDeletingOrder(false);
     }
   }
 
@@ -894,35 +919,49 @@ export function BillDetail({
         </div>
       </div>
 
-      <div className="flex flex-wrap items-center gap-2 print:hidden">
-        <Button variant="outline" size="sm" className="h-9 gap-1.5" onClick={() => window.print()}>
-          <Printer className="size-4" /> Print
-        </Button>
-        <Button variant="outline" size="sm" className="h-9 gap-1.5" onClick={handleShare}>
-          <Share2 className="size-4" /> Share
-        </Button>
-        <Button variant="outline" size="sm" className="h-9 gap-1.5" disabled={downloadingPdf} onClick={handleDownloadPdf}>
-          <Download className="size-4" />
-          {downloadingPdf ? "Generating…" : "Download PDF"}
-        </Button>
-        {shop.enableOrderBarcodeLabels && (
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-9 gap-1.5"
-            render={<a href={`/admin/orders/${order.id}/barcodes`} target="_blank" rel="noopener noreferrer" />}
-            nativeButton={false}
-          >
-            <Barcode className="size-4" /> Print Barcode
-          </Button>
-        )}
+      <div className="flex items-center gap-2 print:hidden">
         {order.status !== "COMPLETED" && order.status !== "CANCELLED" && (
           <Button size="sm" className="h-9 gap-1.5" disabled={completingOrder} onClick={handleCompleteOrder}>
             <CheckCircle2 className="size-4" />
             {completingOrder ? "Completing…" : "Complete Order"}
           </Button>
         )}
+        <DropdownMenu>
+          <DropdownMenuTrigger className={cn(buttonVariants({ variant: "outline", size: "icon" }), "h-9 w-9")} aria-label="More actions">
+            <MoreVertical className="size-4" />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-48">
+            <DropdownMenuItem onClick={() => window.print()}>
+              <Printer className="size-4" /> Print Bill
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={handleShare}>
+              <Share2 className="size-4" /> Share Bill
+            </DropdownMenuItem>
+            <DropdownMenuItem disabled={downloadingPdf} onClick={handleDownloadPdf}>
+              <Download className="size-4" /> Download PDF
+            </DropdownMenuItem>
+            {shop.enableOrderBarcodeLabels && (
+              <DropdownMenuItem render={<a href={`/admin/orders/${order.id}/barcodes`} target="_blank" rel="noopener noreferrer" />}>
+                <Barcode className="size-4" /> Print Barcode
+              </DropdownMenuItem>
+            )}
+            <DropdownMenuSeparator />
+            <DropdownMenuItem variant="destructive" disabled={deletingOrder} onClick={() => setShowDeleteConfirm(true)}>
+              <Trash2 className="size-4" /> Delete Order
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
+
+      <ConfirmDialog
+        open={showDeleteConfirm}
+        onOpenChange={setShowDeleteConfirm}
+        title="Delete Order"
+        description="This order will be permanently deleted. This action cannot be undone."
+        confirmLabel="Delete"
+        destructive
+        onConfirm={handleDeleteOrder}
+      />
 
       {/* Bill Card */}
       <div className="rounded-2xl border bg-card overflow-hidden print:rounded-none print:border-0">
