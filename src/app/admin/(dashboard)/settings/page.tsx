@@ -80,7 +80,6 @@ export default async function SettingsPage() {
           bare
           defaultValues={{
             upiId: shop.upiId ?? "",
-            paymentDisplayName: (shopAny.paymentDisplayName as string | null) ?? "",
             acceptCash: shop.acceptCash,
             bankAccountName: shop.bankAccountName ?? "",
             bankAccountNumber: shop.bankAccountNumber ?? "",
