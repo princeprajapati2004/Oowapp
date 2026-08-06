@@ -11,7 +11,7 @@ const patchSchema = z.discriminatedUnion("action", [
   z.object({
     action: z.literal("mark_paid"),
     // QR = customer scanned restaurant's payment QR; UPI = UPI deep link; VOID = release without payment
-    paymentMethod: z.enum(["CASH", "UPI", "QR", "CARD", "WALLET", "SPLIT", "OTHER"]),
+    paymentMethod: z.enum(["CASH", "UPI", "QR", "CARD", "WALLET", "SPLIT", "VOID", "OTHER"]),
     paymentNote: z.string().trim().max(200).optional(),
   }),
   z.object({ action: z.literal("request_bill") }),
