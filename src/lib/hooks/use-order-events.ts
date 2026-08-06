@@ -12,13 +12,120 @@ type OrderEventHandlers = {
   onNotification?: (notification: NotificationEventPayload) => void;
 };
 
+type HandlerKind = keyof OrderEventHandlers;
+type Dispatch = (kind: HandlerKind, payload: unknown) => void;
+
 const INITIAL_RETRY_MS = 1000;
 const MAX_RETRY_MS = 15_000;
 
+type SharedConnection = {
+  source: EventSource | null;
+  retryTimer: ReturnType<typeof setTimeout> | null;
+  retryDelay: number;
+  stopped: boolean;
+  dispatchers: Set<Dispatch>;
+  refCount: number;
+};
+
+// One real EventSource per endpoint, shared across every component mounted
+// in the tab that subscribes to it. Several admin components (notification
+// bell in the shell header, the dashboard, orders/tables managers, the bill
+// detail modal) all independently listen to the same
+// `/api/admin/orders/stream` endpoint — without this, each one opened its
+// own connection, so a single open tab could hold 2-3+ concurrent long-lived
+// connections to the same shop channel. Module-scoped (not React context) so
+// it works across the whole tab regardless of where in the tree a consumer
+// mounts, same rationale as the orderEventBus singleton on the server side.
+const sharedConnections = new Map<string, SharedConnection>();
+
+function parseField<T>(event: Event, field: string): T | null {
+  try {
+    return JSON.parse((event as MessageEvent).data)[field] as T;
+  } catch {
+    return null;
+  }
+}
+
+function getOrCreateConnection(endpoint: string): SharedConnection {
+  const existing = sharedConnections.get(endpoint);
+  if (existing) return existing;
+
+  const conn: SharedConnection = {
+    source: null,
+    retryTimer: null,
+    retryDelay: INITIAL_RETRY_MS,
+    stopped: false,
+    dispatchers: new Set(),
+    refCount: 0,
+  };
+  sharedConnections.set(endpoint, conn);
+
+  const broadcast = (kind: HandlerKind, payload: unknown) => {
+    conn.dispatchers.forEach((dispatch) => dispatch(kind, payload));
+  };
+
+  function connect() {
+    if (conn.stopped) return;
+    const source = new EventSource(endpoint);
+    conn.source = source;
+
+    source.addEventListener("open", () => {
+      conn.retryDelay = INITIAL_RETRY_MS;
+    });
+
+    source.addEventListener("order.created", (event) => {
+      const order = parseField<OrderEventOrder>(event, "order");
+      if (order) broadcast("onCreated", order);
+    });
+
+    source.addEventListener("order.updated", (event) => {
+      const order = parseField<OrderEventOrder>(event, "order");
+      if (order) broadcast("onUpdated", order);
+    });
+
+    source.addEventListener("session.created", (event) => {
+      const session = parseField<TableSessionEventPayload>(event, "session");
+      if (session) broadcast("onSessionUpdated", session);
+    });
+
+    source.addEventListener("session.updated", (event) => {
+      const session = parseField<TableSessionEventPayload>(event, "session");
+      if (session) broadcast("onSessionUpdated", session);
+    });
+
+    source.addEventListener("notification.created", (event) => {
+      const notification = parseField<NotificationEventPayload>(event, "notification");
+      if (notification) broadcast("onNotification", notification);
+    });
+
+    source.onerror = () => {
+      source.close();
+      if (conn.stopped) return;
+      conn.retryTimer = setTimeout(connect, conn.retryDelay);
+      conn.retryDelay = Math.min(conn.retryDelay * 2, MAX_RETRY_MS);
+    };
+  }
+
+  connect();
+  return conn;
+}
+
+function releaseConnection(endpoint: string) {
+  const conn = sharedConnections.get(endpoint);
+  if (!conn || conn.refCount > 0) return;
+
+  conn.stopped = true;
+  if (conn.retryTimer) clearTimeout(conn.retryTimer);
+  conn.source?.close();
+  sharedConnections.delete(endpoint);
+}
+
 /**
  * Subscribes to a live order SSE stream for as long as the calling component
- * is mounted. Reconnects with backoff on drop — EventSource's own
- * auto-reconnect is disabled once we call close(), so backoff is manual.
+ * is mounted. Every component subscribing to the same `endpoint` shares one
+ * underlying EventSource (refcounted) instead of each opening its own —
+ * reconnects with backoff on drop. EventSource's own auto-reconnect is
+ * disabled once we call close(), so backoff is manual.
  */
 export function useOrderEvents(endpoint: string, { onCreated, onUpdated, onSessionUpdated, onNotification }: OrderEventHandlers) {
   const onCreatedRef = useRef(onCreated);
@@ -42,82 +149,31 @@ export function useOrderEvents(endpoint: string, { onCreated, onUpdated, onSessi
     // an EventSource against the current page URL.
     if (!endpoint) return;
 
-    let source: EventSource | null = null;
-    let retryTimer: ReturnType<typeof setTimeout> | null = null;
-    let retryDelay = INITIAL_RETRY_MS;
-    let stopped = false;
-
-    function parseOrder(event: Event): OrderEventOrder | null {
-      try {
-        return JSON.parse((event as MessageEvent).data).order as OrderEventOrder;
-      } catch {
-        return null;
+    const dispatch: Dispatch = (kind, payload) => {
+      switch (kind) {
+        case "onCreated":
+          onCreatedRef.current?.(payload as OrderEventOrder);
+          break;
+        case "onUpdated":
+          onUpdatedRef.current?.(payload as OrderEventOrder);
+          break;
+        case "onSessionUpdated":
+          onSessionUpdatedRef.current?.(payload as TableSessionEventPayload);
+          break;
+        case "onNotification":
+          onNotificationRef.current?.(payload as NotificationEventPayload);
+          break;
       }
-    }
+    };
 
-    function parseSession(event: Event): TableSessionEventPayload | null {
-      try {
-        return JSON.parse((event as MessageEvent).data).session as TableSessionEventPayload;
-      } catch {
-        return null;
-      }
-    }
-
-    function parseNotification(event: Event): NotificationEventPayload | null {
-      try {
-        return JSON.parse((event as MessageEvent).data).notification as NotificationEventPayload;
-      } catch {
-        return null;
-      }
-    }
-
-    function connect() {
-      if (stopped) return;
-      source = new EventSource(endpoint);
-
-      source.addEventListener("open", () => {
-        retryDelay = INITIAL_RETRY_MS;
-      });
-
-      source.addEventListener("order.created", (event) => {
-        const order = parseOrder(event);
-        if (order) onCreatedRef.current?.(order);
-      });
-
-      source.addEventListener("order.updated", (event) => {
-        const order = parseOrder(event);
-        if (order) onUpdatedRef.current?.(order);
-      });
-
-      source.addEventListener("session.created", (event) => {
-        const session = parseSession(event);
-        if (session) onSessionUpdatedRef.current?.(session);
-      });
-
-      source.addEventListener("session.updated", (event) => {
-        const session = parseSession(event);
-        if (session) onSessionUpdatedRef.current?.(session);
-      });
-
-      source.addEventListener("notification.created", (event) => {
-        const notification = parseNotification(event);
-        if (notification) onNotificationRef.current?.(notification);
-      });
-
-      source.onerror = () => {
-        source?.close();
-        if (stopped) return;
-        retryTimer = setTimeout(connect, retryDelay);
-        retryDelay = Math.min(retryDelay * 2, MAX_RETRY_MS);
-      };
-    }
-
-    connect();
+    const conn = getOrCreateConnection(endpoint);
+    conn.refCount += 1;
+    conn.dispatchers.add(dispatch);
 
     return () => {
-      stopped = true;
-      if (retryTimer) clearTimeout(retryTimer);
-      source?.close();
+      conn.dispatchers.delete(dispatch);
+      conn.refCount -= 1;
+      releaseConnection(endpoint);
     };
   }, [endpoint]);
 }
