@@ -3,6 +3,8 @@ import { createOrderEventStream } from "@/lib/server/order-events";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+// See src/app/api/admin/orders/stream/route.ts for why this is explicit.
+export const maxDuration = 60;
 
 export async function GET(
   request: Request,
