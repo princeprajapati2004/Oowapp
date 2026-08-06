@@ -119,11 +119,6 @@ enum OrderMode {
   DIRECT
 }
 
-enum PaymentStatus {
-  PENDING
-  PAID
-}
-
 enum StaffRole {
   MANAGER
   KITCHEN
