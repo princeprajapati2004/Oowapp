@@ -21,7 +21,7 @@ import {
   BookUser,
   Users,
   Barcode,
-  Sparkles,
+  FileSpreadsheet,
   Receipt,
   ChevronDown,
   Clipboard,
@@ -59,7 +59,6 @@ function isGroup(entry: NavEntry): entry is NavGroup {
 
 export type ShellCopy = {
   catalogueGroupLabel: string;
-  importLabel: string;
   previewLabel: string;
   orderDisplayLabel: string;
 };
@@ -86,7 +85,7 @@ function buildNavEntries(foodBusiness: boolean, copy: ShellCopy): NavEntry[] {
       items: [
         { href: "/admin/categories", label: "Categories", icon: FolderTree },
         { href: "/admin/products", label: "Products", icon: UtensilsCrossed },
-        { href: "/admin/menu-import", label: copy.importLabel, icon: Sparkles },
+        { href: "/admin/menu-import", label: "Bulk Import", icon: FileSpreadsheet },
       ],
     },
     {

@@ -13,7 +13,7 @@ import {
   List as ListIcon,
   UtensilsCrossed,
   ImageOff,
-  Sparkles,
+  FileSpreadsheet,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -251,7 +251,7 @@ export function ProductsManager({
         </div>
         <div className="flex gap-2">
           <Button variant="outline" render={<Link href="/admin/menu-import" />} nativeButton={false}>
-            <Sparkles className="size-4" /> Import with AI
+            <FileSpreadsheet className="size-4" /> Bulk Import
           </Button>
           <Button onClick={openCreate} disabled={categories.length === 0}>
             <Plus className="size-4" /> Add product

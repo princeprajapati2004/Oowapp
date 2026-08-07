@@ -50,7 +50,6 @@ export function businessTypeCopy(businessType: BusinessType) {
     addToCartLabel: deliveryFirst ? "Add to Order" : "Add to Cart",
     // Sidebar / nav labels
     catalogueGroupLabel: food ? "Menu" : "Catalogue",
-    importLabel: food ? "Menu Import" : "Import Products",
     previewLabel: food ? "Preview menu" : "Preview store",
     orderDisplayLabel: food ? "Kitchen display" : "Order display",
   };

@@ -55,11 +55,6 @@ function parseFoodType(raw: unknown): MenuImportItem["foodType"] {
   return "NA";
 }
 
-/**
- * Deterministic parse — no AI call. Spreadsheets are already structured data,
- * so column-header matching is enough; reserve the Claude extraction path for
- * unstructured sources (photos, PDFs, free-form text).
- */
 export function parseSpreadsheet(buffer: Buffer, kind: "excel" | "csv"): MenuImportItem[] {
   const workbook =
     kind === "csv"
@@ -156,7 +151,7 @@ export interface CommitMenuImportResult {
 export async function commitMenuImport(
   shopId: string,
   adminId: string | null,
-  sourceType: "PHOTO" | "PDF" | "EXCEL" | "CSV" | "TEXT",
+  sourceType: "EXCEL" | "CSV",
   fileName: string | null,
   items: CommitMenuImportItem[]
 ): Promise<CommitMenuImportResult> {

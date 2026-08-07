@@ -14,7 +14,7 @@ export const menuImportItemSchema = z.object({
 });
 
 export const menuImportCommitSchema = z.object({
-  sourceType: z.enum(["PHOTO", "PDF", "EXCEL", "CSV", "TEXT"]),
+  sourceType: z.enum(["EXCEL", "CSV"]),
   fileName: z.string().trim().max(200).nullable().optional(),
   items: z.array(menuImportItemSchema).min(1, "No items to import"),
 });
