@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -23,6 +23,9 @@ import {
   Barcode,
   Sparkles,
   Receipt,
+  ChevronDown,
+  Clipboard,
+  type LucideIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger, SheetTitle } from "@/components/ui/sheet";
@@ -34,51 +37,235 @@ import { cn } from "@/lib/utils";
 import { api } from "@/lib/api-client";
 import type { NotificationEventPayload } from "@/lib/hooks/use-order-events";
 
-const NAV_ITEMS = [
+// ── Nav structure ─────────────────────────────────────────────────────────────
+
+type NavItem = {
+  href: string;
+  label: string;
+  icon: LucideIcon;
+};
+
+type NavGroup = {
+  groupLabel: string;
+  icon: LucideIcon;
+  items: NavItem[];
+};
+
+type NavEntry = NavItem | NavGroup;
+
+function isGroup(entry: NavEntry): entry is NavGroup {
+  return "groupLabel" in entry;
+}
+
+const NAV_ENTRIES: NavEntry[] = [
   { href: "/admin", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/admin/orders", label: "Orders", icon: ClipboardList },
-  { href: "/admin/expenses", label: "Expenses", icon: Receipt },
-  { href: "/admin/tables", label: "Tables", icon: Table2 },
-  { href: "/admin/categories", label: "Categories", icon: FolderTree },
-  { href: "/admin/products", label: "Products", icon: UtensilsCrossed },
-  { href: "/admin/menu-import", label: "Menu Import", icon: Sparkles },
-  { href: "/admin/taxes", label: "Taxes", icon: Percent },
-  { href: "/admin/qr", label: "QR Code", icon: QrCode },
-  { href: "/admin/barcodes", label: "Barcodes", icon: Barcode },
-  { href: "/admin/parties", label: "Parties", icon: BookUser },
-  { href: "/admin/staff", label: "Staff", icon: Users },
+  {
+    groupLabel: "Operations",
+    icon: ClipboardList,
+    items: [
+      { href: "/admin/orders", label: "Orders", icon: ClipboardList },
+      { href: "/admin/tables", label: "Tables", icon: Table2 },
+      { href: "/admin/waiter", label: "Waiter KOT", icon: Clipboard },
+    ],
+  },
+  {
+    groupLabel: "Menu",
+    icon: UtensilsCrossed,
+    items: [
+      { href: "/admin/categories", label: "Categories", icon: FolderTree },
+      { href: "/admin/products", label: "Products", icon: UtensilsCrossed },
+      { href: "/admin/menu-import", label: "Menu Import", icon: Sparkles },
+    ],
+  },
+  {
+    groupLabel: "Finance",
+    icon: Receipt,
+    items: [
+      { href: "/admin/expenses", label: "Expenses", icon: Receipt },
+      { href: "/admin/taxes", label: "Taxes", icon: Percent },
+    ],
+  },
+  {
+    groupLabel: "People",
+    icon: Users,
+    items: [
+      { href: "/admin/staff", label: "Staff", icon: Users },
+      { href: "/admin/parties", label: "Parties", icon: BookUser },
+    ],
+  },
+  {
+    groupLabel: "Tools",
+    icon: QrCode,
+    items: [
+      { href: "/admin/qr", label: "QR Code", icon: QrCode },
+      { href: "/admin/barcodes", label: "Barcodes", icon: Barcode },
+    ],
+  },
   { href: "/admin/settings", label: "Settings", icon: Settings },
 ];
 
-function NavLinks({ pathname, onNavigate }: { pathname: string; onNavigate?: () => void }) {
+function isItemActive(href: string, pathname: string) {
+  return href === "/admin"
+    ? pathname === "/admin"
+    : pathname === href || pathname.startsWith(href + "/");
+}
+
+function findActiveLabel(pathname: string): string {
+  for (const entry of NAV_ENTRIES) {
+    if (!isGroup(entry)) {
+      if (isItemActive(entry.href, pathname)) return entry.label;
+    } else {
+      for (const item of entry.items) {
+        if (isItemActive(item.href, pathname)) return item.label;
+      }
+    }
+  }
+  return "Dashboard";
+}
+
+// ── NavLinks ──────────────────────────────────────────────────────────────────
+
+function NavLinks({
+  pathname,
+  onNavigate,
+}: {
+  pathname: string;
+  onNavigate?: () => void;
+}) {
+  const [openGroups, setOpenGroups] = useState<Set<string>>(() => {
+    const set = new Set<string>();
+    for (const entry of NAV_ENTRIES) {
+      if (isGroup(entry) && entry.items.some((i) => isItemActive(i.href, pathname))) {
+        set.add(entry.groupLabel);
+      }
+    }
+    return set;
+  });
+
+  // Auto-expand the group that contains the active route on navigation
+  useEffect(() => {
+    setOpenGroups((prev) => {
+      const next = new Set(prev);
+      for (const entry of NAV_ENTRIES) {
+        if (isGroup(entry) && entry.items.some((i) => isItemActive(i.href, pathname))) {
+          next.add(entry.groupLabel);
+        }
+      }
+      return next;
+    });
+  }, [pathname]);
+
+  function toggleGroup(label: string) {
+    setOpenGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(label)) next.delete(label);
+      else next.add(label);
+      return next;
+    });
+  }
+
   return (
     <nav className="space-y-0.5">
-      {NAV_ITEMS.map((item) => {
-        const active =
-          item.href === "/admin"
-            ? pathname === "/admin"
-            : pathname === item.href || pathname.startsWith(item.href + "/");
-        const Icon = item.icon;
+      {NAV_ENTRIES.map((entry) => {
+        if (!isGroup(entry)) {
+          const active = isItemActive(entry.href, pathname);
+          const Icon = entry.icon;
+          return (
+            <Link
+              key={entry.href}
+              href={entry.href}
+              onClick={onNavigate}
+              className={cn(
+                "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-all duration-150",
+                active
+                  ? "bg-primary/10 text-primary"
+                  : "text-muted-foreground hover:bg-muted hover:text-foreground"
+              )}
+            >
+              <Icon
+                className={cn(
+                  "size-4 shrink-0",
+                  active ? "text-primary" : "text-muted-foreground"
+                )}
+              />
+              {entry.label}
+            </Link>
+          );
+        }
+
+        // Group entry
+        const isOpen = openGroups.has(entry.groupLabel);
+        const hasActiveChild = entry.items.some((i) => isItemActive(i.href, pathname));
+        const GroupIcon = entry.icon;
+
         return (
-          <Link
-            key={item.href}
-            href={item.href}
-            onClick={onNavigate}
-            className={cn(
-              "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-all duration-150",
-              active
-                ? "bg-primary/10 text-primary"
-                : "text-muted-foreground hover:bg-muted hover:text-foreground"
-            )}
-          >
-            <Icon className={cn("size-4 shrink-0", active ? "text-primary" : "text-muted-foreground")} />
-            {item.label}
-          </Link>
+          <div key={entry.groupLabel}>
+            <button
+              type="button"
+              onClick={() => toggleGroup(entry.groupLabel)}
+              className={cn(
+                "flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-all duration-150",
+                hasActiveChild
+                  ? "text-primary hover:bg-primary/5"
+                  : "text-muted-foreground hover:bg-muted hover:text-foreground"
+              )}
+            >
+              <GroupIcon
+                className={cn(
+                  "size-4 shrink-0",
+                  hasActiveChild ? "text-primary" : "text-muted-foreground"
+                )}
+              />
+              <span className="flex-1 text-left">{entry.groupLabel}</span>
+              <ChevronDown
+                className={cn(
+                  "size-3.5 shrink-0 text-muted-foreground/70 transition-transform duration-200",
+                  isOpen && "rotate-180"
+                )}
+              />
+            </button>
+            <div
+              className={cn(
+                "overflow-hidden transition-all duration-200 ease-in-out",
+                isOpen ? "max-h-64" : "max-h-0"
+              )}
+            >
+              <div className="ml-3 mt-0.5 mb-0.5 space-y-0.5 border-l border-border/60 pl-3">
+                {entry.items.map((item) => {
+                  const active = isItemActive(item.href, pathname);
+                  const ItemIcon = item.icon;
+                  return (
+                    <Link
+                      key={item.href}
+                      href={item.href}
+                      onClick={onNavigate}
+                      className={cn(
+                        "flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-sm font-medium transition-all duration-150",
+                        active
+                          ? "bg-primary/10 text-primary"
+                          : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                      )}
+                    >
+                      <ItemIcon
+                        className={cn(
+                          "size-3.5 shrink-0",
+                          active ? "text-primary" : "text-muted-foreground"
+                        )}
+                      />
+                      {item.label}
+                    </Link>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
         );
       })}
     </nav>
   );
 }
+
+// ── SidebarContent ─────────────────────────────────────────────────────────────
 
 function SidebarContent({
   pathname,
@@ -123,7 +310,10 @@ function SidebarContent({
           Cash counter
         </Link>
         <button
-          onClick={() => { onNavigate?.(); onLogout(); }}
+          onClick={() => {
+            onNavigate?.();
+            onLogout();
+          }}
           className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-muted-foreground transition-all duration-150 hover:bg-muted hover:text-foreground"
         >
           <LogOut className="size-4 shrink-0" />
@@ -133,6 +323,8 @@ function SidebarContent({
     </>
   );
 }
+
+// ── AdminShell ─────────────────────────────────────────────────────────────────
 
 export function AdminShell({
   shopName,
@@ -149,13 +341,7 @@ export function AdminShell({
   const router = useRouter();
   const [mobileOpen, setMobileOpen] = useState(false);
 
-  const currentItem = NAV_ITEMS.find(
-    (item) =>
-      item.href === "/admin"
-        ? pathname === "/admin"
-        : pathname === item.href || pathname.startsWith(item.href + "/")
-  );
-  const pageTitle = currentItem?.label ?? "Dashboard";
+  const pageTitle = findActiveLabel(pathname);
 
   async function handleLogout() {
     await api.post("/api/auth/logout");

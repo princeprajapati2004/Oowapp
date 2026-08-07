@@ -39,11 +39,8 @@ export default function SignupPage() {
 
   async function onSubmit(values: SignupInput) {
     try {
-      const res = await api.post<{ shopSlug: string }>("/api/auth/signup", values);
-      toast.success("Your shop is ready!");
-      router.push("/admin");
-      router.refresh();
-      void res;
+      await api.post<{ pendingVerification: boolean; email: string }>("/api/auth/signup", values);
+      router.push(`/verify-email?email=${encodeURIComponent(values.email)}`);
     } catch (error) {
       toast.error(error instanceof ApiError ? error.message : "Signup failed");
     }

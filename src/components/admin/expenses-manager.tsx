@@ -9,8 +9,11 @@ import {
   Receipt,
   TrendingDown,
   CalendarDays,
-  Tag,
   ChevronDown,
+  X,
+  BarChart3,
+  Calendar,
+  type LucideIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -70,20 +73,49 @@ interface Expense {
   updatedAt: string;
 }
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
+type Period = "today" | "yesterday" | "week" | "month" | "year";
 
-function toMonthKey(iso: string) {
-  return iso.slice(0, 7); // "2026-08"
-}
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function currentMonthKey() {
   const now = new Date();
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
 }
 
-function todayKey() {
+function getPeriodRange(period: Period, month: string): { from: Date; to: Date } {
   const now = new Date();
-  return now.toISOString().slice(0, 10);
+  now.setSeconds(59, 999);
+
+  if (period === "today") {
+    const from = new Date(now);
+    from.setHours(0, 0, 0, 0);
+    return { from, to: now };
+  }
+  if (period === "yesterday") {
+    const from = new Date(now);
+    from.setDate(from.getDate() - 1);
+    from.setHours(0, 0, 0, 0);
+    const to = new Date(from);
+    to.setHours(23, 59, 59, 999);
+    return { from, to };
+  }
+  if (period === "week") {
+    const from = new Date(now);
+    from.setDate(from.getDate() - from.getDay());
+    from.setHours(0, 0, 0, 0);
+    return { from, to: now };
+  }
+  if (period === "year") {
+    const from = new Date(now.getFullYear(), 0, 1, 0, 0, 0, 0);
+    const to = new Date(now.getFullYear(), 11, 31, 23, 59, 59, 999);
+    return { from, to };
+  }
+  // month
+  const [y, m] = month.split("-").map(Number);
+  return {
+    from: new Date(y, m - 1, 1, 0, 0, 0, 0),
+    to: new Date(y, m, 0, 23, 59, 59, 999),
+  };
 }
 
 const PAYMENT_METHOD_LABELS: Record<string, string> = {
@@ -100,7 +132,15 @@ const PAYMENT_METHOD_BADGE: Record<string, string> = {
   BANK: "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400",
 };
 
-// ─── Expense Dialog ───────────────────────────────────────────────────────────
+const PERIOD_LABELS: Record<Period, string> = {
+  today: "Today",
+  yesterday: "Yesterday",
+  week: "This Week",
+  month: "Month",
+  year: "This Year",
+};
+
+// ─── Shared Form State ─────────────────────────────────────────────────────────
 
 interface ExpenseFormData {
   name: string;
@@ -122,7 +162,244 @@ const DEFAULT_FORM: ExpenseFormData = {
   notes: "",
 };
 
-function ExpenseDialog({
+function validateExpenseForm(
+  form: ExpenseFormData
+): { input: ExpenseInput; errors: null } | { input: null; errors: Partial<Record<keyof ExpenseFormData, string>> } {
+  const errs: Partial<Record<keyof ExpenseFormData, string>> = {};
+
+  if (!form.name.trim()) errs.name = "Name is required";
+  const resolvedCategory =
+    form.category === "__custom__" ? form.customCategory.trim() : form.category;
+  if (!resolvedCategory) errs.customCategory = "Category is required";
+
+  const amountNum = parseFloat(form.amount);
+  if (!form.amount || isNaN(amountNum) || amountNum <= 0) {
+    errs.amount = "Enter a valid positive amount";
+  }
+  if (!form.date) errs.date = "Date is required";
+  if (!form.paymentMethod) errs.paymentMethod = "Payment method is required";
+
+  if (Object.keys(errs).length > 0) return { input: null, errors: errs };
+
+  return {
+    input: {
+      name: form.name.trim(),
+      category: resolvedCategory,
+      amount: amountNum,
+      date: new Date(form.date).toISOString(),
+      paymentMethod: form.paymentMethod as ExpenseInput["paymentMethod"],
+      notes: form.notes.trim() || undefined,
+    },
+    errors: null,
+  };
+}
+
+// ─── Expense Form Fields (shared between inline + dialog) ─────────────────────
+
+function ExpenseFormFields({
+  form,
+  errors,
+  onChange,
+}: {
+  form: ExpenseFormData;
+  errors: Partial<Record<keyof ExpenseFormData, string>>;
+  onChange: <K extends keyof ExpenseFormData>(key: K, value: ExpenseFormData[K]) => void;
+}) {
+  const knownCategories = EXPENSE_CATEGORIES as readonly string[];
+  return (
+    <div className="space-y-3">
+      <FormRow
+        label="Expense name"
+        htmlFor="exp-name"
+        required
+        error={errors.name ? { message: errors.name } : undefined}
+      >
+        <Input
+          id="exp-name"
+          value={form.name}
+          onChange={(e) => onChange("name", e.target.value)}
+          placeholder="e.g. Electricity bill, Vegetable purchase"
+        />
+      </FormRow>
+
+      <FormRow
+        label="Category"
+        htmlFor="exp-cat"
+        required
+        error={errors.category ? { message: errors.category } : undefined}
+      >
+        <Select value={form.category} onValueChange={(v) => onChange("category", v ?? "")}>
+          <SelectTrigger id="exp-cat">
+            <SelectValue placeholder="Select category" />
+          </SelectTrigger>
+          <SelectContent>
+            {knownCategories.map((cat) => (
+              <SelectItem key={cat} value={cat}>
+                {cat}
+              </SelectItem>
+            ))}
+            <SelectItem value="__custom__">Other (custom)</SelectItem>
+          </SelectContent>
+        </Select>
+      </FormRow>
+
+      {form.category === "__custom__" && (
+        <FormRow
+          label="Custom category"
+          htmlFor="exp-custom-cat"
+          required
+          error={errors.customCategory ? { message: errors.customCategory } : undefined}
+        >
+          <Input
+            id="exp-custom-cat"
+            value={form.customCategory}
+            onChange={(e) => onChange("customCategory", e.target.value)}
+            placeholder="Enter category name"
+          />
+        </FormRow>
+      )}
+
+      <div className="grid grid-cols-2 gap-3">
+        <FormRow
+          label="Amount"
+          htmlFor="exp-amount"
+          required
+          error={errors.amount ? { message: errors.amount } : undefined}
+        >
+          <Input
+            id="exp-amount"
+            type="number"
+            inputMode="decimal"
+            min={0.01}
+            step="0.01"
+            value={form.amount}
+            onChange={(e) => onChange("amount", e.target.value)}
+            placeholder="0.00"
+          />
+        </FormRow>
+        <FormRow
+          label="Date"
+          htmlFor="exp-date"
+          required
+          error={errors.date ? { message: errors.date } : undefined}
+        >
+          <Input
+            id="exp-date"
+            type="date"
+            value={form.date}
+            onChange={(e) => onChange("date", e.target.value)}
+          />
+        </FormRow>
+      </div>
+
+      <FormRow
+        label="Payment method"
+        htmlFor="exp-pay"
+        required
+        error={errors.paymentMethod ? { message: errors.paymentMethod } : undefined}
+      >
+        <Select
+          value={form.paymentMethod}
+          onValueChange={(v) => onChange("paymentMethod", v ?? "")}
+        >
+          <SelectTrigger id="exp-pay">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {EXPENSE_PAYMENT_METHODS.map((m) => (
+              <SelectItem key={m} value={m}>
+                {PAYMENT_METHOD_LABELS[m]}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </FormRow>
+
+      <FormRow
+        label="Notes (optional)"
+        htmlFor="exp-notes"
+        error={errors.notes ? { message: errors.notes } : undefined}
+      >
+        <Textarea
+          id="exp-notes"
+          value={form.notes}
+          onChange={(e) => onChange("notes", e.target.value)}
+          placeholder="Any additional details…"
+          className="resize-none"
+          rows={2}
+        />
+      </FormRow>
+    </div>
+  );
+}
+
+// ─── Inline Add Form ──────────────────────────────────────────────────────────
+
+function InlineAddForm({
+  onSave,
+  onClose,
+}: {
+  onSave: (data: ExpenseInput) => Promise<void>;
+  onClose: () => void;
+}) {
+  const [form, setForm] = useState<ExpenseFormData>({ ...DEFAULT_FORM });
+  const [errors, setErrors] = useState<Partial<Record<keyof ExpenseFormData, string>>>({});
+  const [saving, setSaving] = useState(false);
+
+  function onChange<K extends keyof ExpenseFormData>(key: K, value: ExpenseFormData[K]) {
+    setForm((prev) => ({ ...prev, [key]: value }));
+    setErrors((prev) => ({ ...prev, [key]: undefined }));
+  }
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    const result = validateExpenseForm(form);
+    if (result.errors) {
+      setErrors(result.errors);
+      return;
+    }
+    setSaving(true);
+    try {
+      await onSave(result.input);
+      setForm({ ...DEFAULT_FORM });
+      setErrors({});
+      onClose();
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="rounded-2xl border bg-card overflow-hidden">
+      <div className="flex items-center justify-between px-4 py-3 border-b bg-muted/30">
+        <p className="text-sm font-semibold">New Expense</p>
+        <button
+          type="button"
+          onClick={onClose}
+          className="flex size-7 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+          aria-label="Cancel"
+        >
+          <X className="size-4" />
+        </button>
+      </div>
+      <form onSubmit={handleSubmit} className="p-4 space-y-3">
+        <ExpenseFormFields form={form} errors={errors} onChange={onChange} />
+        <div className="flex gap-2 pt-1">
+          <Button type="submit" disabled={saving} className="flex-1">
+            {saving ? "Saving…" : "Add Expense"}
+          </Button>
+          <Button type="button" variant="outline" onClick={onClose}>
+            Cancel
+          </Button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+// ─── Edit Dialog ───────────────────────────────────────────────────────────────
+
+function ExpenseEditDialog({
   open,
   onOpenChange,
   initial,
@@ -130,196 +407,56 @@ function ExpenseDialog({
 }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
-  initial: Expense | null;
+  initial: Expense;
   onSave: (data: ExpenseInput) => Promise<void>;
 }) {
-  const isEdit = !!initial;
   const knownCategories = EXPENSE_CATEGORIES as readonly string[];
+  const isKnown = knownCategories.includes(initial.category);
 
-  const [form, setForm] = useState<ExpenseFormData>(() => {
-    if (initial) {
-      const isKnown = knownCategories.includes(initial.category);
-      return {
-        name: initial.name,
-        category: isKnown ? initial.category : "__custom__",
-        customCategory: isKnown ? "" : initial.category,
-        amount: String(initial.amount),
-        date: initial.date.slice(0, 10),
-        paymentMethod: initial.paymentMethod,
-        notes: initial.notes ?? "",
-      };
-    }
-    return { ...DEFAULT_FORM };
+  const [form, setForm] = useState<ExpenseFormData>({
+    name: initial.name,
+    category: isKnown ? initial.category : "__custom__",
+    customCategory: isKnown ? "" : initial.category,
+    amount: String(initial.amount),
+    date: initial.date.slice(0, 10),
+    paymentMethod: initial.paymentMethod,
+    notes: initial.notes ?? "",
   });
-
-  const [saving, setSaving] = useState(false);
   const [errors, setErrors] = useState<Partial<Record<keyof ExpenseFormData, string>>>({});
+  const [saving, setSaving] = useState(false);
 
-  function set<K extends keyof ExpenseFormData>(key: K, value: ExpenseFormData[K]) {
+  function onChange<K extends keyof ExpenseFormData>(key: K, value: ExpenseFormData[K]) {
     setForm((prev) => ({ ...prev, [key]: value }));
     setErrors((prev) => ({ ...prev, [key]: undefined }));
   }
 
-  function validate(): ExpenseInput | null {
-    const errs: Partial<Record<keyof ExpenseFormData, string>> = {};
-
-    if (!form.name.trim()) errs.name = "Name is required";
-    const resolvedCategory =
-      form.category === "__custom__" ? form.customCategory.trim() : form.category;
-    if (!resolvedCategory) errs.customCategory = "Category is required";
-
-    const amountNum = parseFloat(form.amount);
-    if (!form.amount || isNaN(amountNum) || amountNum <= 0) {
-      errs.amount = "Enter a valid positive amount";
-    }
-    if (!form.date) errs.date = "Date is required";
-    if (!form.paymentMethod) errs.paymentMethod = "Payment method is required";
-
-    if (Object.keys(errs).length > 0) {
-      setErrors(errs);
-      return null;
-    }
-
-    return {
-      name: form.name.trim(),
-      category: resolvedCategory,
-      amount: amountNum,
-      date: new Date(form.date).toISOString(),
-      paymentMethod: form.paymentMethod as ExpenseInput["paymentMethod"],
-      notes: form.notes.trim() || undefined,
-    };
-  }
-
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    const input = validate();
-    if (!input) return;
+    const result = validateExpenseForm(form);
+    if (result.errors) {
+      setErrors(result.errors);
+      return;
+    }
     setSaving(true);
     try {
-      await onSave(input);
+      await onSave(result.input);
       onOpenChange(false);
     } finally {
       setSaving(false);
     }
   }
 
-  // Reset form when dialog opens for a new expense
-  function handleOpenChange(v: boolean) {
-    if (!v) {
-      onOpenChange(false);
-      return;
-    }
-    onOpenChange(true);
-  }
-
   return (
-    <Dialog open={open} onOpenChange={handleOpenChange}>
+    <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle>{isEdit ? "Edit Expense" : "Add Expense"}</DialogTitle>
+          <DialogTitle>Edit Expense</DialogTitle>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4">
-          <FormRow label="Expense name" htmlFor="exp-name" required error={errors.name ? { message: errors.name } : undefined}>
-            <Input
-              id="exp-name"
-              value={form.name}
-              onChange={(e) => set("name", e.target.value)}
-              placeholder="e.g. Electricity bill, Vegetable purchase"
-            />
-          </FormRow>
-
-          <FormRow label="Category" htmlFor="exp-cat" required error={errors.category ? { message: errors.category } : undefined}>
-            <Select value={form.category} onValueChange={(v) => set("category", v ?? "")}>
-              <SelectTrigger id="exp-cat">
-                <SelectValue placeholder="Select category" />
-              </SelectTrigger>
-              <SelectContent>
-                {EXPENSE_CATEGORIES.map((cat) => (
-                  <SelectItem key={cat} value={cat}>
-                    {cat}
-                  </SelectItem>
-                ))}
-                <SelectItem value="__custom__">Other (custom)</SelectItem>
-              </SelectContent>
-            </Select>
-          </FormRow>
-
-          {form.category === "__custom__" && (
-            <FormRow
-              label="Custom category"
-              htmlFor="exp-custom-cat"
-              required
-              error={errors.customCategory ? { message: errors.customCategory } : undefined}
-            >
-              <Input
-                id="exp-custom-cat"
-                value={form.customCategory}
-                onChange={(e) => set("customCategory", e.target.value)}
-                placeholder="Enter category name"
-              />
-            </FormRow>
-          )}
-
-          <div className="grid grid-cols-2 gap-3">
-            <FormRow label="Amount" htmlFor="exp-amount" required error={errors.amount ? { message: errors.amount } : undefined}>
-              <Input
-                id="exp-amount"
-                type="number"
-                inputMode="decimal"
-                min={0.01}
-                step="0.01"
-                value={form.amount}
-                onChange={(e) => set("amount", e.target.value)}
-                placeholder="0.00"
-              />
-            </FormRow>
-            <FormRow label="Date" htmlFor="exp-date" required error={errors.date ? { message: errors.date } : undefined}>
-              <Input
-                id="exp-date"
-                type="date"
-                value={form.date}
-                onChange={(e) => set("date", e.target.value)}
-              />
-            </FormRow>
-          </div>
-
-          <FormRow
-            label="Payment method"
-            htmlFor="exp-pay"
-            required
-            error={errors.paymentMethod ? { message: errors.paymentMethod } : undefined}
-          >
-            <Select
-              value={form.paymentMethod}
-              onValueChange={(v) => set("paymentMethod", v ?? "")}
-            >
-              <SelectTrigger id="exp-pay">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {EXPENSE_PAYMENT_METHODS.map((m) => (
-                  <SelectItem key={m} value={m}>
-                    {PAYMENT_METHOD_LABELS[m]}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </FormRow>
-
-          <FormRow label="Notes (optional)" htmlFor="exp-notes" error={errors.notes ? { message: errors.notes } : undefined}>
-            <Textarea
-              id="exp-notes"
-              value={form.notes}
-              onChange={(e) => set("notes", e.target.value)}
-              placeholder="Any additional details…"
-              className="resize-none"
-              rows={2}
-            />
-          </FormRow>
-
+          <ExpenseFormFields form={form} errors={errors} onChange={onChange} />
           <div className="flex gap-2 pt-1">
             <Button type="submit" disabled={saving} className="flex-1">
-              {saving ? "Saving…" : isEdit ? "Save changes" : "Add expense"}
+              {saving ? "Saving…" : "Save changes"}
             </Button>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               Cancel
@@ -339,15 +476,27 @@ function SummaryCard({
   sub,
   icon: Icon,
   accent,
+  active,
+  onClick,
 }: {
   label: string;
   value: string;
   sub?: string;
-  icon: React.ComponentType<{ className?: string }>;
+  icon: LucideIcon;
   accent: string;
+  active?: boolean;
+  onClick?: () => void;
 }) {
   return (
-    <div className="rounded-2xl border bg-card p-4 space-y-2">
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        "rounded-2xl border bg-card p-4 space-y-2 text-left w-full transition-all duration-150",
+        onClick && "hover:border-primary/40 hover:shadow-sm cursor-pointer",
+        active && "border-primary/50 ring-1 ring-primary/20 bg-primary/5"
+      )}
+    >
       <div className="flex items-center justify-between">
         <p className="text-xs font-medium text-muted-foreground">{label}</p>
         <div className={cn("flex size-8 items-center justify-center rounded-xl", accent)}>
@@ -356,18 +505,20 @@ function SummaryCard({
       </div>
       <p className="text-xl font-bold tracking-tight">{value}</p>
       {sub && <p className="text-xs text-muted-foreground">{sub}</p>}
-    </div>
+    </button>
   );
 }
 
-// ─── Category Breakdown Accordion ────────────────────────────────────────────
+// ─── Category Breakdown ───────────────────────────────────────────────────────
 
 function CategoryBreakdown({
   expenses,
   currency,
+  periodLabel,
 }: {
   expenses: Expense[];
   currency: string;
+  periodLabel: string;
 }) {
   const byCategory = useMemo(() => {
     const map = new Map<string, number>();
@@ -387,7 +538,7 @@ function CategoryBreakdown({
     <Accordion>
       <AccordionItem value="breakdown">
         <AccordionTrigger className="px-4 text-sm font-semibold">
-          Monthly category breakdown
+          {periodLabel} — category breakdown
         </AccordionTrigger>
         <AccordionContent>
           <div className="space-y-2 px-1">
@@ -429,99 +580,112 @@ export function ExpensesManager({
 }) {
   const [expenses, setExpenses] = useState<Expense[]>(initialExpenses);
   const [search, setSearch] = useState("");
+  const [period, setPeriod] = useState<Period>("month");
   const [month, setMonth] = useState(currentMonthKey());
-  const [dialogOpen, setDialogOpen] = useState(false);
+  const [addFormOpen, setAddFormOpen] = useState(false);
   const [editing, setEditing] = useState<Expense | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Expense | null>(null);
 
-  // ── Filtered view ──────────────────────────────────────────────────────────
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    return expenses.filter((e) => {
-      const matchesMonth = toMonthKey(e.date) === month;
-      const matchesSearch =
-        !q ||
-        e.name.toLowerCase().includes(q) ||
-        e.category.toLowerCase().includes(q) ||
-        (e.notes ?? "").toLowerCase().includes(q);
-      return matchesMonth && matchesSearch;
-    });
-  }, [expenses, search, month]);
-
-  // ── Summary calculations ───────────────────────────────────────────────────
-  const todayTotal = useMemo(() => {
-    const today = todayKey();
-    return expenses
-      .filter((e) => e.date.slice(0, 10) === today)
-      .reduce((s, e) => s + e.amount, 0);
-  }, [expenses]);
-
-  const monthTotal = useMemo(
-    () => expenses.filter((e) => toMonthKey(e.date) === month).reduce((s, e) => s + e.amount, 0),
-    [expenses, month]
-  );
-
-  const topCategory = useMemo(() => {
-    const map = new Map<string, number>();
-    for (const e of expenses.filter((e) => toMonthKey(e.date) === month)) {
-      map.set(e.category, (map.get(e.category) ?? 0) + e.amount);
-    }
-    if (map.size === 0) return null;
-    return [...map.entries()].sort((a, b) => b[1] - a[1])[0][0];
-  }, [expenses, month]);
-
-  // ── Month navigation helpers ───────────────────────────────────────────────
-  const monthLabel = useMemo(() => {
+  // ── Period label for display ───────────────────────────────────────────────
+  const periodLabel = useMemo(() => {
+    if (period !== "month") return PERIOD_LABELS[period];
     const [y, m] = month.split("-").map(Number);
     return new Date(y, m - 1, 1).toLocaleDateString("en-IN", {
       month: "long",
       year: "numeric",
     });
-  }, [month]);
+  }, [period, month]);
 
+  // ── Filtered view ──────────────────────────────────────────────────────────
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    const { from, to } = getPeriodRange(period, month);
+    return expenses.filter((e) => {
+      const expDate = new Date(e.date);
+      const inPeriod = expDate >= from && expDate <= to;
+      const matchesSearch =
+        !q ||
+        e.name.toLowerCase().includes(q) ||
+        e.category.toLowerCase().includes(q) ||
+        (e.notes ?? "").toLowerCase().includes(q);
+      return inPeriod && matchesSearch;
+    });
+  }, [expenses, search, period, month]);
+
+  // ── Summary stats ──────────────────────────────────────────────────────────
+  const todayTotal = useMemo(() => {
+    const { from, to } = getPeriodRange("today", month);
+    return expenses.filter((e) => {
+      const d = new Date(e.date);
+      return d >= from && d <= to;
+    }).reduce((s, e) => s + e.amount, 0);
+  }, [expenses, month]);
+
+  const weekTotal = useMemo(() => {
+    const { from, to } = getPeriodRange("week", month);
+    return expenses.filter((e) => {
+      const d = new Date(e.date);
+      return d >= from && d <= to;
+    }).reduce((s, e) => s + e.amount, 0);
+  }, [expenses, month]);
+
+  const monthTotal = useMemo(() => {
+    const { from, to } = getPeriodRange("month", currentMonthKey());
+    return expenses.filter((e) => {
+      const d = new Date(e.date);
+      return d >= from && d <= to;
+    }).reduce((s, e) => s + e.amount, 0);
+  }, [expenses]);
+
+  const yearTotal = useMemo(() => {
+    const { from, to } = getPeriodRange("year", month);
+    return expenses.filter((e) => {
+      const d = new Date(e.date);
+      return d >= from && d <= to;
+    }).reduce((s, e) => s + e.amount, 0);
+  }, [expenses, month]);
+
+  const topCategory = useMemo(() => {
+    const { from, to } = getPeriodRange(period, month);
+    const map = new Map<string, number>();
+    for (const e of expenses.filter((e) => {
+      const d = new Date(e.date);
+      return d >= from && d <= to;
+    })) {
+      map.set(e.category, (map.get(e.category) ?? 0) + e.amount);
+    }
+    if (map.size === 0) return null;
+    return [...map.entries()].sort((a, b) => b[1] - a[1])[0][0];
+  }, [expenses, period, month]);
+
+  // ── Month navigation ───────────────────────────────────────────────────────
   function shiftMonth(delta: number) {
     const [y, m] = month.split("-").map(Number);
     const d = new Date(y, m - 1 + delta, 1);
-    setMonth(
-      `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`
-    );
+    setMonth(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`);
   }
 
   // ── CRUD handlers ──────────────────────────────────────────────────────────
-  function openCreate() {
-    setEditing(null);
-    setDialogOpen(true);
-  }
-
-  function openEdit(expense: Expense) {
-    setEditing(expense);
-    setDialogOpen(true);
-  }
-
   async function handleSave(data: ExpenseInput) {
-    if (editing) {
-      try {
-        const updated = await api.patch<Expense>(
-          `/api/admin/expenses/${editing.id}`,
-          data
-        );
-        setExpenses((prev) =>
-          prev.map((e) => (e.id === updated.id ? updated : e))
-        );
-        toast.success("Expense updated");
-      } catch (err) {
-        toast.error(err instanceof ApiError ? err.message : "Failed to update");
-        throw err;
-      }
-    } else {
-      try {
-        const created = await api.post<Expense>("/api/admin/expenses", data);
-        setExpenses((prev) => [created, ...prev]);
-        toast.success("Expense added");
-      } catch (err) {
-        toast.error(err instanceof ApiError ? err.message : "Failed to add");
-        throw err;
-      }
+    try {
+      const created = await api.post<Expense>("/api/admin/expenses", data);
+      setExpenses((prev) => [created, ...prev]);
+      toast.success("Expense added");
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Failed to add");
+      throw err;
+    }
+  }
+
+  async function handleEdit(data: ExpenseInput) {
+    if (!editing) return;
+    try {
+      const updated = await api.patch<Expense>(`/api/admin/expenses/${editing.id}`, data);
+      setExpenses((prev) => prev.map((e) => (e.id === updated.id ? updated : e)));
+      toast.success("Expense updated");
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Failed to update");
+      throw err;
     }
   }
 
@@ -549,85 +713,150 @@ export function ExpensesManager({
             Track and manage your business expenses.
           </p>
         </div>
-        <Button onClick={openCreate}>
-          <Plus className="size-4" /> Add Expense
-        </Button>
+        {!addFormOpen && (
+          <Button onClick={() => setAddFormOpen(true)}>
+            <Plus className="size-4" /> Add Expense
+          </Button>
+        )}
       </div>
 
-      {/* Summary cards */}
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+      {/* Inline add form */}
+      {addFormOpen && (
+        <InlineAddForm
+          onSave={handleSave}
+          onClose={() => setAddFormOpen(false)}
+        />
+      )}
+
+      {/* Summary cards — always show fixed period stats */}
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <SummaryCard
-          label="Today's expenses"
+          label="Today"
           value={formatCurrency(todayTotal, currency)}
           icon={CalendarDays}
           accent="bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400"
+          active={period === "today"}
+          onClick={() => setPeriod("today")}
         />
         <SummaryCard
-          label="This month's total"
+          label="This Week"
+          value={formatCurrency(weekTotal, currency)}
+          icon={BarChart3}
+          accent="bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-400"
+          active={period === "week"}
+          onClick={() => setPeriod("week")}
+        />
+        <SummaryCard
+          label="This Month"
           value={formatCurrency(monthTotal, currency)}
-          sub={monthLabel}
           icon={TrendingDown}
           accent="bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
+          active={period === "month" && month === currentMonthKey()}
+          onClick={() => { setPeriod("month"); setMonth(currentMonthKey()); }}
         />
         <SummaryCard
-          label="Top category"
-          value={topCategory ?? "—"}
-          sub={topCategory ? "Highest spend this month" : "No expenses yet"}
-          icon={Tag}
+          label="This Year"
+          value={formatCurrency(yearTotal, currency)}
+          icon={Calendar}
           accent="bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400"
+          active={period === "year"}
+          onClick={() => setPeriod("year")}
         />
       </div>
 
-      {/* Search + month filter */}
-      <div className="flex items-center gap-2 flex-wrap">
-        <div className="relative flex-1 min-w-48">
-          <Search className="absolute left-4 top-1/2 size-4 -translate-y-1/2 text-muted-foreground pointer-events-none" />
-          <Input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search by name or category…"
-            className="pl-10 h-11 rounded-full bg-muted/50 border-transparent focus:border-input focus:bg-background transition-colors"
-          />
+      {/* Period filter + search */}
+      <div className="space-y-2.5">
+        {/* Quick period pills */}
+        <div className="flex flex-wrap gap-1.5">
+          {(["today", "yesterday", "week", "month", "year"] as Period[]).map((p) => (
+            <button
+              key={p}
+              type="button"
+              onClick={() => { setPeriod(p); if (p === "month") setMonth(currentMonthKey()); }}
+              className={cn(
+                "rounded-full px-3 py-1 text-xs font-medium transition-all duration-150 border",
+                period === p && p !== "month"
+                  ? "bg-primary text-primary-foreground border-primary shadow-sm"
+                  : period === p && p === "month"
+                    ? "bg-primary text-primary-foreground border-primary shadow-sm"
+                    : "bg-card text-muted-foreground border-border hover:border-primary/40 hover:text-foreground"
+              )}
+            >
+              {PERIOD_LABELS[p]}
+            </button>
+          ))}
+          <span className="text-muted-foreground/40 px-1 self-center text-xs">|</span>
+          <p className="self-center text-xs text-muted-foreground">
+            Top: <span className="font-medium text-foreground">{topCategory ?? "—"}</span>
+          </p>
         </div>
-        <div className="flex items-center gap-1 rounded-full border bg-card px-2 h-11">
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            className="rounded-full"
-            onClick={() => shiftMonth(-1)}
-            aria-label="Previous month"
-          >
-            <ChevronDown className="size-4 rotate-90" />
-          </Button>
-          <span className="text-sm font-medium px-1 min-w-28 text-center tabular-nums">
-            {monthLabel}
-          </span>
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            className="rounded-full"
-            onClick={() => shiftMonth(1)}
-            aria-label="Next month"
-          >
-            <ChevronDown className="size-4 -rotate-90" />
-          </Button>
-        </div>
-        {month !== currentMonthKey() && (
-          <Button
-            variant="outline"
-            size="sm"
-            className="rounded-full"
-            onClick={() => setMonth(currentMonthKey())}
-          >
-            Today
-          </Button>
+
+        {/* Month picker (only for month period) */}
+        {period === "month" && (
+          <div className="flex items-center gap-2 flex-wrap">
+            <div className="relative flex-1 min-w-48">
+              <Search className="absolute left-4 top-1/2 size-4 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+              <Input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search by name or category…"
+                className="pl-10 h-11 rounded-full bg-muted/50 border-transparent focus:border-input focus:bg-background transition-colors"
+              />
+            </div>
+            <div className="flex items-center gap-1 rounded-full border bg-card px-2 h-11">
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                className="rounded-full"
+                onClick={() => shiftMonth(-1)}
+                aria-label="Previous month"
+              >
+                <ChevronDown className="size-4 rotate-90" />
+              </Button>
+              <span className="text-sm font-medium px-1 min-w-28 text-center tabular-nums">
+                {periodLabel}
+              </span>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                className="rounded-full"
+                onClick={() => shiftMonth(1)}
+                aria-label="Next month"
+              >
+                <ChevronDown className="size-4 -rotate-90" />
+              </Button>
+            </div>
+            {month !== currentMonthKey() && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="rounded-full"
+                onClick={() => setMonth(currentMonthKey())}
+              >
+                Current
+              </Button>
+            )}
+          </div>
+        )}
+
+        {/* Search for non-month periods */}
+        {period !== "month" && (
+          <div className="relative">
+            <Search className="absolute left-4 top-1/2 size-4 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+            <Input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder={`Search in ${PERIOD_LABELS[period].toLowerCase()}…`}
+              className="pl-10 h-11 rounded-full bg-muted/50 border-transparent focus:border-input focus:bg-background transition-colors"
+            />
+          </div>
         )}
       </div>
 
       {/* Category breakdown accordion */}
       {filtered.length > 0 && (
         <div className="rounded-2xl border bg-card overflow-hidden">
-          <CategoryBreakdown expenses={filtered} currency={currency} />
+          <CategoryBreakdown expenses={filtered} currency={currency} periodLabel={periodLabel} />
         </div>
       )}
 
@@ -640,7 +869,7 @@ export function ExpensesManager({
               ? "No expenses yet"
               : search
               ? "No expenses match your search"
-              : `No expenses in ${monthLabel}`
+              : `No expenses for ${periodLabel}`
           }
           description={
             expenses.length === 0
@@ -649,7 +878,7 @@ export function ExpensesManager({
           }
           action={
             expenses.length === 0 ? (
-              <Button onClick={openCreate}>Add first expense</Button>
+              <Button onClick={() => setAddFormOpen(true)}>Add first expense</Button>
             ) : undefined
           }
         />
@@ -714,7 +943,7 @@ export function ExpensesManager({
                       <Pencil className="size-3.5" />
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
-                      <DropdownMenuItem onClick={() => openEdit(expense)}>
+                      <DropdownMenuItem onClick={() => setEditing(expense)}>
                         <Pencil className="size-4" /> Edit
                       </DropdownMenuItem>
                       <DropdownMenuSeparator />
@@ -731,10 +960,10 @@ export function ExpensesManager({
             ))}
           </div>
 
-          {/* Month total footer */}
+          {/* Period total footer */}
           <div className="flex items-center justify-between border-t bg-muted/30 px-4 py-3">
             <span className="text-sm font-medium text-muted-foreground">
-              {filtered.length} expense{filtered.length !== 1 ? "s" : ""} · {monthLabel}
+              {filtered.length} expense{filtered.length !== 1 ? "s" : ""} · {periodLabel}
             </span>
             <span className="text-sm font-bold">
               {formatCurrency(
@@ -746,16 +975,13 @@ export function ExpensesManager({
         </div>
       )}
 
-      {/* Add/Edit dialog */}
-      {dialogOpen && (
-        <ExpenseDialog
-          open={dialogOpen}
-          onOpenChange={(v) => {
-            setDialogOpen(v);
-            if (!v) setEditing(null);
-          }}
+      {/* Edit dialog */}
+      {editing && (
+        <ExpenseEditDialog
+          open={!!editing}
+          onOpenChange={(v) => { if (!v) setEditing(null); }}
           initial={editing}
-          onSave={handleSave}
+          onSave={handleEdit}
         />
       )}
 

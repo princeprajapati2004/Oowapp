@@ -173,6 +173,19 @@ enum MenuImportStatus {
   FAILED
 }
 
+enum EmailVerificationPurpose {
+  SIGNUP
+  PASSWORD_RESET
+}
+
+enum KotStatus {
+  PENDING
+  PREPARING
+  READY
+  SERVED
+  CANCELLED
+}
+
 enum AuditAction {
   // Auth
   ADMIN_SIGNUP
@@ -180,6 +193,9 @@ enum AuditAction {
   ADMIN_LOGOUT
   SUPER_ADMIN_LOGIN
   SUPER_ADMIN_LOGOUT
+  EMAIL_VERIFIED
+  PASSWORD_RESET_REQUESTED
+  PASSWORD_RESET_COMPLETED
   // Business lifecycle
   SHOP_UPDATED
   SHOP_SUSPENDED
@@ -207,13 +223,31 @@ enum AuditAction {
 // ─── Core Models ──────────────────────────────────────────────────────────────
 
 model Admin {
-  id           String   @id @default(cuid())
-  email        String   @unique
-  passwordHash String
-  createdAt    DateTime @default(now())
-  shop         Shop?
+  id             String   @id @default(cuid())
+  email          String   @unique
+  passwordHash   String
+  emailVerified  Boolean  @default(false)
+  createdAt      DateTime @default(now())
+  shop           Shop?
+
+  emailVerifications EmailVerification[]
 
   @@map("admins")
+}
+
+model EmailVerification {
+  id        String                   @id @default(cuid())
+  adminId   String
+  admin     Admin                    @relation(fields: [adminId], references: [id], onDelete: Cascade)
+  purpose   EmailVerificationPurpose
+  otpHash   String
+  attempts  Int                      @default(0)
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime                 @default(now())
+
+  @@index([adminId])
+  @@map("email_verifications")
 }
 
 model Shop {
@@ -322,6 +356,7 @@ model Shop {
   menuImages         MenuImage[]
   menuImports        MenuImport[]
   expenses           Expense[]
+  kitchenTickets     KitchenTicket[]
 
   @@map("shops")
 }
@@ -449,6 +484,7 @@ model Product {
   updatedAt   DateTime @updatedAt
 
   orderItems OrderItem[]
+  kotItems   KotItem[]
 
   @@index([shopId])
   @@index([categoryId])
@@ -570,7 +606,8 @@ model TableSession {
   createdAt       DateTime            @default(now())
   updatedAt       DateTime            @updatedAt
 
-  orders Order[]
+  orders         Order[]
+  kitchenTickets KitchenTicket[]
 
   @@index([shopId])
   @@index([shopId, tableNumber])
@@ -611,7 +648,8 @@ model StaffMember {
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
 
-  orders Order[]
+  orders         Order[]
+  kitchenTickets KitchenTicket[]
 
   @@unique([shopId, email])
   @@index([shopId])
@@ -650,6 +688,47 @@ model OrderItem {
 
   @@index([orderId])
   @@map("order_items")
+}
+
+// Kitchen Order Ticket — created each time a waiter taps "Send to Kitchen".
+// Multiple KOTs accumulate under one TableSession for a single dining visit.
+// The final Order (bill) is generated from KOT items when the guest requests
+// their bill; QR/WhatsApp orders never go through this flow.
+model KitchenTicket {
+  id             String        @id @default(cuid())
+  shopId         String
+  shop           Shop          @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  tableSessionId String
+  tableSession   TableSession  @relation(fields: [tableSessionId], references: [id], onDelete: Cascade)
+  // Sequential number within the session: KOT #1, KOT #2...
+  kotNumber      Int
+  status         KotStatus     @default(PENDING)
+  staffId        String?
+  staff          StaffMember?  @relation(fields: [staffId], references: [id], onDelete: SetNull)
+  notes          String?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  items KotItem[]
+
+  @@index([shopId])
+  @@index([tableSessionId])
+  @@map("kitchen_tickets")
+}
+
+model KotItem {
+  id              String        @id @default(cuid())
+  kitchenTicketId String
+  kitchenTicket   KitchenTicket @relation(fields: [kitchenTicketId], references: [id], onDelete: Cascade)
+  productId       String?
+  product         Product?      @relation(fields: [productId], references: [id])
+  name            String
+  price           Decimal       @db.Decimal(10, 2)
+  quantity        Int
+  notes           String?
+
+  @@index([kitchenTicketId])
+  @@map("kot_items")
 }
 
 // ─── SaaS Platform Models ─────────────────────────────────────────────────────

@@ -1,8 +1,10 @@
 export class ApiError extends Error {
   status: number;
-  constructor(message: string, status: number) {
+  data: Record<string, unknown> | null;
+  constructor(message: string, status: number, data: Record<string, unknown> | null = null) {
     super(message);
     this.status = status;
+    this.data = data;
   }
 }
 
@@ -22,7 +24,7 @@ async function request<T>(
   const body = isJson ? await res.json().catch(() => null) : null;
 
   if (!res.ok) {
-    throw new ApiError(body?.error ?? "Something went wrong", res.status);
+    throw new ApiError(body?.error ?? "Something went wrong", res.status, body);
   }
 
   return body as T;

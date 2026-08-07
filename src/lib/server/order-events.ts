@@ -66,12 +66,34 @@ export type NotificationEventPayload = {
   createdAt: string;
 };
 
+export type KotEventItem = {
+  id: string;
+  name: string;
+  price: number;
+  quantity: number;
+  notes: string | null;
+};
+
+export type KotEventPayload = {
+  id: string;
+  shopId: string;
+  tableSessionId: string;
+  kotNumber: number;
+  status: string;
+  notes: string | null;
+  createdAt: string;
+  tableSession: { tableNumber: string };
+  items: KotEventItem[];
+};
+
 export type OrderEvent =
   | { type: "order.created"; order: OrderEventOrder }
   | { type: "order.updated"; order: OrderEventOrder }
   | { type: "session.created"; session: TableSessionEventPayload }
   | { type: "session.updated"; session: TableSessionEventPayload }
-  | { type: "notification.created"; notification: NotificationEventPayload };
+  | { type: "notification.created"; notification: NotificationEventPayload }
+  | { type: "kot.created"; kot: KotEventPayload }
+  | { type: "kot.updated"; kot: KotEventPayload };
 
 type RawSessionForEvent = {
   id: string;

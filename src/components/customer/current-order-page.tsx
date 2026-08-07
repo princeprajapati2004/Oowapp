@@ -26,6 +26,8 @@ import {
   Lock,
   ChefHat,
   ShoppingBag,
+  CheckCircle2,
+  MessageCircle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -66,6 +68,140 @@ function ItemThumbnail({ name, imageUrl }: { name: string; imageUrl?: string | n
           <ImageOff className="size-4 text-muted-foreground/50" />
         </div>
       )}
+    </div>
+  );
+}
+
+// ── WhatsApp order confirmation ───────────────────────────────────────────────
+// Shown after the customer taps "Place Order on WhatsApp" in table-less mode,
+// replacing the "Nothing ordered yet" empty state while the session hasn't
+// been created yet (the async API call hasn't resolved, or there's no table).
+type WhatsAppSnapshot = {
+  items: { productId: string; name: string; price: number; quantity: number; imageUrl?: string | null }[];
+  subtotal: number;
+  grandTotal: number;
+  taxLines: { id: string; name: string; amount: number }[];
+  customerName?: string;
+};
+
+function WhatsAppOrderSent({
+  snapshot,
+  shop,
+  menuUrl,
+}: {
+  snapshot: WhatsAppSnapshot;
+  shop: CustomerShop;
+  menuUrl: string;
+}) {
+  const whatsappHelpUrl = shop.whatsappNumber
+    ? `https://wa.me/${shop.whatsappNumber.replace(/\D/g, "")}`
+    : null;
+  const phoneUrl = shop.phone ? `tel:${shop.phone}` : null;
+
+  return (
+    <div className="space-y-4">
+      {/* Confirmation banner */}
+      <div className="rounded-2xl border border-emerald-200 bg-emerald-50 dark:bg-emerald-900/20 dark:border-emerald-800 p-6 flex flex-col items-center gap-3 text-center">
+        <div className="flex size-14 items-center justify-center rounded-full bg-emerald-100 dark:bg-emerald-800/40">
+          <CheckCircle2 className="size-7 text-emerald-600 dark:text-emerald-400" />
+        </div>
+        <div className="space-y-1">
+          <p className="text-xl font-bold text-emerald-900 dark:text-emerald-200">Order Request Sent</p>
+          <p className="text-sm text-emerald-800/80 dark:text-emerald-300/80">
+            {snapshot.customerName
+              ? `Thank you, ${snapshot.customerName}!`
+              : "Thank you!"}
+          </p>
+        </div>
+        <p className="text-sm text-emerald-700/80 dark:text-emerald-300/70 max-w-xs">
+          Your order request has been sent to the restaurant. They will confirm it shortly.
+        </p>
+      </div>
+
+      {/* Order summary */}
+      <div className="rounded-2xl border bg-card overflow-hidden shadow-sm">
+        <div className="px-4 py-3 border-b bg-muted/30">
+          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Order Summary</p>
+        </div>
+        <div className="px-4 py-3 space-y-2.5">
+          {snapshot.items.map((item) => (
+            <div key={item.productId} className="flex items-center gap-3 text-sm">
+              <div className="relative size-10 shrink-0 overflow-hidden rounded-lg bg-muted">
+                {item.imageUrl ? (
+                  <Image src={item.imageUrl} alt={item.name} fill className="object-cover" unoptimized />
+                ) : (
+                  <div className="flex size-full items-center justify-center">
+                    <ImageOff className="size-3.5 text-muted-foreground/50" />
+                  </div>
+                )}
+              </div>
+              <div className="flex-1 min-w-0">
+                <span className="font-medium">{item.name}</span>
+                <span className="text-muted-foreground ml-1">× {item.quantity}</span>
+              </div>
+              <span className="font-medium shrink-0">
+                {formatCurrency(item.price * item.quantity, shop.currency)}
+              </span>
+            </div>
+          ))}
+        </div>
+        <div className="px-4 py-3 space-y-1.5 text-sm border-t">
+          <div className="flex justify-between text-muted-foreground">
+            <span>Subtotal</span>
+            <span>{formatCurrency(snapshot.subtotal, shop.currency)}</span>
+          </div>
+          {snapshot.taxLines.map((line) => (
+            <div key={line.id} className="flex justify-between text-muted-foreground">
+              <span>{line.name}</span>
+              <span>{formatCurrency(line.amount, shop.currency)}</span>
+            </div>
+          ))}
+          <div className="flex justify-between border-t pt-2 mt-1 font-bold text-base">
+            <span>Grand Total</span>
+            <span className="text-primary">{formatCurrency(snapshot.grandTotal, shop.currency)}</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Help section */}
+      {(phoneUrl || whatsappHelpUrl) && (
+        <div className="rounded-2xl border bg-card p-4 space-y-3">
+          <p className="text-sm font-semibold text-center text-muted-foreground">Need Help?</p>
+          <div className="flex gap-2">
+            {phoneUrl && (
+              <a
+                href={phoneUrl}
+                className="flex flex-1 items-center justify-center gap-2 rounded-xl border bg-muted/40 px-3 py-2.5 text-sm font-medium text-foreground transition-colors hover:bg-muted active:scale-[0.98]"
+              >
+                <Phone className="size-4 text-muted-foreground" />
+                Call Restaurant
+              </a>
+            )}
+            {whatsappHelpUrl && (
+              <a
+                href={whatsappHelpUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex flex-1 items-center justify-center gap-2 rounded-xl border bg-[#25D366]/10 px-3 py-2.5 text-sm font-medium text-[#128C7E] dark:text-[#25D366] transition-colors hover:bg-[#25D366]/20 active:scale-[0.98]"
+              >
+                <MessageCircle className="size-4" />
+                WhatsApp Restaurant
+              </a>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Add more items */}
+      <Button
+        size="lg"
+        variant="outline"
+        className="h-12 w-full gap-2"
+        render={<Link href={menuUrl} />}
+        nativeButton={false}
+      >
+        <Plus className="size-4" /> Add More Items
+      </Button>
     </div>
   );
 }
@@ -242,6 +378,7 @@ export function CurrentOrderPage({
   const [billRequestFailed, setBillRequestFailed] = useState(false);
   const [downloadingInvoicePdf, setDownloadingInvoicePdf] = useState(false);
   const [sharingInvoice, setSharingInvoice] = useState(false);
+  const [whatsappOrderSnapshot, setWhatsappOrderSnapshot] = useState<WhatsAppSnapshot | null>(null);
   // No payment-gateway integration behind any of this — these are just local
   // UI states while the customer waits for staff to verify the payment and
   // mark the table paid from the admin side (see admin/table-sessions PATCH
@@ -544,6 +681,22 @@ export function CurrentOrderPage({
     }
 
     // WhatsApp mode (default) — build message, open WhatsApp, save to DB asynchronously.
+    // Capture snapshot now so that if this is a table-less order the confirmation
+    // screen can render even after the cart is cleared by the async API response.
+    setWhatsappOrderSnapshot({
+      items: cart.items.map((i) => ({
+        productId: i.productId,
+        name: i.name,
+        price: i.price,
+        quantity: i.quantity,
+        imageUrl: i.imageUrl,
+      })),
+      subtotal: bill.subtotal,
+      grandTotal: bill.grandTotal,
+      taxLines: bill.taxLines,
+      customerName: resolvedValues.customerName || undefined,
+    });
+
     const message =
       isIncremental && sessionRunningBill
         ? buildIncrementalOrderMessage({
@@ -658,16 +811,20 @@ export function CurrentOrderPage({
             <Loader2 className="size-6 animate-spin text-muted-foreground" />
           </div>
         ) : nothingYet ? (
-          <EmptyState
-            icon={ReceiptText}
-            title="Nothing ordered yet"
-            description="Head back to the menu to add items — your order will show up here once you do."
-            action={
-              <Button render={<Link href={menuUrl} />} nativeButton={false}>
-                Browse Menu
-              </Button>
-            }
-          />
+          whatsappOrderSnapshot ? (
+            <WhatsAppOrderSent snapshot={whatsappOrderSnapshot} shop={shop} menuUrl={menuUrl} />
+          ) : (
+            <EmptyState
+              icon={ReceiptText}
+              title="Nothing ordered yet"
+              description="Head back to the menu to add items — your order will show up here once you do."
+              action={
+                <Button render={<Link href={menuUrl} />} nativeButton={false}>
+                  Browse Menu
+                </Button>
+              }
+            />
+          )
         ) : (
           <>
             <div className="rounded-2xl border bg-card overflow-hidden shadow-sm">

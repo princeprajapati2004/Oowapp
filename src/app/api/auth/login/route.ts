@@ -68,6 +68,14 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Invalid email or password" }, { status: 401 });
     }
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    if (!(admin as any).emailVerified) {
+      return NextResponse.json(
+        { error: "Please verify your email before logging in.", pendingVerification: true, email: admin.email },
+        { status: 403 }
+      );
+    }
+
     await db.shop.update({
       where: { id: admin.shop.id },
       data: { lastLoginAt: new Date() },

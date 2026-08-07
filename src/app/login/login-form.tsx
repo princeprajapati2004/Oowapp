@@ -24,7 +24,7 @@ export function LoginForm() {
 
   async function onSubmit(values: LoginInput) {
     try {
-      const res = await api.post<{ role: string; shopSlug?: string }>(
+      const res = await api.post<{ role: string; shopSlug?: string; pendingVerification?: boolean; email?: string }>(
         "/api/auth/login",
         values
       );
@@ -35,7 +35,17 @@ export function LoginForm() {
       }
       router.refresh();
     } catch (error) {
-      toast.error(error instanceof ApiError ? error.message : "Login failed");
+      if (error instanceof ApiError) {
+        const data = error.data as { pendingVerification?: boolean; email?: string } | undefined;
+        if (data?.pendingVerification && data.email) {
+          toast.error("Please verify your email first.");
+          router.push(`/verify-email?email=${encodeURIComponent(data.email)}`);
+          return;
+        }
+        toast.error(error.message);
+      } else {
+        toast.error("Login failed");
+      }
     }
   }
 
@@ -95,15 +105,23 @@ export function LoginForm() {
             </Button>
           </form>
 
-          <p className="text-center text-sm text-muted-foreground">
-            New here?{" "}
+          <div className="flex items-center justify-between text-sm">
+            <p className="text-muted-foreground">
+              New here?{" "}
+              <Link
+                href="/admin/signup"
+                className="font-medium text-primary hover:text-primary/80 underline underline-offset-4 transition-colors"
+              >
+                Set up your shop
+              </Link>
+            </p>
             <Link
-              href="/admin/signup"
-              className="font-medium text-primary hover:text-primary/80 underline underline-offset-4 transition-colors"
+              href="/forgot-password"
+              className="font-medium text-primary hover:text-primary/80 transition-colors shrink-0"
             >
-              Set up your shop
+              Forgot password?
             </Link>
-          </p>
+          </div>
         </div>
       </div>
     </div>

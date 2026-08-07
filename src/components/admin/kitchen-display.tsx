@@ -38,6 +38,7 @@ import { ThemeToggle } from "@/components/shared/theme-toggle";
 import { api, ApiError } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
 import { useOrderEvents, type OrderEventOrder } from "@/lib/hooks/use-order-events";
+import type { KotEventPayload } from "@/lib/server/order-events";
 
 type KitchenStatus = "PENDING" | "CONFIRMED" | "PREPARING" | "READY";
 type StatusFilter = "ALL" | KitchenStatus | "COMPLETED";
@@ -324,23 +325,30 @@ const OrderCard = memo(function OrderCard({
   );
 });
 
+type KotDisplay = KotEventPayload & { staffName?: string | null };
+
 export function KitchenDisplay({
   initialOrders,
   completedToday: completedTodayInitial,
+  initialKots = [],
   shopName,
 }: {
   initialOrders: OrderEventOrder[];
   completedToday: OrderEventOrder[];
+  initialKots?: (KotDisplay)[];
   shopName: string;
 }) {
   const [orders, setOrders] = useState(initialOrders);
   const [completedToday, setCompletedToday] = useState(completedTodayInitial);
+  const [kots, setKots] = useState<KotDisplay[]>(initialKots);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
+  const [updatingKotId, setUpdatingKotId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("ALL");
   const [typeFilter, setTypeFilter] = useState<Set<OrderType>>(new Set());
   const [soundEnabled, setSoundEnabled] = useState(false);
   const [prepSamples, setPrepSamples] = useState<number[]>([]);
+  const [kotView, setKotView] = useState(false);
 
   const statusRef = useRef<Map<string, string>>(new Map(initialOrders.map((o) => [o.id, o.status])));
   const audioCtxRef = useRef<AudioContext | null>(null);
@@ -384,6 +392,32 @@ export function KitchenDisplay({
   }
 
   useOrderEvents("/api/admin/orders/stream", {
+    onKotCreated: (kot) => {
+      setKots((prev) => (prev.some((k) => k.id === kot.id) ? prev : [...prev, kot]));
+      if (soundEnabled) {
+        const ctx = ensureAudioContext();
+        if (ctx) playChime(ctx);
+      }
+      toast.custom(
+        () => (
+          <div className="flex items-center gap-3 rounded-xl border-2 border-primary bg-background px-4 py-3 shadow-lg">
+            <BellRing className="size-5 shrink-0 text-primary" />
+            <div>
+              <p className="font-bold">KOT #{kot.kotNumber} — Table {kot.tableSession.tableNumber}</p>
+              <p className="text-sm text-muted-foreground">{kot.items.length} item{kot.items.length === 1 ? "" : "s"} sent to kitchen</p>
+            </div>
+          </div>
+        ),
+        { duration: 4000 }
+      );
+    },
+    onKotUpdated: (kot) => {
+      setKots((prev) => {
+        const ACTIVE_KOT_STATUSES = ["PENDING", "PREPARING", "READY"];
+        if (!ACTIVE_KOT_STATUSES.includes(kot.status)) return prev.filter((k) => k.id !== kot.id);
+        return prev.some((k) => k.id === kot.id) ? prev.map((k) => (k.id === kot.id ? kot : k)) : [...prev, kot];
+      });
+    },
     onCreated: (order) => {
       if (!isKitchenStatus(order.status)) return;
       statusRef.current.set(order.id, order.status);
@@ -469,6 +503,22 @@ export function KitchenDisplay({
     });
   }
 
+  async function advanceKot(kot: KotDisplay) {
+    const KOT_NEXT: Record<string, string> = { PENDING: "PREPARING", PREPARING: "READY", READY: "SERVED" };
+    const next = KOT_NEXT[kot.status];
+    if (!next) return;
+    setUpdatingKotId(kot.id);
+    setKots((prev) => prev.map((k) => (k.id === kot.id ? { ...k, status: next } : k)));
+    try {
+      await api.patch(`/api/admin/kitchen-tickets/${kot.id}`, { status: next });
+    } catch (err) {
+      setKots((prev) => prev.map((k) => (k.id === kot.id ? { ...k, status: kot.status } : k)));
+      toast.error(err instanceof ApiError ? err.message : "Failed to update KOT");
+    } finally {
+      setUpdatingKotId(null);
+    }
+  }
+
   const visibleOrders = useMemo(() => {
     if (statusFilter === "COMPLETED") {
       return completedToday.filter((o) => matchesQuery(o, query));
@@ -538,74 +588,172 @@ export function KitchenDisplay({
           <StatTile label="Avg prep time" value={stats.avgPrep != null ? `${stats.avgPrep}m` : "—"} />
         </div>
 
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <Tabs value={statusFilter} onValueChange={(value) => setStatusFilter(value as StatusFilter)}>
-            <TabsList>
-              <TabsTrigger value="ALL">All</TabsTrigger>
-              <TabsTrigger value="PENDING">New</TabsTrigger>
-              <TabsTrigger value="CONFIRMED">Accepted</TabsTrigger>
-              <TabsTrigger value="PREPARING">Preparing</TabsTrigger>
-              <TabsTrigger value="READY">Ready</TabsTrigger>
-              <TabsTrigger value="COMPLETED">Completed</TabsTrigger>
-            </TabsList>
-          </Tabs>
-
-          <div className="flex flex-wrap items-center gap-1.5">
-            {(["DINE_IN", "TAKEAWAY", "DELIVERY"] as const).map((t) => {
-              const Icon = ORDER_TYPE_ICON[t];
-              const active = typeFilter.has(t);
-              return (
-                <Button
-                  key={t}
-                  type="button"
-                  size="sm"
-                  variant={active ? "default" : "outline"}
-                  className="gap-1.5"
-                  onClick={() => toggleType(t)}
-                >
-                  <Icon className="size-3.5" /> {ORDER_TYPE_LABEL[t]}
-                </Button>
-              );
-            })}
-          </div>
+        {/* KOT / Orders toggle */}
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setKotView(false)}
+            className={cn(
+              "flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors",
+              !kotView ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:text-foreground"
+            )}
+          >
+            <ClipboardCheck className="size-3.5" />
+            Orders
+          </button>
+          <button
+            onClick={() => setKotView(true)}
+            className={cn(
+              "flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors",
+              kotView ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:text-foreground"
+            )}
+          >
+            <ChefHat className="size-3.5" />
+            KOT Tickets
+            {kots.length > 0 && (
+              <span className="ml-1 rounded-full bg-amber-500 text-white text-xs font-bold px-1.5 py-0.5 leading-none">
+                {kots.length}
+              </span>
+            )}
+          </button>
         </div>
 
-        {visibleOrders.length === 0 ? (
-          <div className="flex min-h-[50vh] items-center justify-center">
-            <EmptyState
-              icon={ClipboardCheck}
-              title="All caught up"
-              description="New orders will appear here instantly."
-            />
-          </div>
-        ) : statusFilter === "COMPLETED" ? (
-          <div className="divide-y overflow-hidden rounded-xl border border-border bg-card shadow-sm">
-            {visibleOrders.map((order) => (
-              <div key={order.id} className="flex items-center justify-between gap-3 px-4 py-2.5 text-sm">
-                <div className="flex min-w-0 items-center gap-3">
-                  <span className="shrink-0 font-mono text-xs text-muted-foreground">{order.billNumber}</span>
-                  <span className="truncate">
-                    {order.tableNumber ? `Table ${order.tableNumber}` : order.customerName || "Walk-in"}
-                  </span>
-                </div>
-                <span className="shrink-0 rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400">
-                  Completed
-                </span>
+        {kotView ? (
+          /* KOT Tickets view */
+          kots.length === 0 ? (
+            <div className="flex min-h-[50vh] items-center justify-center">
+              <EmptyState icon={ChefHat} title="No active KOTs" description="Kitchen tickets from the waiter panel will appear here." />
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
+              {kots
+                .filter((k) => k.status !== "SERVED" && k.status !== "CANCELLED")
+                .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
+                .map((kot) => {
+                  const KOT_NEXT_LABEL: Record<string, string> = { PENDING: "Start preparing", PREPARING: "Mark ready", READY: "Mark served" };
+                  const KOT_BADGE: Record<string, string> = {
+                    PENDING: "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400",
+                    PREPARING: "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400",
+                    READY: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400",
+                  };
+                  const nextLabel = KOT_NEXT_LABEL[kot.status];
+                  return (
+                    <div key={kot.id} className="flex flex-col rounded-2xl border border-border bg-card shadow-sm overflow-hidden">
+                      <div className="flex items-center justify-between gap-2 px-4 py-3 border-b bg-muted/30">
+                        <div>
+                          <p className="text-sm font-bold">Table {kot.tableSession.tableNumber}</p>
+                          <p className="text-xs text-muted-foreground">KOT #{kot.kotNumber}</p>
+                        </div>
+                        <span className={cn("rounded-full px-2 py-0.5 text-xs font-semibold", KOT_BADGE[kot.status] ?? "bg-muted text-muted-foreground")}>
+                          {kot.status === "PENDING" ? "Waiting" : kot.status === "PREPARING" ? "Preparing" : "Ready"}
+                        </span>
+                      </div>
+                      <div className="flex-1 space-y-1 p-4">
+                        {kot.items.map((item) => (
+                          <div key={item.id} className="flex items-start gap-2 text-sm">
+                            <span className="size-5 rounded bg-primary/10 text-primary text-xs font-bold flex items-center justify-center shrink-0 mt-0.5">
+                              {item.quantity}
+                            </span>
+                            <span className="flex-1">{item.name}</span>
+                            {item.notes && <span className="text-xs text-muted-foreground italic">({item.notes})</span>}
+                          </div>
+                        ))}
+                        {kot.notes && (
+                          <p className="mt-2 text-xs text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 rounded p-2">
+                            Note: {kot.notes}
+                          </p>
+                        )}
+                      </div>
+                      {nextLabel && (
+                        <div className="px-4 pb-4">
+                          <Button
+                            size="sm"
+                            className="w-full h-8 text-xs"
+                            disabled={updatingKotId === kot.id}
+                            onClick={() => advanceKot(kot)}
+                          >
+                            {updatingKotId === kot.id ? "Updating…" : nextLabel}
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+            </div>
+          )
+        ) : null}
+
+        {!kotView && (
+          <>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <Tabs value={statusFilter} onValueChange={(value) => setStatusFilter(value as StatusFilter)}>
+                <TabsList>
+                  <TabsTrigger value="ALL">All</TabsTrigger>
+                  <TabsTrigger value="PENDING">New</TabsTrigger>
+                  <TabsTrigger value="CONFIRMED">Accepted</TabsTrigger>
+                  <TabsTrigger value="PREPARING">Preparing</TabsTrigger>
+                  <TabsTrigger value="READY">Ready</TabsTrigger>
+                  <TabsTrigger value="COMPLETED">Completed</TabsTrigger>
+                </TabsList>
+              </Tabs>
+
+              <div className="flex flex-wrap items-center gap-1.5">
+                {(["DINE_IN", "TAKEAWAY", "DELIVERY"] as const).map((t) => {
+                  const Icon = ORDER_TYPE_ICON[t];
+                  const active = typeFilter.has(t);
+                  return (
+                    <Button
+                      key={t}
+                      type="button"
+                      size="sm"
+                      variant={active ? "default" : "outline"}
+                      className="gap-1.5"
+                      onClick={() => toggleType(t)}
+                    >
+                      <Icon className="size-3.5" /> {ORDER_TYPE_LABEL[t]}
+                    </Button>
+                  );
+                })}
               </div>
-            ))}
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
-            {visibleOrders.map((order) => (
-              <OrderCard
-                key={order.id}
-                order={order}
-                updating={updatingId === order.id}
-                onAdvance={advance}
-                onSetPriority={setPriority}
-              />
-            ))}
-          </div>
+            </div>
+
+            {visibleOrders.length === 0 ? (
+              <div className="flex min-h-[50vh] items-center justify-center">
+                <EmptyState
+                  icon={ClipboardCheck}
+                  title="All caught up"
+                  description="New orders will appear here instantly."
+                />
+              </div>
+            ) : statusFilter === "COMPLETED" ? (
+              <div className="divide-y overflow-hidden rounded-xl border border-border bg-card shadow-sm">
+                {visibleOrders.map((order) => (
+                  <div key={order.id} className="flex items-center justify-between gap-3 px-4 py-2.5 text-sm">
+                    <div className="flex min-w-0 items-center gap-3">
+                      <span className="shrink-0 font-mono text-xs text-muted-foreground">{order.billNumber}</span>
+                      <span className="truncate">
+                        {order.tableNumber ? `Table ${order.tableNumber}` : order.customerName || "Walk-in"}
+                      </span>
+                    </div>
+                    <span className="shrink-0 rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400">
+                      Completed
+                    </span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
+                {visibleOrders.map((order) => (
+                  <OrderCard
+                    key={order.id}
+                    order={order}
+                    updating={updatingId === order.id}
+                    onAdvance={advance}
+                    onSetPriority={setPriority}
+                  />
+                ))}
+              </div>
+            )}
+          </>
         )}
       </main>
     </div>
