@@ -45,7 +45,7 @@ function TableOccupiedScreen({ tableNumber, shopName }: { tableNumber: string; s
           </p>
         </div>
         <div className="rounded-xl border border-amber-200 bg-amber-50 dark:bg-amber-900/20 dark:border-amber-800 px-4 py-3 text-sm text-amber-800 dark:text-amber-400">
-          Please contact restaurant staff if you believe this is incorrect.
+          Please contact staff if you believe this is incorrect.
         </div>
       </div>
     </div>
@@ -182,7 +182,7 @@ export function CustomerMenu({
   function handleQuantityChange(product: CustomerProduct, quantity: number) {
     const lockedQty = lockedQuantities.get(product.id) ?? 0;
     if (quantity < lockedQty) {
-      toast.error("This item has already been sent to the restaurant and cannot be removed.");
+      toast.error("This item has already been sent to the kitchen and cannot be removed.");
       return;
     }
     const newCartQty = quantity - lockedQty;
@@ -229,7 +229,7 @@ export function CustomerMenu({
           <div className="space-y-2">
             <h1 className="text-2xl font-bold">Orders via Staff Only</h1>
             <p className="text-muted-foreground">
-              This restaurant currently accepts orders through staff only. Please ask a staff member to take your order.
+              This store currently accepts orders through staff only. Please ask a staff member to take your order.
             </p>
           </div>
         </div>

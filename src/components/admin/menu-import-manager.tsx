@@ -200,9 +200,11 @@ export function MenuImportManager({
       <div className="space-y-4">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-xl font-bold">AI Menu Import</h1>
+            <h1 className="text-xl font-bold">{showFoodType ? "AI Menu Import" : "AI Product Import"}</h1>
             <p className="text-sm text-muted-foreground">
-              Upload a menu photo, PDF, spreadsheet, or text file — items are extracted automatically.
+              {showFoodType
+                ? "Upload a menu photo, PDF, spreadsheet, or text file — items are extracted automatically."
+                : "Upload a product list photo, PDF, spreadsheet, or text file — products are extracted automatically."}
             </p>
           </div>
           <Button

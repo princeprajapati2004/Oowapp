@@ -114,7 +114,7 @@ function WhatsAppOrderSent({
           </p>
         </div>
         <p className="text-sm text-emerald-700/80 dark:text-emerald-300/70 max-w-xs">
-          Your order request has been sent to the restaurant. They will confirm it shortly.
+          Your order request has been sent. It will be confirmed shortly.
         </p>
       </div>
 
@@ -174,7 +174,7 @@ function WhatsAppOrderSent({
                 className="flex flex-1 items-center justify-center gap-2 rounded-xl border bg-muted/40 px-3 py-2.5 text-sm font-medium text-foreground transition-colors hover:bg-muted active:scale-[0.98]"
               >
                 <Phone className="size-4 text-muted-foreground" />
-                Call Restaurant
+                Call Store
               </a>
             )}
             {whatsappHelpUrl && (
@@ -185,7 +185,7 @@ function WhatsAppOrderSent({
                 className="flex flex-1 items-center justify-center gap-2 rounded-xl border bg-[#25D366]/10 px-3 py-2.5 text-sm font-medium text-[#128C7E] dark:text-[#25D366] transition-colors hover:bg-[#25D366]/20 active:scale-[0.98]"
               >
                 <MessageCircle className="size-4" />
-                WhatsApp Restaurant
+                WhatsApp Store
               </a>
             )}
           </div>
@@ -547,7 +547,7 @@ export function CurrentOrderPage({
 
   function handleCashPayment() {
     setPaymentIntent("cash_pending");
-    toast.success("Waiting for Restaurant/Admin Approval.");
+    toast.success("Waiting for approval. Staff will collect payment shortly.");
   }
 
   function handlePayViaUpi() {
@@ -1095,7 +1095,7 @@ export function CurrentOrderPage({
                 ) : paymentIntent === "cash_pending" ? (
                   <div className="rounded-xl border border-amber-300 bg-amber-50 dark:bg-amber-900/20 dark:border-amber-800 px-4 py-4 flex flex-col items-center gap-2 text-center">
                     <Loader2 className="size-5 animate-spin text-amber-600 dark:text-amber-400" />
-                    <p className="text-sm font-medium text-amber-800 dark:text-amber-400">Waiting for Restaurant/Admin Approval.</p>
+                    <p className="text-sm font-medium text-amber-800 dark:text-amber-400">Waiting for staff approval.</p>
                     <p className="text-xs text-amber-700/80 dark:text-amber-400/80">
                       Let the staff know you&apos;re paying by cash — they&apos;ll confirm it here.
                     </p>
@@ -1116,7 +1116,7 @@ export function CurrentOrderPage({
                   <div className="rounded-xl border border-amber-300 bg-amber-50 dark:bg-amber-900/20 dark:border-amber-800 px-4 py-4 flex flex-col items-center gap-2 text-center">
                     <Loader2 className="size-5 animate-spin text-amber-600 dark:text-amber-400" />
                     <p className="text-sm font-medium text-amber-800 dark:text-amber-400">Payment Pending</p>
-                    <p className="text-xs text-amber-700/80 dark:text-amber-400/80">Waiting for the restaurant to confirm your payment.</p>
+                    <p className="text-xs text-amber-700/80 dark:text-amber-400/80">Waiting for the store to confirm your payment.</p>
                   </div>
                 ) : (
                   <PaymentOptions

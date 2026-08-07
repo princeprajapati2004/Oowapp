@@ -362,6 +362,12 @@ export function ProductsManager({
                     <div className="flex flex-wrap items-center gap-1">
                       <Badge variant="secondary" className="text-xs">{product.category.name}</Badge>
                       {!product.isAvailable && <Badge variant="destructive" className="text-xs">Out of stock</Badge>}
+                      {product.isAvailable && product.stock !== null && product.stock !== undefined && product.stock <= 5 && product.stock > 0 && (
+                        <Badge variant="outline" className="text-xs text-amber-600 border-amber-400">Low stock ({product.stock})</Badge>
+                      )}
+                      {product.isAvailable && product.stock !== null && product.stock !== undefined && product.stock === 0 && (
+                        <Badge variant="destructive" className="text-xs">Stock: 0</Badge>
+                      )}
                       {!product.isVisible && <Badge variant="outline" className="text-xs">Hidden</Badge>}
                     </div>
                   </div>

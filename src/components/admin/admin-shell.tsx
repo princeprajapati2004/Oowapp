@@ -57,52 +57,65 @@ function isGroup(entry: NavEntry): entry is NavGroup {
   return "groupLabel" in entry;
 }
 
-const NAV_ENTRIES: NavEntry[] = [
-  { href: "/admin", label: "Dashboard", icon: LayoutDashboard },
-  {
-    groupLabel: "Operations",
-    icon: ClipboardList,
-    items: [
-      { href: "/admin/orders", label: "Orders", icon: ClipboardList },
-      { href: "/admin/tables", label: "Tables", icon: Table2 },
-      { href: "/admin/waiter", label: "Waiter KOT", icon: Clipboard },
-    ],
-  },
-  {
-    groupLabel: "Menu",
-    icon: UtensilsCrossed,
-    items: [
-      { href: "/admin/categories", label: "Categories", icon: FolderTree },
-      { href: "/admin/products", label: "Products", icon: UtensilsCrossed },
-      { href: "/admin/menu-import", label: "Menu Import", icon: Sparkles },
-    ],
-  },
-  {
-    groupLabel: "Finance",
-    icon: Receipt,
-    items: [
-      { href: "/admin/expenses", label: "Expenses", icon: Receipt },
-      { href: "/admin/taxes", label: "Taxes", icon: Percent },
-    ],
-  },
-  {
-    groupLabel: "People",
-    icon: Users,
-    items: [
-      { href: "/admin/staff", label: "Staff", icon: Users },
-      { href: "/admin/parties", label: "Parties", icon: BookUser },
-    ],
-  },
-  {
-    groupLabel: "Tools",
-    icon: QrCode,
-    items: [
-      { href: "/admin/qr", label: "QR Code", icon: QrCode },
-      { href: "/admin/barcodes", label: "Barcodes", icon: Barcode },
-    ],
-  },
-  { href: "/admin/settings", label: "Settings", icon: Settings },
-];
+export type ShellCopy = {
+  catalogueGroupLabel: string;
+  importLabel: string;
+  previewLabel: string;
+  orderDisplayLabel: string;
+};
+
+function buildNavEntries(foodBusiness: boolean, copy: ShellCopy): NavEntry[] {
+  const operationsItems: NavItem[] = [
+    { href: "/admin/orders", label: "Orders", icon: ClipboardList },
+  ];
+  if (foodBusiness) {
+    operationsItems.push({ href: "/admin/tables", label: "Tables", icon: Table2 });
+    operationsItems.push({ href: "/admin/waiter", label: "Waiter KOT", icon: Clipboard });
+  }
+
+  return [
+    { href: "/admin", label: "Dashboard", icon: LayoutDashboard },
+    {
+      groupLabel: "Operations",
+      icon: ClipboardList,
+      items: operationsItems,
+    },
+    {
+      groupLabel: copy.catalogueGroupLabel,
+      icon: UtensilsCrossed,
+      items: [
+        { href: "/admin/categories", label: "Categories", icon: FolderTree },
+        { href: "/admin/products", label: "Products", icon: UtensilsCrossed },
+        { href: "/admin/menu-import", label: copy.importLabel, icon: Sparkles },
+      ],
+    },
+    {
+      groupLabel: "Finance",
+      icon: Receipt,
+      items: [
+        { href: "/admin/expenses", label: "Expenses", icon: Receipt },
+        { href: "/admin/taxes", label: "Taxes", icon: Percent },
+      ],
+    },
+    {
+      groupLabel: "People",
+      icon: Users,
+      items: [
+        { href: "/admin/staff", label: "Staff", icon: Users },
+        { href: "/admin/parties", label: "Parties", icon: BookUser },
+      ],
+    },
+    {
+      groupLabel: "Tools",
+      icon: QrCode,
+      items: [
+        { href: "/admin/qr", label: "QR Code", icon: QrCode },
+        { href: "/admin/barcodes", label: "Barcodes", icon: Barcode },
+      ],
+    },
+    { href: "/admin/settings", label: "Settings", icon: Settings },
+  ];
+}
 
 function isItemActive(href: string, pathname: string) {
   return href === "/admin"
@@ -110,8 +123,8 @@ function isItemActive(href: string, pathname: string) {
     : pathname === href || pathname.startsWith(href + "/");
 }
 
-function findActiveLabel(pathname: string): string {
-  for (const entry of NAV_ENTRIES) {
+function findActiveLabel(pathname: string, navEntries: NavEntry[]): string {
+  for (const entry of navEntries) {
     if (!isGroup(entry)) {
       if (isItemActive(entry.href, pathname)) return entry.label;
     } else {
@@ -128,13 +141,15 @@ function findActiveLabel(pathname: string): string {
 function NavLinks({
   pathname,
   onNavigate,
+  navEntries,
 }: {
   pathname: string;
   onNavigate?: () => void;
+  navEntries: NavEntry[];
 }) {
   const [openGroups, setOpenGroups] = useState<Set<string>>(() => {
     const set = new Set<string>();
-    for (const entry of NAV_ENTRIES) {
+    for (const entry of navEntries) {
       if (isGroup(entry) && entry.items.some((i) => isItemActive(i.href, pathname))) {
         set.add(entry.groupLabel);
       }
@@ -146,14 +161,14 @@ function NavLinks({
   useEffect(() => {
     setOpenGroups((prev) => {
       const next = new Set(prev);
-      for (const entry of NAV_ENTRIES) {
+      for (const entry of navEntries) {
         if (isGroup(entry) && entry.items.some((i) => isItemActive(i.href, pathname))) {
           next.add(entry.groupLabel);
         }
       }
       return next;
     });
-  }, [pathname]);
+  }, [pathname, navEntries]);
 
   function toggleGroup(label: string) {
     setOpenGroups((prev) => {
@@ -166,7 +181,7 @@ function NavLinks({
 
   return (
     <nav className="space-y-0.5">
-      {NAV_ENTRIES.map((entry) => {
+      {navEntries.map((entry) => {
         if (!isGroup(entry)) {
           const active = isItemActive(entry.href, pathname);
           const Icon = entry.icon;
@@ -272,15 +287,21 @@ function SidebarContent({
   shopSlug,
   onNavigate,
   onLogout,
+  foodBusiness,
+  copy,
+  navEntries,
 }: {
   pathname: string;
   shopSlug: string;
   onNavigate?: () => void;
   onLogout: () => void;
+  foodBusiness: boolean;
+  copy: ShellCopy;
+  navEntries: NavEntry[];
 }) {
   return (
     <>
-      <NavLinks pathname={pathname} onNavigate={onNavigate} />
+      <NavLinks pathname={pathname} onNavigate={onNavigate} navEntries={navEntries} />
       <div className="mt-auto space-y-0.5 border-t pt-3">
         <Link
           href={`/order/${shopSlug}`}
@@ -289,17 +310,19 @@ function SidebarContent({
           className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-muted-foreground transition-all duration-150 hover:bg-muted hover:text-foreground"
         >
           <ExternalLink className="size-4 shrink-0" />
-          Preview menu
+          {copy.previewLabel}
         </Link>
-        <Link
-          href="/admin/kitchen"
-          target="_blank"
-          onClick={onNavigate}
-          className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-muted-foreground transition-all duration-150 hover:bg-muted hover:text-foreground"
-        >
-          <ChefHat className="size-4 shrink-0" />
-          Kitchen display
-        </Link>
+        {foodBusiness && (
+          <Link
+            href="/admin/kitchen"
+            target="_blank"
+            onClick={onNavigate}
+            className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-muted-foreground transition-all duration-150 hover:bg-muted hover:text-foreground"
+          >
+            <ChefHat className="size-4 shrink-0" />
+            Kitchen display
+          </Link>
+        )}
         <Link
           href="/admin/counter"
           target="_blank"
@@ -330,18 +353,23 @@ export function AdminShell({
   shopName,
   shopSlug,
   initialNotifications,
+  isFoodBusiness,
+  copy,
   children,
 }: {
   shopName: string;
   shopSlug: string;
   initialNotifications: NotificationEventPayload[];
+  isFoodBusiness: boolean;
+  copy: ShellCopy;
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
   const router = useRouter();
   const [mobileOpen, setMobileOpen] = useState(false);
 
-  const pageTitle = findActiveLabel(pathname);
+  const navEntries = buildNavEntries(isFoodBusiness, copy);
+  const pageTitle = findActiveLabel(pathname, navEntries);
 
   async function handleLogout() {
     await api.post("/api/auth/logout");
@@ -367,7 +395,14 @@ export function AdminShell({
           </div>
         </div>
         <div className="flex-1 overflow-y-auto p-3">
-          <SidebarContent pathname={pathname} shopSlug={shopSlug} onLogout={handleLogout} />
+          <SidebarContent
+            pathname={pathname}
+            shopSlug={shopSlug}
+            onLogout={handleLogout}
+            foodBusiness={isFoodBusiness}
+            copy={copy}
+            navEntries={navEntries}
+          />
         </div>
       </aside>
 
@@ -395,6 +430,9 @@ export function AdminShell({
                     shopSlug={shopSlug}
                     onNavigate={() => setMobileOpen(false)}
                     onLogout={handleLogout}
+                    foodBusiness={isFoodBusiness}
+                    copy={copy}
+                    navEntries={navEntries}
                   />
                 </div>
               </SheetContent>

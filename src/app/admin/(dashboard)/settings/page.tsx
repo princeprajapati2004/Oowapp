@@ -98,7 +98,7 @@ export default async function SettingsPage() {
     {
       id: "orders",
       title: "Order settings",
-      description: "Checkout fields, order logging, and menu visibility.",
+      description: "Checkout fields, order logging, and store visibility.",
       content: (
         <OrderSettingsForm
           bare
@@ -119,8 +119,10 @@ export default async function SettingsPage() {
     },
     {
       id: "menu",
-      title: "Menu display",
-      description: "Control what customers and staff see on the menu.",
+      title: isRestaurant ? "Menu display" : "Catalogue display",
+      description: isRestaurant
+        ? "Control what customers and staff see on the menu."
+        : "Control what customers see in your online catalogue.",
       content: (
         <MenuSettingsForm
           bare

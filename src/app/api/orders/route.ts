@@ -132,6 +132,16 @@ export async function POST(request: Request) {
       );
       const billNumber = await nextBillNumber(tx, shop.id);
 
+      // Decrement stock for products that track it (fire-and-forget errors — order still succeeds)
+      await Promise.all(
+        input.items.map((item) =>
+          tx.product.updateMany({
+            where: { id: item.productId, shopId: shop.id, stock: { gt: 0 } },
+            data: { stock: { decrement: item.quantity } },
+          })
+        )
+      );
+
       const created = await tx.order.create({
         data: {
           shopId: shop.id,
