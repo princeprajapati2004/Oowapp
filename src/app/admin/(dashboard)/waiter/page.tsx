@@ -78,19 +78,22 @@ export default async function WaiterPage() {
     categoryId: t.categoryId ?? null,
   }));
 
-  const serializedSessions = openSessions.map((s) => ({
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const serializedSessions = (openSessions as any[]).map((s: any) => ({
     id: s.id,
     tableNumber: s.tableNumber,
     status: s.status,
     customerName: s.customerName,
     createdAt: s.createdAt.toISOString(),
-    kitchenTickets: s.kitchenTickets.map((kt) => ({
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    kitchenTickets: s.kitchenTickets.map((kt: any) => ({
       id: kt.id,
       kotNumber: kt.kotNumber,
       status: kt.status,
       notes: kt.notes,
       createdAt: kt.createdAt.toISOString(),
-      items: kt.items.map((i) => ({
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      items: kt.items.map((i: any) => ({
         id: i.id,
         name: i.name,
         price: Number(i.price),

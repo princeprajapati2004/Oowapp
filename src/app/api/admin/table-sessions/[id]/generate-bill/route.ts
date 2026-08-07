@@ -61,8 +61,10 @@ export async function POST(
       );
     }
 
-    const allItems = kitchenTickets.flatMap((ticket) =>
-      ticket.items.map((item) => ({
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const allItems = (kitchenTickets as any[]).flatMap((ticket: any) =>
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ticket.items.map((item: any) => ({
         id: item.productId ?? item.id,
         name: item.name,
         price: Number(item.price),

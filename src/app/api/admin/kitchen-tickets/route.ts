@@ -50,11 +50,13 @@ export async function GET(request: Request) {
     });
 
     return NextResponse.json(
-      tickets.map((t) => ({
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (tickets as any[]).map((t: any) => ({
         ...t,
         createdAt: t.createdAt.toISOString(),
         updatedAt: t.updatedAt.toISOString(),
-        items: t.items.map((i) => ({
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        items: t.items.map((i: any) => ({
           ...i,
           price: Number(i.price),
         })),
@@ -148,7 +150,8 @@ export async function POST(request: Request) {
       notes: ticket.notes,
       createdAt: ticket.createdAt.toISOString(),
       tableSession: { tableNumber: ticket.tableSession.tableNumber },
-      items: ticket.items.map((i) => ({
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      items: ticket.items.map((i: any) => ({
         id: i.id,
         name: i.name,
         price: Number(i.price),

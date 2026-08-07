@@ -65,7 +65,8 @@ export default async function KitchenPage() {
     createdAt: kt.createdAt.toISOString(),
     tableSession: { tableNumber: kt.tableSession.tableNumber, customerName: kt.tableSession.customerName },
     staffName: kt.staff?.name ?? null,
-    items: kt.items.map((i) => ({
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    items: kt.items.map((i: any) => ({
       id: i.id,
       name: i.name,
       price: Number(i.price),

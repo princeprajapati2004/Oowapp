@@ -9,7 +9,6 @@ set -euo pipefail
 SERVER_USER="oowapp_i1"
 SERVER_IP="103.191.208.56"
 SERVER_PORT="22"
-
 REMOTE_PROJECT="~/Oowapp"
 PM2_NAME="oowapp"
 
@@ -18,9 +17,8 @@ PM2_NAME="oowapp"
 ########################################
 
 echo "========================================"
-echo "Building Next.js..."
+echo " BUILD"
 echo "========================================"
-
 npm run build
 
 ########################################
@@ -28,37 +26,37 @@ npm run build
 ########################################
 
 echo ""
-echo "Creating .next.zip..."
-
+echo "[1/4] Creating .next.zip..."
 rm -f .next.zip
 zip -rq .next.zip .next
+echo "      Done ($(du -sh .next.zip | cut -f1))"
 
 ########################################
-# GIT PUSH
-########################################
-
-echo ""
-echo "Push your latest code to GitHub."
-read -p "Press ENTER after git push..."
-
-########################################
-# UPLOAD BUILD
+# UPLOAD
 ########################################
 
 echo ""
-echo "Uploading .next.zip..."
-
+echo "[2/4] Uploading .next.zip to server..."
 scp -P "$SERVER_PORT" .next.zip "${SERVER_USER}@${SERVER_IP}:${REMOTE_PROJECT}/"
+rm -f .next.zip
+echo "      Uploaded."
 
 ########################################
-# DEPLOY
+# GIT PUSH — user confirms before we pull on server
 ########################################
 
 echo ""
-echo "Deploying..."
+echo "[3/4] Push your latest code to GitHub now."
+read -rp "      Press ENTER after git push is done..."
 
-ssh -t -p "$SERVER_PORT" "${SERVER_USER}@${SERVER_IP}" <<'EOF'
+########################################
+# REMOTE DEPLOY
+########################################
 
+echo ""
+echo "[4/4] Deploying on server..."
+
+ssh -t -p "$SERVER_PORT" "${SERVER_USER}@${SERVER_IP}" bash <<'REMOTE'
 set -euo pipefail
 
 REMOTE_PROJECT="$HOME/Oowapp"
@@ -66,66 +64,45 @@ PM2_NAME="oowapp"
 
 cd "$REMOTE_PROJECT"
 
-echo ""
-echo "Current directory:"
-pwd
-
-echo ""
-echo "Pulling latest code..."
+echo "  -> git pull"
 git pull
 
-echo ""
-echo "Extracting .next..."
+echo "  -> extracting .next..."
 unzip -oq .next.zip
-
 rm -f .next.zip
 
-########################################
-# Locate PM2 automatically
-########################################
-
+# Locate PM2 under nvm
 NVM_DIR="$HOME/.nvm"
-
 PM2_BIN=$(find "$NVM_DIR/versions/node" -type f -name pm2 2>/dev/null | sort | tail -n1)
 
 if [ -z "$PM2_BIN" ]; then
-    echo ""
-    echo "ERROR: Could not locate PM2."
-    exit 1
+  # Fall back to PATH
+  PM2_BIN=$(command -v pm2 2>/dev/null || true)
 fi
 
-echo ""
-echo "Using PM2:"
-echo "$PM2_BIN"
+if [ -z "$PM2_BIN" ]; then
+  echo "ERROR: pm2 not found." >&2
+  exit 1
+fi
 
-########################################
-# Restart / Start
-########################################
+echo "  -> pm2 at $PM2_BIN"
 
 if "$PM2_BIN" describe "$PM2_NAME" >/dev/null 2>&1; then
-    echo ""
-    echo "Restarting PM2..."
-    "$PM2_BIN" restart "$PM2_NAME"
+  echo "  -> restarting $PM2_NAME"
+  "$PM2_BIN" restart "$PM2_NAME"
 else
-    echo ""
-    echo "Starting PM2..."
-    "$PM2_BIN" start npm --name "$PM2_NAME" -- start
+  echo "  -> starting $PM2_NAME"
+  "$PM2_BIN" start npm --name "$PM2_NAME" -- start
 fi
 
-"$PM2_BIN" save
-
-echo ""
-echo "Deployment completed successfully."
-
-EOF
+"$PM2_BIN" save --force
+REMOTE
 
 ########################################
-# CLEANUP
+# DONE
 ########################################
-
-rm -f .next.zip
 
 echo ""
 echo "========================================"
-echo "Deployment Successful!"
+echo " Deployment complete!"
 echo "========================================"

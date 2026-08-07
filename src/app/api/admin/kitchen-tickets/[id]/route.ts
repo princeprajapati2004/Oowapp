@@ -60,7 +60,8 @@ export async function PATCH(
       notes: updated.notes,
       createdAt: updated.createdAt.toISOString(),
       tableSession: { tableNumber: updated.tableSession.tableNumber },
-      items: updated.items.map((i) => ({
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      items: updated.items.map((i: any) => ({
         id: i.id,
         name: i.name,
         price: Number(i.price),
@@ -103,7 +104,8 @@ export async function GET(
       ...ticket,
       createdAt: ticket.createdAt.toISOString(),
       updatedAt: ticket.updatedAt.toISOString(),
-      items: ticket.items.map((i) => ({ ...i, price: Number(i.price) })),
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      items: ticket.items.map((i: any) => ({ ...i, price: Number(i.price) })),
     });
   } catch (error) {
     return handleApiError(error);
