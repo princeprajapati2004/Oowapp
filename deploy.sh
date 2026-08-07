@@ -2,68 +2,69 @@
 
 set -euo pipefail
 
-#########################
+########################################
 # CONFIGURATION
-#########################
+########################################
 
 SERVER_USER="oowapp_i1"
 SERVER_IP="103.191.208.56"
 SERVER_PORT="22"
 
 REMOTE_PROJECT="~/Oowapp"
-
 PM2_NAME="oowapp"
 
-#########################
+########################################
 # BUILD
-#########################
+########################################
 
-echo "========================================="
+echo "========================================"
 echo "Building Next.js..."
-echo "========================================="
+echo "========================================"
 
 npm run build
 
-#########################
+########################################
 # ZIP .next
-#########################
+########################################
 
 echo ""
 echo "Creating .next.zip..."
 
 rm -f .next.zip
-
 zip -rq .next.zip .next
 
-#########################
-# PUSH CODE
-#########################
+########################################
+# GIT PUSH
+########################################
 
 echo ""
 echo "Push your latest code to GitHub."
 read -p "Press ENTER after git push..."
 
-#########################
+########################################
 # UPLOAD BUILD
-#########################
+########################################
 
 echo ""
 echo "Uploading .next.zip..."
 
 scp -P "$SERVER_PORT" .next.zip "${SERVER_USER}@${SERVER_IP}:${REMOTE_PROJECT}/"
 
-#########################
+########################################
 # DEPLOY
-#########################
+########################################
 
 echo ""
-echo "Deploying on server..."
+echo "Deploying..."
 
-ssh -t -p "$SERVER_PORT" "${SERVER_USER}@${SERVER_IP}" <<EOF
+ssh -t -p "$SERVER_PORT" "${SERVER_USER}@${SERVER_IP}" <<'EOF'
 
-set -e
+set -euo pipefail
 
-cd ${REMOTE_PROJECT}
+REMOTE_PROJECT="$HOME/Oowapp"
+PM2_NAME="oowapp"
+
+cd "$REMOTE_PROJECT"
 
 echo ""
 echo "Current directory:"
@@ -79,60 +80,52 @@ unzip -oq .next.zip
 
 rm -f .next.zip
 
-###################################################
-# Load shell environment
-###################################################
+########################################
+# Locate PM2 automatically
+########################################
 
-[ -f ~/.bashrc ] && source ~/.bashrc
-[ -f ~/.profile ] && source ~/.profile
-[ -f ~/.bash_profile ] && source ~/.bash_profile
+NVM_DIR="$HOME/.nvm"
 
-###################################################
-# Verify pm2 exists
-###################################################
+PM2_BIN=$(find "$NVM_DIR/versions/node" -type f -name pm2 2>/dev/null | sort | tail -n1)
 
-if ! command -v pm2 >/dev/null 2>&1; then
+if [ -z "$PM2_BIN" ]; then
     echo ""
-    echo "ERROR: pm2 was not found."
-    echo "Current PATH:"
-    echo \$PATH
-    echo ""
-    echo "Run 'which pm2' after logging into the server manually."
+    echo "ERROR: Could not locate PM2."
     exit 1
 fi
 
 echo ""
-echo "PM2 Location:"
-command -v pm2
+echo "Using PM2:"
+echo "$PM2_BIN"
 
-###################################################
+########################################
 # Restart / Start
-###################################################
+########################################
 
-if pm2 describe ${PM2_NAME} >/dev/null 2>&1; then
+if "$PM2_BIN" describe "$PM2_NAME" >/dev/null 2>&1; then
     echo ""
     echo "Restarting PM2..."
-    pm2 restart ${PM2_NAME}
+    "$PM2_BIN" restart "$PM2_NAME"
 else
     echo ""
     echo "Starting PM2..."
-    pm2 start npm --name ${PM2_NAME} -- start
+    "$PM2_BIN" start npm --name "$PM2_NAME" -- start
 fi
 
-pm2 save
+"$PM2_BIN" save
 
 echo ""
-echo "Deployment finished."
+echo "Deployment completed successfully."
 
 EOF
 
-#########################
+########################################
 # CLEANUP
-#########################
+########################################
 
 rm -f .next.zip
 
 echo ""
-echo "========================================="
-echo "Deployment completed successfully!"
-echo "========================================="
+echo "========================================"
+echo "Deployment Successful!"
+echo "========================================"

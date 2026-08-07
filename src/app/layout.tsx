@@ -13,24 +13,30 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "OOWAPP — Order on WhatsApp",
-  description: "Order on WhatsApp",
-  applicationName: "OOWAPP",
+  title: {
+    default: "Oowapp — Business Operating System for Local Businesses",
+    template: "%s | Oowapp",
+  },
+  description:
+    "Oowapp helps local businesses take orders, accept UPI payments, generate bills, and manage operations — all from one simple platform.",
+  applicationName: "Oowapp",
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",
-    title: "OOWAPP",
+    title: "Oowapp",
   },
   openGraph: {
     type: "website",
-    title: "OOWAPP — Order on WhatsApp",
-    description: "Order on WhatsApp",
-    siteName: "OOWAPP",
+    title: "Oowapp — Business Operating System for Local Businesses",
+    description:
+      "Take orders, accept payments, generate bills, and manage your business — all in one place.",
+    siteName: "Oowapp",
   },
   twitter: {
-    card: "summary",
-    title: "OOWAPP — Order on WhatsApp",
-    description: "Order on WhatsApp",
+    card: "summary_large_image",
+    title: "Oowapp — Business Operating System for Local Businesses",
+    description:
+      "Take orders, accept payments, generate bills, and manage your business — all in one place.",
   },
 };
 
