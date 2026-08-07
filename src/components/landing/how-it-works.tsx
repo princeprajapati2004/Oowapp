@@ -15,7 +15,7 @@ const steps = [
     number: "01",
     icon: BuildingIcon,
     title: "Create your business",
-    desc: "Sign up, add your business name, type, address, and logo. Takes 2 minutes.",
+    desc: "Sign up, add your business name, type, address, and logo_1. Takes 2 minutes.",
   },
   {
     number: "02",

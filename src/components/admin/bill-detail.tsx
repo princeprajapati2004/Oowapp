@@ -572,7 +572,7 @@ export function BillDetail({
       const contentW = pageW - margin * 2;
       let y = margin;
 
-      // ─── Logo ───────────────────────────────────────────────────────────────
+      // ─── logo_1 ───────────────────────────────────────────────────────────────
       if (shop.logoUrl) {
         try {
           const resp = await fetch(shop.logoUrl);
@@ -586,7 +586,7 @@ export function BillDetail({
           doc.addImage(dataUrl, "WEBP", (pageW - logoSize) / 2, y, logoSize, logoSize);
           y += logoSize + 10;
         } catch {
-          // Skip logo on error
+          // Skip logo_1 on error
         }
       }
 

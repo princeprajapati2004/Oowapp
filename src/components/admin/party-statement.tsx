@@ -327,7 +327,7 @@ export function PartyStatement({
           doc.addImage(dataUrl, "WEBP", (pageW - logoSize) / 2, y, logoSize, logoSize);
           y += logoSize + 10;
         } catch {
-          // skip logo on error
+          // skip logo_1 on error
         }
       }
 

@@ -404,7 +404,7 @@ Inspired by: Vercel, Clerk, Stripe dashboards.
 `Business Name | Owner | Type | Plan | Status | Orders | Created | Actions`
 
 **Business detail page:**
-- Header: logo + name + status badge + action buttons (Suspend/Activate/Delete)
+- Header: logo_1 + name + status badge + action buttons (Suspend/Activate/Delete)
 - Tabs: Overview | Orders | Analytics | Settings
 - Overview: all metadata fields, subscription info
 - Orders: paginated order table for that business

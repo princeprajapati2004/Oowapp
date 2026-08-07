@@ -53,7 +53,7 @@ export default async function SettingsPage() {
     {
       id: "business",
       title: "Business information",
-      description: "Name, type, contact details, logo and currency.",
+      description: "Name, type, contact details, logo_1 and currency.",
       defaultOpen: true,
       content: (
         <BusinessInfoForm

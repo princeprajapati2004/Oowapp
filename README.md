@@ -14,7 +14,7 @@ PostgreSQL. Images are stored on Vercel Blob.
 - **Tailwind CSS v4** + **shadcn/ui** (Base UI primitives)
 - **Prisma 7** ORM → **PostgreSQL** (works with Neon, Supabase, Railway, or any Postgres)
 - **React Hook Form** + **Zod** for all forms and API validation
-- **Vercel Blob** for logo / product photo / payment QR uploads
+- **Vercel Blob** for logo_1 / product photo / payment QR uploads
 - **jose** (JWT) + **bcryptjs** for a minimal custom admin auth (no customer auth exists)
 - **qrcode** + **jsPDF** for the QR code generator (PNG/SVG/PDF/print)
 

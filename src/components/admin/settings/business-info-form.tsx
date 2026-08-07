@@ -55,7 +55,7 @@ export function BusinessInfoForm({
 
   const formContent = (
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-      <FormRow label="Logo" htmlFor="logoUrl">
+      <FormRow label="logo_1" htmlFor="logoUrl">
         <ImageUploader value={logoUrl} onChange={(url) => setValue("logoUrl", url)} />
       </FormRow>
 

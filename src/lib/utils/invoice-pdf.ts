@@ -75,7 +75,7 @@ export async function generateInvoicePdf(input: InvoicePdfInput): Promise<void> 
   const pageWidth = doc.internal.pageSize.getWidth();
   let y = 40;
 
-  // Logo
+  // logo_1
   if (shop.logoUrl) {
     try {
       const dataUrl = await toDataUrl(shop.logoUrl);
@@ -83,7 +83,7 @@ export async function generateInvoicePdf(input: InvoicePdfInput): Promise<void> 
       doc.addImage(dataUrl, "WEBP", (pageWidth - imgW) / 2, y, imgW, imgW);
       y += 58;
     } catch {
-      // Logo failed to load — skip it
+      // logo_1 failed to load — skip it
     }
   }
 

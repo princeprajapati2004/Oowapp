@@ -30,7 +30,7 @@ export function LandingFooter() {
           <div className="col-span-2 lg:col-span-1">
             <Link href="/" className="flex items-center gap-2.5 mb-4">
               <Image
-                src="/logo.webp"
+                src="/logo_1.webp"
                 alt="Oowapp"
                 width={28}
                 height={28}
