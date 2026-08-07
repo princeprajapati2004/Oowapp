@@ -126,6 +126,19 @@ export async function POST(request: Request) {
 
       const billNumber = await nextBillNumber(tx, shop.id);
 
+      // Decrement stock for products that track it (stock === null means untracked)
+      const itemsWithProduct = input.items.filter((i) => i.productId);
+      if (itemsWithProduct.length > 0) {
+        await Promise.all(
+          itemsWithProduct.map((i) =>
+            tx.product.updateMany({
+              where: { id: i.productId!, shopId: shop.id, stock: { gt: 0 } },
+              data: { stock: { decrement: i.quantity } },
+            })
+          )
+        );
+      }
+
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       return (tx.order as any).create({
         data: {

@@ -9,11 +9,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { EmptyState } from "@/components/shared/empty-state";
 
 const SOURCE_LABELS: Record<string, string> = {
-  PHOTO: "Photo",
-  PDF: "PDF",
   EXCEL: "Excel",
   CSV: "CSV",
-  TEXT: "Text",
 };
 
 const STATUS_VARIANT: Record<string, "default" | "secondary" | "destructive"> = {
@@ -36,7 +33,7 @@ export default async function MenuImportHistoryPage() {
         </Button>
         <div>
           <h1 className="text-xl font-bold">Import history</h1>
-          <p className="text-sm text-muted-foreground">Past AI menu imports for this shop.</p>
+          <p className="text-sm text-muted-foreground">Past bulk imports for this shop.</p>
         </div>
       </div>
 
@@ -44,7 +41,7 @@ export default async function MenuImportHistoryPage() {
         <EmptyState
           icon={History}
           title="No imports yet"
-          description="Files you import through AI Menu Import will show up here."
+          description="Files you import through Bulk Import will show up here."
         />
       ) : (
         <div className="overflow-x-auto rounded-xl border">

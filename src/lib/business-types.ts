@@ -42,10 +42,15 @@ export function isFoodBusiness(businessType: BusinessType) {
 /** Copy that changes by business type — never branch actual logic on this, only wording. */
 export function businessTypeCopy(businessType: BusinessType) {
   const deliveryFirst = isDeliveryFirst(businessType);
+  const food = isFoodBusiness(businessType);
   return {
     locationFieldLabel: deliveryFirst ? "Delivery Address" : "Table Number",
     menuLabel: deliveryFirst ? "Products" : "Menu",
     itemLabel: deliveryFirst ? "Product" : "Item",
     addToCartLabel: deliveryFirst ? "Add to Order" : "Add to Cart",
+    // Sidebar / nav labels
+    catalogueGroupLabel: food ? "Menu" : "Catalogue",
+    previewLabel: food ? "Preview menu" : "Preview store",
+    orderDisplayLabel: food ? "Kitchen display" : "Order display",
   };
 }

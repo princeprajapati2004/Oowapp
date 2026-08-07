@@ -12,7 +12,6 @@ import {
   History,
   ImageOff,
   Loader2,
-  Sparkles,
   Trash2,
   Upload,
 } from "lucide-react";
@@ -36,7 +35,7 @@ import { formatCurrency } from "@/lib/utils/currency";
 import { cn } from "@/lib/utils";
 import type { Category } from "@/generated/prisma/client";
 
-type SourceType = "PHOTO" | "PDF" | "EXCEL" | "CSV" | "TEXT";
+type SourceType = "EXCEL" | "CSV";
 type FoodType = "VEG" | "NON_VEG" | "EGG" | "NA";
 type Resolution = "skip" | "update" | "keep_both";
 
@@ -75,7 +74,7 @@ interface CommitResult {
 }
 
 const ACCEPT =
-  "image/*,.pdf,.xlsx,.xls,.csv,.txt,application/pdf,text/csv,text/plain,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel";
+  ".xlsx,.xls,.csv,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel";
 
 function newKey() {
   return Math.random().toString(36).slice(2);
@@ -108,8 +107,8 @@ export function MenuImportManager({
       ["Gulab Jamun", "Desserts", 50],
     ]);
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Menu");
-    XLSX.writeFile(wb, "menu-template.xlsx");
+    XLSX.utils.book_append_sheet(wb, ws, "Products");
+    XLSX.writeFile(wb, "products-template.xlsx");
   }
 
   async function handleFile(file: File) {
@@ -200,9 +199,9 @@ export function MenuImportManager({
       <div className="space-y-4">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-xl font-bold">AI Menu Import</h1>
+            <h1 className="text-xl font-bold">{showFoodType ? "Bulk Menu Import" : "Bulk Product Import"}</h1>
             <p className="text-sm text-muted-foreground">
-              Upload a menu photo, PDF, spreadsheet, or text file — items are extracted automatically.
+              Upload an Excel or CSV file to add {showFoodType ? "menu items" : "products"} in bulk.
             </p>
           </div>
           <Button
@@ -235,20 +234,19 @@ export function MenuImportManager({
           {phase === "extracting" ? (
             <>
               <Loader2 className="size-8 animate-spin text-primary" />
-              <p className="text-sm font-medium">Reading your menu…</p>
-              <p className="text-xs text-muted-foreground">This can take a moment for photos and PDFs.</p>
+              <p className="text-sm font-medium">Reading your file…</p>
             </>
           ) : (
             <>
               <div className="flex size-14 items-center justify-center rounded-2xl bg-primary/10">
-                <Sparkles className="size-7 text-primary" />
+                <FileSpreadsheet className="size-7 text-primary" />
               </div>
               <p className="text-sm font-medium">Drag a file here, or</p>
               <Button type="button" onClick={() => inputRef.current?.click()}>
                 <Upload className="size-4" /> Choose a file
               </Button>
               <p className="max-w-sm text-xs text-muted-foreground">
-                Supports photos of handwritten/printed menus, PDF menus, Excel/CSV sheets, and plain text lists.
+                Supports Excel (.xlsx, .xls) and CSV files. Columns: Name, Category, Price.
               </p>
               <button
                 type="button"
@@ -279,7 +277,7 @@ export function MenuImportManager({
     return (
       <div className="space-y-4">
         <EmptyState
-          icon={Sparkles}
+          icon={FileSpreadsheet}
           title="Import complete"
           description={`${result.imported} item${result.imported === 1 ? "" : "s"} added, ${result.updated} updated, ${result.skipped} skipped.`}
           action={

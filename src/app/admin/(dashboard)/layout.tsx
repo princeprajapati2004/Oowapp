@@ -3,6 +3,7 @@ import { getAdminSession } from "@/lib/session";
 import { getShopById } from "@/lib/services/shop";
 import { listNotifications } from "@/lib/services/notification";
 import { AdminShell } from "@/components/admin/admin-shell";
+import { isFoodBusiness, businessTypeCopy, type BusinessType } from "@/lib/business-types";
 
 export default async function DashboardLayout({
   children,
@@ -30,8 +31,18 @@ export default async function DashboardLayout({
     createdAt: n.createdAt.toISOString(),
   }));
 
+  const businessType = (shop.businessType ?? "RESTAURANT") as BusinessType;
+  const copy = businessTypeCopy(businessType);
+  const foodBusiness = isFoodBusiness(businessType);
+
   return (
-    <AdminShell shopName={shop.businessName} shopSlug={shop.slug} initialNotifications={initialNotifications}>
+    <AdminShell
+      shopName={shop.businessName}
+      shopSlug={shop.slug}
+      initialNotifications={initialNotifications}
+      isFoodBusiness={foodBusiness}
+      copy={copy}
+    >
       {children}
     </AdminShell>
   );
