@@ -137,6 +137,7 @@ export async function getPublicShopBundle(slug: string) {
       // Feature flags — forwarded to the customer UI
       enableQrOrdering: true,
       showProductImages: true,
+      orderMode: true,
       // Gate checks — stripped before the value is returned to the caller
       isPublished: true,
       status: true,
@@ -164,16 +165,5 @@ export async function getPublicShopBundle(slug: string) {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const { isPublished: _pub, status: _status, ...publicBundle } = shop;
 
-  // Load orderMode separately: the generated Prisma types don't include it yet —
-  // run `prisma generate` after applying the migration to regenerate them.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const modeRow = await (db.shop as any).findUnique({
-    where: { slug },
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    select: { orderMode: true } as any,
-  });
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const orderMode: OrderMode = (modeRow as any)?.orderMode ?? "WHATSAPP";
-
-  return { ...publicBundle, orderMode };
+  return publicBundle;
 }
