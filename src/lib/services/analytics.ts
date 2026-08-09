@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { getDbProvider } from "@/lib/db-provider";
 
 export type Granularity = "hour" | "day" | "month";
 
@@ -118,19 +119,34 @@ async function fetchSummary(shopId: string, from: Date, to: Date): Promise<Dashb
 }
 
 async function fetchRevenueChart(shopId: string, from: Date, to: Date, granularity: Granularity): Promise<RevenuePoint[]> {
+  const isMysql = getDbProvider() === "mysql";
+
   if (granularity === "hour") {
-    const rows = await db.$queryRaw<{ hour: number; revenue: number; orders: number }[]>`
-      SELECT
-        EXTRACT(HOUR FROM "createdAt")::int AS hour,
-        COALESCE(SUM("grandTotal"::numeric)::float, 0) AS revenue,
-        COUNT(*)::int AS orders
-      FROM orders
-      WHERE "shopId" = ${shopId}
-        AND "createdAt" >= ${from}
-        AND "createdAt" < ${to}
-      GROUP BY hour
-      ORDER BY hour
-    `;
+    const rows = isMysql
+      ? await db.$queryRaw<{ hour: number; revenue: number; orders: number }[]>`
+          SELECT
+            EXTRACT(HOUR FROM \`createdAt\`) AS hour,
+            CAST(COALESCE(SUM(\`grandTotal\`), 0) AS DOUBLE) AS revenue,
+            CAST(COUNT(*) AS SIGNED) AS orders
+          FROM orders
+          WHERE \`shopId\` = ${shopId}
+            AND \`createdAt\` >= ${from}
+            AND \`createdAt\` < ${to}
+          GROUP BY hour
+          ORDER BY hour
+        `
+      : await db.$queryRaw<{ hour: number; revenue: number; orders: number }[]>`
+          SELECT
+            EXTRACT(HOUR FROM "createdAt")::int AS hour,
+            COALESCE(SUM("grandTotal"::numeric)::float, 0) AS revenue,
+            COUNT(*)::int AS orders
+          FROM orders
+          WHERE "shopId" = ${shopId}
+            AND "createdAt" >= ${from}
+            AND "createdAt" < ${to}
+          GROUP BY hour
+          ORDER BY hour
+        `;
     const map = new Map(rows.map((r) => [r.hour, r]));
     return Array.from({ length: 24 }, (_, h) => ({
       label: formatHourLabel(h),
@@ -140,18 +156,31 @@ async function fetchRevenueChart(shopId: string, from: Date, to: Date, granulari
   }
 
   if (granularity === "day") {
-    const rows = await db.$queryRaw<{ date: string; revenue: number; orders: number }[]>`
-      SELECT
-        TO_CHAR("createdAt"::date, 'YYYY-MM-DD') AS date,
-        COALESCE(SUM("grandTotal"::numeric)::float, 0) AS revenue,
-        COUNT(*)::int AS orders
-      FROM orders
-      WHERE "shopId" = ${shopId}
-        AND "createdAt" >= ${from}
-        AND "createdAt" < ${to}
-      GROUP BY date
-      ORDER BY date
-    `;
+    const rows = isMysql
+      ? await db.$queryRaw<{ date: string; revenue: number; orders: number }[]>`
+          SELECT
+            DATE_FORMAT(\`createdAt\`, '%Y-%m-%d') AS date,
+            CAST(COALESCE(SUM(\`grandTotal\`), 0) AS DOUBLE) AS revenue,
+            CAST(COUNT(*) AS SIGNED) AS orders
+          FROM orders
+          WHERE \`shopId\` = ${shopId}
+            AND \`createdAt\` >= ${from}
+            AND \`createdAt\` < ${to}
+          GROUP BY date
+          ORDER BY date
+        `
+      : await db.$queryRaw<{ date: string; revenue: number; orders: number }[]>`
+          SELECT
+            TO_CHAR("createdAt"::date, 'YYYY-MM-DD') AS date,
+            COALESCE(SUM("grandTotal"::numeric)::float, 0) AS revenue,
+            COUNT(*)::int AS orders
+          FROM orders
+          WHERE "shopId" = ${shopId}
+            AND "createdAt" >= ${from}
+            AND "createdAt" < ${to}
+          GROUP BY date
+          ORDER BY date
+        `;
     const map = new Map(rows.map((r) => [r.date, r]));
     const points: RevenuePoint[] = [];
     const cursor = new Date(from);
@@ -170,18 +199,31 @@ async function fetchRevenueChart(shopId: string, from: Date, to: Date, granulari
   }
 
   // month granularity
-  const rows = await db.$queryRaw<{ month: string; revenue: number; orders: number }[]>`
-    SELECT
-      TO_CHAR(DATE_TRUNC('month', "createdAt"), 'YYYY-MM') AS month,
-      COALESCE(SUM("grandTotal"::numeric)::float, 0) AS revenue,
-      COUNT(*)::int AS orders
-    FROM orders
-    WHERE "shopId" = ${shopId}
-      AND "createdAt" >= ${from}
-      AND "createdAt" < ${to}
-    GROUP BY month
-    ORDER BY month
-  `;
+  const rows = isMysql
+    ? await db.$queryRaw<{ month: string; revenue: number; orders: number }[]>`
+        SELECT
+          DATE_FORMAT(\`createdAt\`, '%Y-%m') AS month,
+          CAST(COALESCE(SUM(\`grandTotal\`), 0) AS DOUBLE) AS revenue,
+          CAST(COUNT(*) AS SIGNED) AS orders
+        FROM orders
+        WHERE \`shopId\` = ${shopId}
+          AND \`createdAt\` >= ${from}
+          AND \`createdAt\` < ${to}
+        GROUP BY month
+        ORDER BY month
+      `
+    : await db.$queryRaw<{ month: string; revenue: number; orders: number }[]>`
+        SELECT
+          TO_CHAR(DATE_TRUNC('month', "createdAt"), 'YYYY-MM') AS month,
+          COALESCE(SUM("grandTotal"::numeric)::float, 0) AS revenue,
+          COUNT(*)::int AS orders
+        FROM orders
+        WHERE "shopId" = ${shopId}
+          AND "createdAt" >= ${from}
+          AND "createdAt" < ${to}
+        GROUP BY month
+        ORDER BY month
+      `;
   const map = new Map(rows.map((r) => [r.month, r]));
   const points: RevenuePoint[] = [];
   const cursor = new Date(from.getFullYear(), from.getMonth(), 1);
@@ -199,18 +241,32 @@ async function fetchRevenueChart(shopId: string, from: Date, to: Date, granulari
 }
 
 async function fetchPaymentBreakdown(shopId: string, from: Date, to: Date): Promise<PaymentBreakdown[]> {
-  const rows = await db.$queryRaw<{ method: string | null; amount: number; count: number }[]>`
-    SELECT
-      "paymentMethod" AS method,
-      COALESCE(SUM("grandTotal"::numeric)::float, 0) AS amount,
-      COUNT(*)::int AS count
-    FROM orders
-    WHERE "shopId" = ${shopId}
-      AND "createdAt" >= ${from}
-      AND "createdAt" < ${to}
-    GROUP BY "paymentMethod"
-    ORDER BY amount DESC
-  `;
+  const rows =
+    getDbProvider() === "mysql"
+      ? await db.$queryRaw<{ method: string | null; amount: number; count: number }[]>`
+          SELECT
+            \`paymentMethod\` AS method,
+            CAST(COALESCE(SUM(\`grandTotal\`), 0) AS DOUBLE) AS amount,
+            CAST(COUNT(*) AS SIGNED) AS count
+          FROM orders
+          WHERE \`shopId\` = ${shopId}
+            AND \`createdAt\` >= ${from}
+            AND \`createdAt\` < ${to}
+          GROUP BY \`paymentMethod\`
+          ORDER BY amount DESC
+        `
+      : await db.$queryRaw<{ method: string | null; amount: number; count: number }[]>`
+          SELECT
+            "paymentMethod" AS method,
+            COALESCE(SUM("grandTotal"::numeric)::float, 0) AS amount,
+            COUNT(*)::int AS count
+          FROM orders
+          WHERE "shopId" = ${shopId}
+            AND "createdAt" >= ${from}
+            AND "createdAt" < ${to}
+          GROUP BY "paymentMethod"
+          ORDER BY amount DESC
+        `;
 
   const total = rows.reduce((sum, r) => sum + r.amount, 0);
   return rows.map((r) => ({
@@ -223,17 +279,30 @@ async function fetchPaymentBreakdown(shopId: string, from: Date, to: Date): Prom
 }
 
 async function fetchStatusBreakdown(shopId: string, from: Date, to: Date): Promise<StatusBreakdown[]> {
-  const rows = await db.$queryRaw<{ status: string; count: number }[]>`
-    SELECT
-      status,
-      COUNT(*)::int AS count
-    FROM orders
-    WHERE "shopId" = ${shopId}
-      AND "createdAt" >= ${from}
-      AND "createdAt" < ${to}
-    GROUP BY status
-    ORDER BY count DESC
-  `;
+  const rows =
+    getDbProvider() === "mysql"
+      ? await db.$queryRaw<{ status: string; count: number }[]>`
+          SELECT
+            status,
+            CAST(COUNT(*) AS SIGNED) AS count
+          FROM orders
+          WHERE \`shopId\` = ${shopId}
+            AND \`createdAt\` >= ${from}
+            AND \`createdAt\` < ${to}
+          GROUP BY status
+          ORDER BY count DESC
+        `
+      : await db.$queryRaw<{ status: string; count: number }[]>`
+          SELECT
+            status,
+            COUNT(*)::int AS count
+          FROM orders
+          WHERE "shopId" = ${shopId}
+            AND "createdAt" >= ${from}
+            AND "createdAt" < ${to}
+          GROUP BY status
+          ORDER BY count DESC
+        `;
   const total = rows.reduce((sum, r) => sum + r.count, 0);
   return rows.map((r) => ({
     status: r.status,
@@ -244,6 +313,22 @@ async function fetchStatusBreakdown(shopId: string, from: Date, to: Date): Promi
 }
 
 async function fetchTopProducts(shopId: string, from: Date, to: Date, limit = 5): Promise<TopProduct[]> {
+  if (getDbProvider() === "mysql") {
+    return db.$queryRaw<TopProduct[]>`
+      SELECT
+        oi.name,
+        CAST(SUM(oi.quantity) AS SIGNED) AS quantity,
+        CAST(COALESCE(SUM(oi.\`lineTotal\`), 0) AS DOUBLE) AS revenue
+      FROM order_items oi
+      JOIN orders o ON oi.\`orderId\` = o.id
+      WHERE o.\`shopId\` = ${shopId}
+        AND o.\`createdAt\` >= ${from}
+        AND o.\`createdAt\` < ${to}
+      GROUP BY oi.name
+      ORDER BY quantity DESC
+      LIMIT ${limit}
+    `;
+  }
   return db.$queryRaw<TopProduct[]>`
     SELECT
       oi.name,

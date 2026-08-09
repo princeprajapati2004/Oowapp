@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { caseInsensitive } from "@/lib/db-provider";
 
 export const PlatformAnalyticsService = {
   async getOverview() {
@@ -53,8 +54,8 @@ export const PlatformAnalyticsService = {
       ...(search
         ? {
             OR: [
-              { businessName: { contains: search, mode: "insensitive" as const } },
-              { slug: { contains: search, mode: "insensitive" as const } },
+              { businessName: { contains: search, ...caseInsensitive() } },
+              { slug: { contains: search, ...caseInsensitive() } },
             ],
           }
         : {}),

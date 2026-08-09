@@ -61,7 +61,8 @@
       "Bash(git config *)",
       "Bash(git mergetool *)",
       "Bash(git diff *)",
-      "Bash(wsl *)"
+      "Bash(wsl *)",
+      "Bash(npm view *)"
     ]
   }
 }

@@ -1,5 +1,6 @@
 import * as XLSX from "xlsx";
 import { db } from "@/lib/db";
+import { caseInsensitive } from "@/lib/db-provider";
 import { NotFoundError } from "@/lib/api-utils";
 import { z } from "zod";
 
@@ -123,7 +124,7 @@ export async function findDuplicateProductIds(
 async function resolveCategoryIds(shopId: string, names: string[]) {
   const uniqueNames = [...new Set(names.map((n) => n.trim() || UNCATEGORIZED))];
   const existing = await db.category.findMany({
-    where: { shopId, name: { in: uniqueNames, mode: "insensitive" } },
+    where: { shopId, name: { in: uniqueNames, ...caseInsensitive() } },
   });
   const byLowerName = new Map(existing.map((c) => [c.name.trim().toLowerCase(), c.id]));
 

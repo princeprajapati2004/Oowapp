@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { caseInsensitive } from "@/lib/db-provider";
 import { NotFoundError } from "@/lib/api-utils";
 import type { SubscriptionDuration, SubscriptionPlan as LegacyPlanEnum } from "@/generated/prisma/client";
 import {
@@ -261,9 +262,9 @@ export async function listBusinessSubscriptions(filters: SubscriptionListFilters
       ...(search
         ? {
             OR: [
-              { businessName: { contains: search, mode: "insensitive" as const } },
-              { slug: { contains: search, mode: "insensitive" as const } },
-              { admin: { email: { contains: search, mode: "insensitive" as const } } },
+              { businessName: { contains: search, ...caseInsensitive() } },
+              { slug: { contains: search, ...caseInsensitive() } },
+              { admin: { email: { contains: search, ...caseInsensitive() } } },
             ],
           }
         : {}),
