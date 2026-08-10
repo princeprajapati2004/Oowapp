@@ -5,6 +5,7 @@ import { db } from "@/lib/db";
 import { handleApiError } from "@/lib/api-utils";
 import { verifyPassword } from "@/lib/auth";
 import { signStaffSession, STAFF_SESSION_COOKIE, STAFF_SESSION_DURATION_SECONDS } from "@/lib/staff-auth";
+import { checkRateLimit } from "@/lib/rate-limit";
 
 const loginSchema = z.object({
   shopSlug: z.string().trim().min(1),
@@ -14,6 +15,11 @@ const loginSchema = z.object({
 
 export async function POST(request: Request) {
   try {
+    const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "unknown";
+    if (!checkRateLimit(`staff-auth:${ip}`, 10, 60_000)) {
+      return NextResponse.json({ error: "Too many requests" }, { status: 429 });
+    }
+
     const body = await request.json();
     const { shopSlug, email, password } = loginSchema.parse(body);
 

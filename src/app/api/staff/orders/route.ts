@@ -8,6 +8,8 @@ import { resolveOrCreateSession } from "@/lib/services/table-session";
 import { nextBillNumber } from "@/lib/services/bill-number";
 import { publishOrderEvent, toOrderEvent } from "@/lib/server/order-events";
 import { sendNewOrderNotification } from "@/lib/services/push";
+import { resolveOrderItems } from "@/lib/services/order-items";
+import { checkRateLimit } from "@/lib/rate-limit";
 import type { Prisma } from "@/generated/prisma/client";
 
 const orderItemSchema = z.object({
@@ -29,6 +31,11 @@ const createWaiterOrderSchema = z.object({
 export async function POST(request: Request) {
   try {
     const staffSession = await requireStaffRole("WAITER", "MANAGER");
+
+    if (!checkRateLimit(`staff-orders:${staffSession.staffId}`, 20, 60_000)) {
+      return NextResponse.json({ error: "Too many requests" }, { status: 429 });
+    }
+
     const body = await request.json();
     const input = createWaiterOrderSchema.parse(body);
 
@@ -39,6 +46,12 @@ export async function POST(request: Request) {
     if (!shop) return NextResponse.json({ error: "Shop not found" }, { status: 404 });
 
     const taxes = shop.taxes.map((t) => ({ ...t, value: Number(t.value) }));
+
+    // Price, name, and category always come from the DB, never the client.
+    const resolvedItems = await resolveOrderItems(shop.id, input.items);
+    if (resolvedItems.length === 0) {
+      return NextResponse.json({ error: "No valid items in this order." }, { status: 400 });
+    }
 
     const { order, isDuplicate } = await db.$transaction(async (tx) => {
       const existing = await tx.order.findUnique({
@@ -54,7 +67,7 @@ export async function POST(request: Request) {
       });
 
       const bill = calculateBill(
-        input.items.map((item) => ({ ...item, id: item.productId })),
+        resolvedItems.map((item) => ({ ...item, id: item.productId })),
         taxes
       );
       const billNumber = await nextBillNumber(tx, shop.id);
@@ -76,7 +89,7 @@ export async function POST(request: Request) {
           grandTotal: bill.grandTotal,
           taxBreakdown: bill.taxLines as unknown as Prisma.InputJsonValue,
           items: {
-            create: input.items.map((item) => ({
+            create: resolvedItems.map((item) => ({
               productId: item.productId,
               name: item.name,
               price: item.price,

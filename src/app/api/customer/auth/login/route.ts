@@ -21,6 +21,12 @@ export async function POST(request: Request) {
     const body = await request.json();
     const input = customerLoginSchema.parse(body);
 
+    // Also throttle per (shop, phone) — an IP-only limit doesn't stop
+    // credential stuffing against one account from a rotating-IP botnet.
+    if (!checkRateLimit(`customer-auth-phone:${input.shopSlug}:${input.phone}`, 10, 60_000)) {
+      return NextResponse.json({ error: "Too many requests" }, { status: 429 });
+    }
+
     const shop = await db.shop.findUnique({ where: { slug: input.shopSlug }, select: { id: true } });
     if (!shop) throw new NotFoundError("Shop not found");
 

@@ -11,7 +11,7 @@ export const customerSignupSchema = z.object({
   shopSlug: z.string(),
   name: z.string().trim().min(1, "Name is required").max(100),
   phone: phoneSchema,
-  password: z.string().min(6, "Password must be at least 6 characters"),
+  password: z.string().min(8, "Password must be at least 8 characters"),
 });
 export type CustomerSignupInput = z.infer<typeof customerSignupSchema>;
 

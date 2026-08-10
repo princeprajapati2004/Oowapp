@@ -11,6 +11,30 @@ cloudinary.config({
 
 const MAX_SIZE = 4 * 1024 * 1024;
 
+// Magic-byte signatures for the raster formats we actually want to accept —
+// client-supplied `file.type` is just a header the caller can set to
+// anything, so it's not trusted on its own. SVG is deliberately excluded:
+// it's XML that can carry <script>, which would be a stored-XSS vector if
+// ever rendered outside an <img> context.
+const SIGNATURES: { type: string; bytes: number[] }[] = [
+  { type: "image/jpeg", bytes: [0xff, 0xd8, 0xff] },
+  { type: "image/png", bytes: [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a] },
+  { type: "image/gif", bytes: [0x47, 0x49, 0x46, 0x38] },
+  { type: "image/webp", bytes: [0x52, 0x49, 0x46, 0x46] }, // "RIFF"; WEBP marker follows at offset 8
+];
+
+function sniffImageType(buffer: Buffer): string | null {
+  for (const sig of SIGNATURES) {
+    if (sig.bytes.every((b, i) => buffer[i] === b)) {
+      if (sig.type === "image/webp") {
+        return buffer.subarray(8, 12).toString("ascii") === "WEBP" ? sig.type : null;
+      }
+      return sig.type;
+    }
+  }
+  return null;
+}
+
 export async function POST(request: Request) {
   try {
     const session = await requireAdminSession();
@@ -29,6 +53,13 @@ export async function POST(request: Request) {
 
     const bytes = await file.arrayBuffer();
     const buffer = Buffer.from(bytes);
+
+    if (!sniffImageType(buffer)) {
+      return NextResponse.json(
+        { error: "File content doesn't match a supported image format (JPEG, PNG, GIF, WEBP)" },
+        { status: 400 }
+      );
+    }
 
     const result = await new Promise<{ secure_url: string }>((resolve, reject) => {
       cloudinary.uploader

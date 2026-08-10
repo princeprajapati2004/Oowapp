@@ -188,8 +188,15 @@ export async function commitMenuImport(
       };
 
       if (item.resolution === "update" && item.existingProductId) {
-        await tx.product.update({ where: { id: item.existingProductId }, data });
-        updated++;
+        const { count } = await tx.product.updateMany({
+          where: { id: item.existingProductId, shopId },
+          data,
+        });
+        if (count > 0) {
+          updated++;
+        } else {
+          skipped++;
+        }
       } else {
         await tx.product.create({ data: { shopId, ...data } });
         imported++;

@@ -40,7 +40,8 @@ export function handleApiError(error: unknown) {
     );
   }
   if (error instanceof Error) {
-    return NextResponse.json({ error: error.message }, { status: 400 });
+    console.error(error);
+    return NextResponse.json({ error: "Something went wrong" }, { status: 400 });
   }
   return NextResponse.json({ error: "Something went wrong" }, { status: 500 });
 }

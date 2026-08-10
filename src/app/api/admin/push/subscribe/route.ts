@@ -18,13 +18,20 @@ export async function POST(request: Request) {
     const body = await request.json();
     const { endpoint, keys } = subscribeSchema.parse(body);
 
-    // Upsert — idempotent if same endpoint registers again
+    // A push endpoint is unique per browser/device, not per shop, so the
+    // same endpoint re-subscribing under a different shop's admin session is
+    // a legitimate device handover (shared computer, different logged-in
+    // admin) — but it must go through an explicit delete + create scoped to
+    // this shop rather than a bare upsert-by-endpoint, so ownership always
+    // ends up consistent with who is actually authenticated right now.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await (db.pushSubscription as any).upsert({
-      where: { endpoint },
-      create: { shopId: session.shopId, endpoint, p256dh: keys.p256dh, auth: keys.auth },
-      update: { shopId: session.shopId, p256dh: keys.p256dh, auth: keys.auth },
-    });
+    const pushSubscription = db.pushSubscription as any;
+    await db.$transaction([
+      pushSubscription.deleteMany({ where: { endpoint } }),
+      pushSubscription.create({
+        data: { shopId: session.shopId, endpoint, p256dh: keys.p256dh, auth: keys.auth },
+      }),
+    ]);
 
     return NextResponse.json({ ok: true });
   } catch (error) {

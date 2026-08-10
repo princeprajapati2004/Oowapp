@@ -9,6 +9,7 @@ import { publishOrderEvent, toOrderEvent } from "@/lib/server/order-events";
 import { getCustomerSession } from "@/lib/customer-session";
 import { readPhoneVerifiedCookie } from "@/lib/phone-verify-auth";
 import { resolveOrCreateSession, computeSessionBill } from "@/lib/services/table-session";
+import { resolveOrderItems } from "@/lib/services/order-items";
 import { nextBillNumber } from "@/lib/services/bill-number";
 import { createNotification } from "@/lib/services/notification";
 import { formatCurrency } from "@/lib/utils/currency";
@@ -94,6 +95,13 @@ export async function POST(request: Request) {
 
     const taxes = shop.taxes.map((t) => ({ ...t, value: Number(t.value) }));
 
+    // Price, name, and category always come from the DB, never the client —
+    // only productId/quantity from the request are trusted.
+    const resolvedItems = await resolveOrderItems(shop.id, input.items);
+    if (resolvedItems.length === 0) {
+      return NextResponse.json({ error: "No valid items in this order." }, { status: 400 });
+    }
+
     // Link the order to the account if the customer is logged in — derived
     // from the session cookie server-side, never trusted from client input.
     // A session scoped to a different shop doesn't count here.
@@ -127,14 +135,14 @@ export async function POST(request: Request) {
       // Bill for this round only — the delta being submitted, not the
       // session's cumulative total (see computeSessionBill below).
       const bill = calculateBill(
-        input.items.map((item) => ({ ...item, id: item.productId })),
+        resolvedItems.map((item) => ({ ...item, id: item.productId })),
         taxes
       );
       const billNumber = await nextBillNumber(tx, shop.id);
 
       // Decrement stock for products that track it (fire-and-forget errors — order still succeeds)
       await Promise.all(
-        input.items.map((item) =>
+        resolvedItems.map((item) =>
           tx.product.updateMany({
             where: { id: item.productId, shopId: shop.id, stock: { gt: 0 } },
             data: { stock: { decrement: item.quantity } },
@@ -159,7 +167,7 @@ export async function POST(request: Request) {
           grandTotal: bill.grandTotal,
           taxBreakdown: bill.taxLines as unknown as Prisma.InputJsonValue,
           items: {
-            create: input.items.map((item) => ({
+            create: resolvedItems.map((item) => ({
               productId: item.productId,
               name: item.name,
               price: item.price,

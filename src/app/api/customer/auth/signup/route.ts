@@ -14,7 +14,10 @@ import {
 export async function POST(request: Request) {
   try {
     const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "unknown";
-    if (!checkRateLimit(`customer-auth:${ip}`, 10, 60_000)) {
+    // Own (tighter) bucket from login — this endpoint's response distinguishes
+    // an existing account, so it's a phone-number enumeration vector and gets
+    // throttled harder than plain login attempts.
+    if (!checkRateLimit(`customer-signup:${ip}`, 5, 60_000)) {
       return NextResponse.json({ error: "Too many requests" }, { status: 429 });
     }
 

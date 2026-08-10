@@ -12,9 +12,15 @@ import {
 import { loginSchema } from "@/lib/validation/auth";
 import { handleApiError } from "@/lib/api-utils";
 import { writeAuditLog, extractRequestMeta } from "@/lib/services/audit-log";
+import { checkRateLimit } from "@/lib/rate-limit";
 
 export async function POST(request: Request) {
   try {
+    const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "unknown";
+    if (!checkRateLimit(`admin-auth:${ip}`, 10, 60_000)) {
+      return NextResponse.json({ error: "Too many requests" }, { status: 429 });
+    }
+
     const body = await request.json();
     const input = loginSchema.parse(body);
     const { ipAddress, userAgent, requestId } = extractRequestMeta(request);

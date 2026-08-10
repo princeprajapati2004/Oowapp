@@ -177,12 +177,14 @@ async function handleEditItems(
     const taxes = await db.tax.findMany({ where: { shopId, isEnabled: true } });
 
     const updated = await db.$transaction(async (tx) => {
-      // Apply quantity changes — delete items with qty 0.
+      // Apply quantity changes — delete items with qty 0. Every item id is
+      // re-checked against orderId here so a caller can't reference an
+      // OrderItem belonging to a different order (or another shop's order).
       for (const u of updates) {
         if (u.quantity === 0) {
-          await tx.orderItem.delete({ where: { id: u.id } });
+          await tx.orderItem.deleteMany({ where: { id: u.id, orderId } });
         } else {
-          const item = await tx.orderItem.findUnique({ where: { id: u.id } });
+          const item = await tx.orderItem.findFirst({ where: { id: u.id, orderId } });
           if (item) {
             await tx.orderItem.update({
               where: { id: u.id },

@@ -10,6 +10,7 @@ import {
 } from "@/lib/auth";
 import { handleApiError } from "@/lib/api-utils";
 import { writeAuditLog, extractRequestMeta } from "@/lib/services/audit-log";
+import { checkRateLimit } from "@/lib/rate-limit";
 
 const loginSchema = z.object({
   email: z.string().email(),
@@ -18,6 +19,11 @@ const loginSchema = z.object({
 
 export async function POST(request: Request) {
   try {
+    const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "unknown";
+    if (!checkRateLimit(`sa-auth:${ip}`, 5, 60_000)) {
+      return NextResponse.json({ error: "Too many requests" }, { status: 429 });
+    }
+
     const body = await request.json();
     const { email, password } = loginSchema.parse(body);
     const { ipAddress, userAgent, requestId } = extractRequestMeta(request);
