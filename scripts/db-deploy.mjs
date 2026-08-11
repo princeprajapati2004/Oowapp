@@ -14,5 +14,5 @@ if (provider === "postgresql") {
   execSync("prisma migrate deploy", { stdio: "inherit" });
 } else {
   console.log("[db-deploy] MySQL/MariaDB target — no migration history for this provider, running `prisma db push`.");
-  execSync("prisma db push --skip-generate", { stdio: "inherit" });
+  execSync("prisma db push", { stdio: "inherit" });
 }
