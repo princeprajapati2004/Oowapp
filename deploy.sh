@@ -42,8 +42,9 @@ echo "      Done ($(du -sh .next.zip | cut -f1))"
 ########################################
 
 echo ""
-echo "[2/4] Uploading .next.zip to server..."
+echo "[2/4] Uploading .next.zip and ecosystem config to server..."
 scp -P "$SERVER_PORT" .next.zip "${SERVER_USER}@${SERVER_IP}:${REMOTE_PROJECT}/"
+scp -P "$SERVER_PORT" ecosystem.config.cjs "${SERVER_USER}@${SERVER_IP}:${REMOTE_PROJECT}/"
 rm -f .next.zip
 echo "      Uploaded."
 
@@ -96,12 +97,14 @@ fi
 
 echo "  -> pm2 at $PM2_BIN"
 
+# Use ecosystem.config.cjs so PM2 starts the app with the correct absolute
+# Node binary path — avoids EADDRINUSE and nvm-not-loaded failures.
 if "$PM2_BIN" describe "$PM2_NAME" >/dev/null 2>&1; then
-  echo "  -> restarting $PM2_NAME"
-  "$PM2_BIN" restart "$PM2_NAME"
+  echo "  -> reloading $PM2_NAME via ecosystem config"
+  "$PM2_BIN" reload ecosystem.config.cjs --update-env
 else
-  echo "  -> starting $PM2_NAME"
-  "$PM2_BIN" start npm --name "$PM2_NAME" -- start
+  echo "  -> starting $PM2_NAME via ecosystem config"
+  "$PM2_BIN" start ecosystem.config.cjs
 fi
 
 "$PM2_BIN" save --force
