@@ -15,6 +15,8 @@ const STATUS_LABELS: Record<string, string> = {
   CONFIRMED: "Confirmed",
   PREPARING: "Confirmed",
   READY: "Confirmed",
+  OUT_FOR_DELIVERY: "Out for delivery",
+  DELIVERED: "Delivered",
   COMPLETED: "Completed",
   CANCELLED: "Cancelled",
 };
@@ -23,18 +25,24 @@ const STATUS_COLORS: Record<string, string> = {
   CONFIRMED: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400",
   PREPARING: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400",
   READY: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400",
+  OUT_FOR_DELIVERY: "bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-400",
+  DELIVERED: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400",
   COMPLETED: "bg-muted text-muted-foreground",
   CANCELLED: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400",
 };
 
-// The four buckets asked for — Confirmed also covers Preparing/Ready so an
-// in-progress order is never hidden, just grouped with "confirmed."
+// The four buckets asked for — Confirmed also covers every in-progress state
+// (Preparing/Ready/Out for delivery) so an order is never hidden, just
+// grouped with "confirmed" until it's actually delivered/completed.
 const FILTERS = ["ALL", "PENDING", "CONFIRMED", "CANCELLED", "COMPLETED"] as const;
 type Filter = (typeof FILTERS)[number];
 
 function matchesFilter(status: string, filter: Filter) {
   if (filter === "ALL") return true;
-  if (filter === "CONFIRMED") return status === "CONFIRMED" || status === "PREPARING" || status === "READY";
+  if (filter === "CONFIRMED") {
+    return status === "CONFIRMED" || status === "PREPARING" || status === "READY" || status === "OUT_FOR_DELIVERY";
+  }
+  if (filter === "COMPLETED") return status === "COMPLETED" || status === "DELIVERED";
   return status === filter;
 }
 

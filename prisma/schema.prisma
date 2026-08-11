@@ -86,13 +86,19 @@ enum OrderStatus {
   CONFIRMED
   PREPARING
   READY
+  // Delivery-only steps — only ever set on orders that have a deliveryAddress;
+  // dine-in/takeaway orders go straight from READY to COMPLETED.
+  OUT_FOR_DELIVERY
+  DELIVERED
   COMPLETED
   CANCELLED
 }
 
 enum PaymentStatus {
   PENDING
+  PARTIALLY_PAID
   PAID
+  REFUNDED
 }
 
 enum TableSessionStatus {
@@ -566,9 +572,22 @@ model Order {
   paymentStatus      PaymentStatus @default(PENDING)
   paymentConfirmedBy String?
   paymentConfirmedAt DateTime?
+  // Amount actually collected so far — supports PARTIALLY_PAID; null until a
+  // payment is recorded. Distinct from grandTotal/discountedTotal (owed).
+  paidAmount          Decimal? @db.Decimal(10, 2)
+  transactionReference String?
+  // Cancellation trail — set only when status becomes CANCELLED via the owner
+  // "Cancel Order" flow (customer self-cancel leaves these null).
+  cancelReason  String?
+  cancelledAt   DateTime?
+  cancelledBy   String?
+  // Owner-only internal note about this order/customer — never shown to the
+  // customer, stored separately from status so it survives status changes.
+  ownerNote     String?
   createdAt       DateTime    @default(now())
 
-  items OrderItem[]
+  items         OrderItem[]
+  statusEvents  OrderStatusEvent[]
 
   @@unique([shopId, clientRequestId])
   @@unique([shopId, billNumber])
@@ -729,6 +748,23 @@ model KotItem {
 
   @@index([kitchenTicketId])
   @@map("kot_items")
+}
+
+// Append-only status change log — written each time an order's status
+// changes going forward. Historical orders predating this table simply have
+// no rows here; the UI falls back to createdAt + current status rather than
+// fabricating timestamps for steps that were never actually recorded.
+model OrderStatusEvent {
+  id        String      @id @default(cuid())
+  orderId   String
+  order     Order       @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  status    OrderStatus
+  changedAt DateTime    @default(now())
+  // adminId, staffId, "customer", or null (system/legacy)
+  changedBy String?
+
+  @@index([orderId])
+  @@map("order_status_events")
 }
 
 // ─── SaaS Platform Models ─────────────────────────────────────────────────────

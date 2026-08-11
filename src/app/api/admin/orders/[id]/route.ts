@@ -6,13 +6,20 @@ import { db } from "@/lib/db";
 import { calculateBill } from "@/lib/services/billing";
 import { sendOrderStatusNotification } from "@/lib/services/push";
 import { createNotification } from "@/lib/services/notification";
-import { publishOrderEvent, toOrderEvent } from "@/lib/server/order-events";
+import { publishOrderEvent, toOrderEvent, toAdminOrderEvent } from "@/lib/server/order-events";
+import {
+  ORDER_STATUSES,
+  PAYMENT_METHODS,
+  CANCEL_REASONS,
+  getNextStatuses,
+  canCancel,
+} from "@/lib/order-status";
 import type { Prisma } from "@/generated/prisma/client";
 
-const ORDER_STATUSES = ["PENDING", "CONFIRMED", "PREPARING", "READY", "COMPLETED", "CANCELLED"] as const;
+const PAYMENT_METHOD_VALUES = PAYMENT_METHODS.map((m) => m.value) as [string, ...string[]];
 
 const updateOrderSchema = z.discriminatedUnion("action", [
-  z.object({ action: z.literal("status"), status: z.enum(ORDER_STATUSES) }),
+  z.object({ action: z.literal("status"), status: z.enum(ORDER_STATUSES as [string, ...string[]]) }),
   z.object({
     action: z.literal("discount"),
     discountType: z.enum(["PERCENTAGE", "FIXED"]),
@@ -28,8 +35,23 @@ const updateOrderSchema = z.discriminatedUnion("action", [
   }),
   z.object({
     action: z.literal("mark_paid"),
-    paymentMethod: z.enum(["CASH", "UPI", "QR", "CARD", "OTHER"]),
+    paymentMethod: z.enum(PAYMENT_METHOD_VALUES),
+    paidAmount: z.number().min(0).optional(),
+    transactionReference: z.string().trim().max(100).optional(),
     paymentNote: z.string().trim().max(200).optional(),
+  }),
+  z.object({
+    action: z.literal("mark_refunded"),
+    note: z.string().trim().max(200).optional(),
+  }),
+  z.object({
+    action: z.literal("cancel"),
+    reason: z.enum([...CANCEL_REASONS]),
+    note: z.string().trim().max(300).optional(),
+  }),
+  z.object({
+    action: z.literal("note"),
+    ownerNote: z.string().trim().max(1000),
   }),
 ]);
 
@@ -41,14 +63,13 @@ export async function GET(
     const session = await requireAdminSession();
     const { id } = await params;
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const order = await (db.order as any).findFirst({
+    const order = await db.order.findFirst({
       where: { id, shopId: session.shopId },
-      include: { items: true },
+      include: { items: true, statusEvents: { orderBy: { changedAt: "asc" } } },
     });
     if (!order) throw new NotFoundError("Order not found");
 
-    return NextResponse.json(order);
+    return NextResponse.json(toAdminOrderEvent(order));
   } catch (error) {
     return handleApiError(error);
   }
@@ -68,6 +89,7 @@ export async function PATCH(
 
     // Support both old { status } format and new { action } format for backward compat.
     let data: Record<string, unknown>;
+    let statusEventStatus: string | null = null;
 
     if ("action" in body) {
       const parsed = updateOrderSchema.parse(body);
@@ -77,7 +99,44 @@ export async function PATCH(
       }
 
       if (parsed.action === "status") {
+        const allowed = getNextStatuses(existing);
+        if (!allowed.includes(parsed.status as (typeof allowed)[number])) {
+          return NextResponse.json(
+            { error: `Order can't move from ${existing.status} to ${parsed.status}.` },
+            { status: 409 }
+          );
+        }
         data = { status: parsed.status };
+        statusEventStatus = parsed.status;
+      } else if (parsed.action === "cancel") {
+        if (!canCancel(existing)) {
+          return NextResponse.json(
+            { error: "This order can no longer be cancelled." },
+            { status: 409 }
+          );
+        }
+        data = {
+          status: "CANCELLED",
+          cancelReason: parsed.note ? `${parsed.reason}: ${parsed.note}` : parsed.reason,
+          cancelledAt: new Date(),
+          cancelledBy: session.adminId,
+        };
+        statusEventStatus = "CANCELLED";
+      } else if (parsed.action === "mark_refunded") {
+        if (existing.status !== "CANCELLED" || !["PAID", "PARTIALLY_PAID"].includes(existing.paymentStatus)) {
+          return NextResponse.json(
+            { error: "Only a cancelled, previously-paid order can be marked refunded." },
+            { status: 409 }
+          );
+        }
+        data = {
+          paymentStatus: "REFUNDED",
+          ownerNote: parsed.note
+            ? [existing.ownerNote, `Refunded: ${parsed.note}`].filter(Boolean).join("\n")
+            : existing.ownerNote,
+        };
+      } else if (parsed.action === "note") {
+        data = { ownerNote: parsed.ownerNote };
       } else if (parsed.action === "discount") {
         const subtotal = Number(existing.subtotal);
         const taxTotal = Number(existing.taxTotal);
@@ -108,9 +167,13 @@ export async function PATCH(
           discountedTotal: null,
         };
       } else if (parsed.action === "mark_paid") {
+        const finalTotal = Number(existing.discountedTotal ?? existing.grandTotal);
+        const paidAmount = parsed.paidAmount ?? finalTotal;
         data = {
           paymentMethod: parsed.paymentMethod,
-          paymentStatus: "PAID",
+          paymentStatus: paidAmount + 0.005 >= finalTotal ? "PAID" : "PARTIALLY_PAID",
+          paidAmount,
+          transactionReference: parsed.transactionReference || null,
           paymentConfirmedBy: session.adminId,
           paymentConfirmedAt: new Date(),
         };
@@ -120,13 +183,38 @@ export async function PATCH(
       }
     } else {
       // Legacy format: { status }
-      const statusSchema = z.object({ status: z.enum(ORDER_STATUSES) });
+      const statusSchema = z.object({ status: z.enum(ORDER_STATUSES as [string, ...string[]]) });
       const { status } = statusSchema.parse(body);
+      const allowed = getNextStatuses(existing);
+      if (!allowed.includes(status as (typeof allowed)[number])) {
+        return NextResponse.json(
+          { error: `Order can't move from ${existing.status} to ${status}.` },
+          { status: 409 }
+        );
+      }
       data = { status };
+      statusEventStatus = status;
     }
 
+    // `data` is built dynamically per-action above, so it can't line up with
+    // Prisma's precise OrderUpdateInput type — same cast the rest of this
+    // route already relied on before this change.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const updated = await (db.order as any).update({ where: { id }, data, include: { items: true } });
+
+    if (statusEventStatus) {
+      await db.orderStatusEvent.create({
+        data: {
+          orderId: id,
+          status: statusEventStatus as Prisma.OrderStatusEventCreateInput["status"],
+          changedBy: session.adminId,
+        },
+      });
+    }
+    const statusEvents = await db.orderStatusEvent.findMany({
+      where: { orderId: id },
+      orderBy: { changedAt: "asc" },
+    });
 
     // Fire-and-forget push notification on status change
     if ("status" in data && typeof data.status === "string") {
@@ -146,7 +234,7 @@ export async function PATCH(
 
     publishOrderEvent(existing.shopId, { type: "order.updated", order: toOrderEvent(updated) });
 
-    return NextResponse.json(updated);
+    return NextResponse.json(toAdminOrderEvent({ ...updated, statusEvents }));
   } catch (error) {
     return handleApiError(error);
   }

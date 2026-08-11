@@ -22,99 +22,20 @@ import { api, ApiError } from "@/lib/api-client";
 import { formatCurrency } from "@/lib/utils/currency";
 import { cn } from "@/lib/utils";
 import { useOrderEvents } from "@/lib/hooks/use-order-events";
+import { useBillActions, isOrderPaid, type BillOrderData, type BillShopData } from "@/lib/hooks/use-bill-actions";
+import {
+  STATUS_LABELS,
+  STATUS_BADGE_CLASS,
+  PAYMENT_METHODS,
+  PAYMENT_LABELS,
+  PAYMENT_BADGE_CLASS,
+  paymentMethodLabel,
+  type OrderStatus,
+  type PaymentStatus,
+} from "@/lib/order-status";
+import { OrderTimeline } from "@/components/admin/orders/order-timeline";
 
-type OrderStatus =
-  | "PENDING"
-  | "CONFIRMED"
-  | "PREPARING"
-  | "READY"
-  | "COMPLETED"
-  | "CANCELLED";
-
-type TaxLine = { id: string; name: string; amount: number };
-
-type OrderItem = {
-  id: string;
-  name: string;
-  price: number;
-  quantity: number;
-  lineTotal: number;
-};
-
-export type BillOrderData = {
-  id: string;
-  billNumber: string;
-  tokenNumber?: number | null;
-  customerName: string | null;
-  customerPhone: string | null;
-  tableNumber: string | null;
-  deliveryAddress: string | null;
-  notes: string | null;
-  subtotal: number;
-  taxTotal: number;
-  grandTotal: number;
-  taxBreakdown: TaxLine[];
-  status: OrderStatus;
-  paymentMethod?: string | null;
-  paymentStatus?: string | null;
-  discountType: string | null;
-  discountValue: number | null;
-  discountReason: string | null;
-  discountedTotal: number | null;
-  createdAt: string;
-  items: OrderItem[];
-};
-
-export type BillShopData = {
-  slug?: string;
-  businessName: string;
-  logoUrl: string | null;
-  address: string | null;
-  phone: string | null;
-  whatsappNumber: string;
-  gstNumber: string | null;
-  currency: string;
-  upiId: string | null;
-  acceptCash: boolean;
-  bankAccountNumber: string | null;
-  bankName: string | null;
-  bankIfsc: string | null;
-  paymentQrImageUrl: string | null;
-  paymentDisplayName: string | null;
-  enableTableNumber: boolean;
-  enableOrderBarcodeLabels: boolean;
-};
-
-const STATUS_COLORS: Record<OrderStatus, string> = {
-  PENDING:
-    "bg-amber-100 text-amber-700 border-amber-200 dark:bg-amber-900/30 dark:text-amber-400",
-  CONFIRMED:
-    "bg-blue-100 text-blue-700 border-blue-200 dark:bg-blue-900/30 dark:text-blue-400",
-  PREPARING:
-    "bg-violet-100 text-violet-700 border-violet-200 dark:bg-violet-900/30 dark:text-violet-400",
-  READY:
-    "bg-emerald-100 text-emerald-700 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-400",
-  COMPLETED: "bg-muted text-muted-foreground border-border",
-  CANCELLED:
-    "bg-red-100 text-red-700 border-red-200 dark:bg-red-900/30 dark:text-red-400",
-};
-
-const STATUS_LABELS: Record<OrderStatus, string> = {
-  PENDING: "Pending",
-  CONFIRMED: "Confirmed",
-  PREPARING: "Preparing",
-  READY: "Ready",
-  COMPLETED: "Completed",
-  CANCELLED: "Cancelled",
-};
-
-const BILL_PAYMENT_METHODS = [
-  { value: "CASH", label: "Cash" },
-  { value: "UPI", label: "UPI App" },
-  { value: "QR", label: "Scan QR" },
-  { value: "CARD", label: "Card" },
-  { value: "OTHER", label: "Other" },
-] as const;
+export type { BillOrderData, BillShopData } from "@/lib/hooks/use-bill-actions";
 
 function MarkPaidSection({
   order,
@@ -123,19 +44,31 @@ function MarkPaidSection({
 }: {
   order: BillOrderData;
   currency: string;
-  onMarkedPaid: (method: string) => void;
+  onMarkedPaid: (patch: Partial<BillOrderData>) => void;
 }) {
   const [showForm, setShowForm] = useState(false);
-  const [method, setMethod] = useState<(typeof BILL_PAYMENT_METHODS)[number]["value"]>("CASH");
+  const [method, setMethod] = useState<(typeof PAYMENT_METHODS)[number]["value"]>("CASH");
+  const [transactionReference, setTransactionReference] = useState("");
   const [saving, setSaving] = useState(false);
-  const isPaid = order.paymentStatus === "PAID" || (!!order.paymentMethod && order.paymentMethod !== "PENDING");
+  const paymentStatus = (order.paymentStatus ?? "PENDING") as PaymentStatus;
+  const isPaid = isOrderPaid(order);
   const finalTotal = order.discountedTotal ?? (order.subtotal + order.taxTotal);
+  const remaining = Math.max(0, finalTotal - (order.paidAmount ?? 0));
 
   async function handleConfirm() {
     setSaving(true);
     try {
-      await api.patch(`/api/admin/orders/${order.id}`, { action: "mark_paid", paymentMethod: method });
-      onMarkedPaid(method);
+      await api.patch(`/api/admin/orders/${order.id}`, {
+        action: "mark_paid",
+        paymentMethod: method,
+        transactionReference: transactionReference.trim() || undefined,
+      });
+      onMarkedPaid({
+        paymentMethod: method,
+        paymentStatus: "PAID",
+        paidAmount: finalTotal,
+        transactionReference: transactionReference.trim() || null,
+      });
       setShowForm(false);
       toast.success("Order marked as paid");
     } catch (err) {
@@ -150,7 +83,7 @@ function MarkPaidSection({
       <div className="flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 dark:border-emerald-900/50 dark:bg-emerald-900/20 px-4 py-3">
         <CheckCircle2 className="size-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
         <p className="text-sm font-medium text-emerald-800 dark:text-emerald-400">
-          Paid via {order.paymentMethod ? order.paymentMethod.charAt(0) + order.paymentMethod.slice(1).toLowerCase() : "unknown method"}
+          Paid via {paymentMethodLabel(order.paymentMethod)}
         </p>
       </div>
     );
@@ -161,15 +94,15 @@ function MarkPaidSection({
       <div className="px-4 py-2.5 bg-muted/30 border-b flex items-center gap-1.5">
         <ReceiptText className="size-3.5 text-muted-foreground" />
         <p className="font-semibold text-xs uppercase tracking-wide text-muted-foreground">Payment</p>
-        <span className="ml-auto text-xs rounded-full bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 px-2 py-0.5 font-medium">
-          Pending
+        <span className={cn("ml-auto text-xs rounded-full px-2 py-0.5 font-medium", PAYMENT_BADGE_CLASS[paymentStatus])}>
+          {PAYMENT_LABELS[paymentStatus]}
         </span>
       </div>
 
       {!showForm ? (
         <div className="px-4 py-3 flex items-center justify-between gap-3">
           <p className="text-sm text-muted-foreground">
-            Amount due: <span className="font-semibold text-foreground">{formatCurrency(finalTotal, currency)}</span>
+            Amount due: <span className="font-semibold text-foreground">{formatCurrency(remaining, currency)}</span>
           </p>
           <Button size="sm" className="h-8 gap-1.5 text-xs" onClick={() => setShowForm(true)}>
             <CheckCircle2 className="size-3.5" /> Mark as Paid
@@ -179,12 +112,12 @@ function MarkPaidSection({
         <div className="px-4 py-3 space-y-3">
           <div className="flex items-baseline justify-between rounded-lg bg-muted/40 px-3 py-2 text-sm">
             <span className="text-muted-foreground">Amount due</span>
-            <span className="font-bold">{formatCurrency(finalTotal, currency)}</span>
+            <span className="font-bold">{formatCurrency(remaining, currency)}</span>
           </div>
           <div className="space-y-1.5">
             <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">How did they pay?</p>
             <div className="flex flex-wrap gap-1.5">
-              {BILL_PAYMENT_METHODS.map((m) => (
+              {PAYMENT_METHODS.map((m) => (
                 <button
                   key={m.value}
                   type="button"
@@ -201,6 +134,12 @@ function MarkPaidSection({
               ))}
             </div>
           </div>
+          <Input
+            value={transactionReference}
+            onChange={(e) => setTransactionReference(e.target.value)}
+            placeholder="Transaction reference (optional)"
+            className="h-9"
+          />
           <div className="flex gap-2">
             <Button variant="outline" className="flex-1" onClick={() => setShowForm(false)} disabled={saving}>Cancel</Button>
             <Button className="flex-1 gap-1.5" onClick={handleConfirm} disabled={saving}>
@@ -461,7 +400,6 @@ export function BillDetail({
 }) {
   const router = useRouter();
   const [order, setOrder] = useState(initialOrder);
-  const [downloadingPdf, setDownloadingPdf] = useState(false);
   const [completingOrder, setCompletingOrder] = useState(false);
   const [deletingOrder, setDeletingOrder] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -476,24 +414,11 @@ export function BillDetail({
       .catch(() => {});
   }, [shop.slug, order.id]);
 
-  const taxBreakdown = order.taxBreakdown as TaxLine[];
-  const base = order.subtotal + order.taxTotal;
-  const finalTotal = order.discountedTotal ?? base;
-  const discountAmt = order.discountedTotal !== null ? base - order.discountedTotal : 0;
+  const { print, share, downloadPdf, downloadingPdf, isPaid, orderType, finalTotal, discountAmt } = useBillActions(order, shop);
 
   function updateOrder(patch: Partial<BillOrderData>) {
     setOrder((prev) => ({ ...prev, ...patch }));
   }
-
-  // Neither is a stored field — both are honestly derived from data that
-  // already exists: table vs. delivery address tells us the order type the
-  // same way create-order-page.tsx captured it, and paymentMethod already
-  // doubles as the paid/pending signal (see the header badge below).
-  const orderType =
-    shop.enableTableNumber && order.tableNumber ? "Dine-in" : order.deliveryAddress ? "Delivery" : "Takeaway";
-  const isPaid =
-    order.paymentStatus === "PAID" ||
-    (!!order.paymentMethod && order.paymentMethod !== "PENDING");
 
   async function handleCompleteOrder() {
     setCompletingOrder(true);
@@ -505,24 +430,6 @@ export function BillDetail({
       toast.error(err instanceof ApiError ? err.message : "Failed to update order");
     } finally {
       setCompletingOrder(false);
-    }
-  }
-
-  async function handleShare() {
-    const summary = `Invoice ${order.billNumber} — ${shop.businessName}\nTotal: ${formatCurrency(finalTotal, shop.currency)}\nThank you for your business!`;
-    if (typeof navigator !== "undefined" && navigator.share) {
-      try {
-        await navigator.share({ title: `Invoice ${order.billNumber}`, text: summary });
-      } catch {
-        // user cancelled the native share sheet — not an error
-      }
-      return;
-    }
-    try {
-      await navigator.clipboard.writeText(summary);
-      toast.success("Invoice summary copied to clipboard");
-    } catch {
-      toast.error("Sharing isn't supported on this browser");
     }
   }
 
@@ -544,6 +451,7 @@ export function BillDetail({
       if (updated.id !== order.id) return;
       updateOrder({
         status: updated.status as OrderStatus,
+        paymentStatus: updated.paymentStatus ?? order.paymentStatus,
         subtotal: updated.subtotal,
         taxTotal: updated.taxTotal,
         grandTotal: updated.grandTotal,
@@ -561,305 +469,6 @@ export function BillDetail({
       });
     },
   });
-
-  async function handleDownloadPdf() {
-    setDownloadingPdf(true);
-    try {
-      const { jsPDF } = await import("jspdf");
-      const doc = new jsPDF({ unit: "pt", format: "a4" });
-      const pageW = doc.internal.pageSize.getWidth();
-      const margin = 48;
-      const contentW = pageW - margin * 2;
-      let y = margin;
-
-      // ─── logo_1 ───────────────────────────────────────────────────────────────
-      if (shop.logoUrl) {
-        try {
-          const resp = await fetch(shop.logoUrl);
-          const blob = await resp.blob();
-          const dataUrl = await new Promise<string>((resolve) => {
-            const reader = new FileReader();
-            reader.onload = () => resolve(reader.result as string);
-            reader.readAsDataURL(blob);
-          });
-          const logoSize = 56;
-          doc.addImage(dataUrl, "WEBP", (pageW - logoSize) / 2, y, logoSize, logoSize);
-          y += logoSize + 10;
-        } catch {
-          // Skip logo_1 on error
-        }
-      }
-
-      // ─── Business Header ────────────────────────────────────────────────────
-      doc.setFontSize(20);
-      doc.setFont("helvetica", "bold");
-      doc.setTextColor(20, 20, 20);
-      doc.text(shop.businessName, pageW / 2, y, { align: "center" });
-      y += 22;
-
-      doc.setFontSize(8.5);
-      doc.setFont("helvetica", "normal");
-      doc.setTextColor(100, 100, 100);
-      if (shop.address) {
-        const addrLines = doc.splitTextToSize(shop.address, contentW * 0.7);
-        doc.text(addrLines, pageW / 2, y, { align: "center" });
-        y += addrLines.length * 12;
-      }
-      const contactParts: string[] = [];
-      if (shop.phone) contactParts.push(`Tel: ${shop.phone}`);
-      if (shop.whatsappNumber && shop.whatsappNumber !== shop.phone) {
-        contactParts.push(`WhatsApp: ${shop.whatsappNumber}`);
-      }
-      if (contactParts.length) {
-        doc.text(contactParts.join("  |  "), pageW / 2, y, { align: "center" });
-        y += 12;
-      }
-      if (shop.gstNumber) {
-        doc.text(`GSTIN: ${shop.gstNumber}`, pageW / 2, y, { align: "center" });
-        y += 12;
-      }
-      y += 6;
-
-      // ─── INVOICE Title ──────────────────────────────────────────────────────
-      doc.setFontSize(13);
-      doc.setFont("helvetica", "bold");
-      doc.setTextColor(20, 20, 20);
-      doc.text("INVOICE", pageW / 2, y, { align: "center" });
-      y += 16;
-
-      doc.setDrawColor(200, 200, 200);
-      doc.line(margin, y, pageW - margin, y);
-      y += 14;
-
-      // ─── Invoice + Customer info ────────────────────────────────────────────
-      doc.setFontSize(8.5);
-      doc.setFont("helvetica", "normal");
-      doc.setTextColor(80, 80, 80);
-
-      const createdAt = new Date(order.createdAt);
-      const dateStr = createdAt.toLocaleDateString("en-IN", {
-        day: "2-digit",
-        month: "short",
-        year: "numeric",
-      });
-      const timeStr = createdAt.toLocaleTimeString("en-IN", {
-        hour: "2-digit",
-        minute: "2-digit",
-      });
-
-      // Left column: invoice info
-      const leftX = margin;
-      const rightX = pageW / 2 + 10;
-
-      doc.setFont("helvetica", "bold");
-      doc.setTextColor(20, 20, 20);
-      doc.text("Invoice Details", leftX, y);
-      if (order.customerName || order.customerPhone) {
-        doc.text("Customer", rightX, y);
-      }
-      y += 13;
-      doc.setFont("helvetica", "normal");
-      doc.setTextColor(80, 80, 80);
-
-      doc.text(`Bill No: ${order.billNumber}${order.tokenNumber ? ` · Token #${order.tokenNumber}` : ""}`, leftX, y);
-      if (order.customerName) doc.text(order.customerName, rightX, y);
-      y += 12;
-
-      doc.text(`Date: ${dateStr}`, leftX, y);
-      if (order.customerPhone) doc.text(`Ph: ${order.customerPhone}`, rightX, y);
-      y += 12;
-
-      doc.text(`Time: ${timeStr}`, leftX, y);
-      y += 12;
-
-      doc.setTextColor(20, 20, 20);
-      const statusLabel = STATUS_LABELS[order.status as OrderStatus] ?? order.status;
-      doc.text(`Status: ${statusLabel}`, leftX, y);
-      if (shop.enableTableNumber && order.tableNumber) {
-        doc.text(`Table: ${order.tableNumber}`, rightX, y);
-      }
-      y += 12;
-      doc.text(`Order type: ${orderType}`, leftX, y);
-      if (order.paymentMethod) {
-        doc.text(isPaid ? "Paid" : "Payment pending", rightX, y);
-      }
-      y += 12;
-      if (!shop.enableTableNumber && order.deliveryAddress) {
-        doc.text(`Address: ${order.deliveryAddress}`, leftX, y);
-        y += 12;
-      }
-      if (order.notes) {
-        doc.setTextColor(100, 100, 100);
-        const noteLines = doc.splitTextToSize(`Note: ${order.notes}`, contentW);
-        doc.text(noteLines, leftX, y);
-        y += noteLines.length * 12;
-      }
-
-      y += 6;
-      doc.setDrawColor(200, 200, 200);
-      doc.line(margin, y, pageW - margin, y);
-      y += 12;
-
-      // ─── Items Table ────────────────────────────────────────────────────────
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(8.5);
-      doc.setTextColor(20, 20, 20);
-      const col = {
-        item: margin,
-        qty: margin + contentW * 0.48,
-        price: margin + contentW * 0.62,
-        total: pageW - margin,
-      };
-
-      doc.text("Item", col.item, y);
-      doc.text("Qty", col.qty, y, { align: "center" });
-      doc.text("Unit Price", col.price, y, { align: "right" });
-      doc.text("Amount", col.total, y, { align: "right" });
-      y += 5;
-
-      doc.setDrawColor(200, 200, 200);
-      doc.line(margin, y, pageW - margin, y);
-      y += 10;
-
-      doc.setFont("helvetica", "normal");
-      doc.setTextColor(40, 40, 40);
-      order.items.forEach((item) => {
-        const nameLines = doc.splitTextToSize(item.name, contentW * 0.45);
-        const rowH = Math.max(nameLines.length * 12, 14);
-        doc.text(nameLines, col.item, y);
-        doc.text(String(item.quantity), col.qty, y, { align: "center" });
-        doc.text(formatCurrency(item.price, shop.currency), col.price, y, { align: "right" });
-        doc.text(formatCurrency(item.lineTotal, shop.currency), col.total, y, { align: "right" });
-        y += rowH;
-      });
-
-      y += 4;
-      doc.setDrawColor(200, 200, 200);
-      doc.line(margin, y, pageW - margin, y);
-      y += 12;
-
-      // ─── Totals ──────────────────────────────────────────────────────────────
-      const totalLabelX = pageW - margin - 170;
-      const totalValueX = pageW - margin;
-
-      function totalRow(label: string, value: string, bold = false, color?: [number, number, number]) {
-        doc.setFont("helvetica", bold ? "bold" : "normal");
-        doc.setFontSize(bold ? 10 : 8.5);
-        if (color) doc.setTextColor(...color);
-        else doc.setTextColor(80, 80, 80);
-        doc.text(label, totalLabelX, y);
-        doc.text(value, totalValueX, y, { align: "right" });
-        if (color) doc.setTextColor(80, 80, 80);
-        y += bold ? 15 : 13;
-      }
-
-      totalRow("Subtotal", formatCurrency(order.subtotal, shop.currency));
-
-      taxBreakdown.forEach((line) => {
-        totalRow(line.name, formatCurrency(line.amount, shop.currency));
-      });
-
-      if (order.discountType && discountAmt > 0) {
-        const discLabel =
-          order.discountType === "PERCENTAGE"
-            ? `Discount (${order.discountValue}%)`
-            : "Discount";
-        totalRow(discLabel, `−${formatCurrency(discountAmt, shop.currency)}`, false, [16, 130, 90]);
-      }
-
-      y += 2;
-      doc.setDrawColor(200, 200, 200);
-      doc.line(totalLabelX, y, pageW - margin, y);
-      y += 8;
-
-      totalRow("Grand Total", formatCurrency(finalTotal, shop.currency), true, [20, 20, 20]);
-
-      if (order.paymentMethod) {
-        totalRow("Amount Paid", formatCurrency(isPaid ? finalTotal : 0, shop.currency));
-        if (!isPaid) {
-          totalRow("Balance Due", formatCurrency(finalTotal, shop.currency), false, [180, 120, 10]);
-        }
-      }
-
-      y += 10;
-      doc.setDrawColor(200, 200, 200);
-      doc.line(margin, y, pageW - margin, y);
-      y += 14;
-
-      // ─── Payment Info ────────────────────────────────────────────────────────
-      const hasPayment =
-        shop.upiId || shop.bankAccountNumber || shop.acceptCash || shop.paymentQrImageUrl;
-      if (hasPayment) {
-        doc.setFont("helvetica", "bold");
-        doc.setFontSize(9);
-        doc.setTextColor(20, 20, 20);
-        doc.text("Payment Information", margin, y);
-        y += 13;
-        doc.setFont("helvetica", "normal");
-        doc.setFontSize(8.5);
-        doc.setTextColor(80, 80, 80);
-
-        if (shop.upiId) {
-          const payeeName = shop.paymentDisplayName || shop.businessName;
-          doc.text(`Pay to: ${payeeName}`, margin, y); y += 12;
-          doc.text(`UPI: ${shop.upiId}`, margin, y); y += 12;
-        }
-        if (shop.bankAccountNumber) {
-          doc.text(
-            `Bank: ${shop.bankName ?? ""} | A/C: ${shop.bankAccountNumber}${shop.bankIfsc ? ` | IFSC: ${shop.bankIfsc}` : ""}`,
-            margin,
-            y
-          );
-          y += 12;
-        }
-        if (shop.acceptCash) { doc.text("Cash accepted", margin, y); y += 12; }
-
-        if (shop.paymentQrImageUrl) {
-          try {
-            const resp = await fetch(shop.paymentQrImageUrl);
-            const blob = await resp.blob();
-            const dataUrl = await new Promise<string>((resolve) => {
-              const reader = new FileReader();
-              reader.onload = () => resolve(reader.result as string);
-              reader.readAsDataURL(blob);
-            });
-            const qrSize = 80;
-            doc.addImage(dataUrl, "PNG", (pageW - qrSize) / 2, y, qrSize, qrSize);
-            y += qrSize + 10;
-          } catch {
-            // skip
-          }
-        }
-
-        y += 4;
-        doc.setDrawColor(200, 200, 200);
-        doc.line(margin, y, pageW - margin, y);
-        y += 14;
-      }
-
-      // ─── Footer ──────────────────────────────────────────────────────────────
-      doc.setFontSize(10);
-      doc.setFont("helvetica", "bold");
-      doc.setTextColor(60, 60, 60);
-      doc.text("Thank you for your business!", pageW / 2, y, { align: "center" });
-      y += 14;
-      doc.setFont("helvetica", "normal");
-      doc.setFontSize(8);
-      doc.setTextColor(120, 120, 120);
-      doc.text(shop.businessName, pageW / 2, y, { align: "center" });
-      if (shop.phone) {
-        y += 11;
-        doc.text(shop.phone, pageW / 2, y, { align: "center" });
-      }
-
-      doc.save(`invoice-${order.billNumber}.pdf`);
-      toast.success("Invoice downloaded");
-    } catch {
-      toast.error("Failed to generate PDF");
-    } finally {
-      setDownloadingPdf(false);
-    }
-  }
 
   return (
     <div className="max-w-3xl space-y-6 print:max-w-none print:space-y-0">
@@ -893,7 +502,7 @@ export function BillDetail({
             <span
               className={cn(
                 "inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium",
-                STATUS_COLORS[order.status as OrderStatus] ?? STATUS_COLORS.PENDING
+                STATUS_BADGE_CLASS[order.status as OrderStatus] ?? STATUS_BADGE_CLASS.PENDING
               )}
             >
               {STATUS_LABELS[order.status as OrderStatus] ?? order.status}
@@ -901,23 +510,27 @@ export function BillDetail({
             <span
               className={cn(
                 "inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium",
-                order.paymentMethod === "PENDING"
-                  ? "bg-amber-100 text-amber-700 border-amber-200 dark:bg-amber-900/30 dark:text-amber-400"
-                  : "bg-emerald-100 text-emerald-700 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-400"
+                PAYMENT_BADGE_CLASS[(order.paymentStatus ?? "PENDING") as PaymentStatus]
               )}
             >
-              {order.paymentMethod === "PENDING"
-                ? "Payment pending"
-                : order.paymentMethod
-                  ? `Paid via ${order.paymentMethod.charAt(0) + order.paymentMethod.slice(1).toLowerCase()}`
-                  : "Payment recorded"}
+              {isPaid ? `Paid via ${paymentMethodLabel(order.paymentMethod)}` : PAYMENT_LABELS[(order.paymentStatus ?? "PENDING") as PaymentStatus]}
             </span>
           </div>
           <p className="text-sm text-muted-foreground">
-            {new Date(order.createdAt).toLocaleString()}
+            Placed on {new Date(order.createdAt).toLocaleString()}
           </p>
         </div>
       </div>
+
+      {order.status === "CANCELLED" && order.cancelReason && (
+        <div className="rounded-xl border border-red-200 bg-red-50 dark:border-red-900/50 dark:bg-red-900/20 px-4 py-3 text-sm print:hidden">
+          <p className="font-medium text-red-700 dark:text-red-400">Cancelled</p>
+          <p className="text-red-600/80 dark:text-red-400/80 text-xs mt-0.5">{order.cancelReason}</p>
+          {order.cancelledAt && (
+            <p className="text-red-600/60 dark:text-red-400/60 text-xs">{new Date(order.cancelledAt).toLocaleString()}</p>
+          )}
+        </div>
+      )}
 
       <div className="flex items-center gap-2 print:hidden">
         {order.status !== "COMPLETED" && order.status !== "CANCELLED" && (
@@ -931,13 +544,13 @@ export function BillDetail({
             <MoreVertical className="size-4" />
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-48">
-            <DropdownMenuItem onClick={() => window.print()}>
+            <DropdownMenuItem onClick={print}>
               <Printer className="size-4" /> Print Bill
             </DropdownMenuItem>
-            <DropdownMenuItem onClick={handleShare}>
+            <DropdownMenuItem onClick={share}>
               <Share2 className="size-4" /> Share Bill
             </DropdownMenuItem>
-            <DropdownMenuItem disabled={downloadingPdf} onClick={handleDownloadPdf}>
+            <DropdownMenuItem disabled={downloadingPdf} onClick={downloadPdf}>
               <Download className="size-4" /> Download PDF
             </DropdownMenuItem>
             {shop.enableOrderBarcodeLabels && (
@@ -1050,7 +663,7 @@ export function BillDetail({
             <span>Subtotal</span>
             <span>{formatCurrency(order.subtotal, shop.currency)}</span>
           </div>
-          {taxBreakdown.map((line) => (
+          {order.taxBreakdown.map((line) => (
             <div key={line.id} className="flex justify-between text-muted-foreground">
               <span>{line.name}</span>
               <span>{formatCurrency(line.amount, shop.currency)}</span>
@@ -1075,12 +688,18 @@ export function BillDetail({
             <>
               <div className="flex justify-between text-muted-foreground">
                 <span>Amount paid</span>
-                <span>{formatCurrency(isPaid ? finalTotal : 0, shop.currency)}</span>
+                <span>{formatCurrency(order.paidAmount ?? (isPaid ? finalTotal : 0), shop.currency)}</span>
               </div>
               {!isPaid && (
                 <div className="flex justify-between font-medium text-amber-600 dark:text-amber-400">
                   <span>Balance due</span>
-                  <span>{formatCurrency(finalTotal, shop.currency)}</span>
+                  <span>{formatCurrency(Math.max(0, finalTotal - (order.paidAmount ?? 0)), shop.currency)}</span>
+                </div>
+              )}
+              {order.transactionReference && (
+                <div className="flex justify-between text-muted-foreground">
+                  <span>Transaction ref.</span>
+                  <span className="font-mono text-xs">{order.transactionReference}</span>
                 </div>
               )}
             </>
@@ -1099,13 +718,15 @@ export function BillDetail({
       {/* Everything below is editing UI / supplementary info, not part of
           the receipt itself — hidden when printing. */}
       <div className="space-y-6 print:hidden">
+      <OrderTimeline createdAt={order.createdAt} status={order.status} statusEvents={order.statusEvents ?? []} />
+
       {/* Payment status — only for standalone orders (table sessions manage payment
           at the session level via the Tables board). */}
       {!order.tableNumber && (
         <MarkPaidSection
           order={order}
           currency={shop.currency}
-          onMarkedPaid={(method) => updateOrder({ paymentMethod: method, paymentStatus: "PAID" })}
+          onMarkedPaid={updateOrder}
         />
       )}
 

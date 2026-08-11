@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { toOrderEvent, toTableSessionEvent } from "@/lib/server/order-events";
 import { computeSessionBill, mergeSessionItems } from "@/lib/services/table-session";
 import { OrderTracker } from "@/components/customer/order-tracker";
+import { getCustomerSession } from "@/lib/customer-session";
 
 export default async function TrackOrderPage({
   params,
@@ -33,6 +34,18 @@ export default async function TrackOrderPage({
     },
   });
   if (!order) notFound();
+
+  // Guest orders (no customerId) keep the unguessable-id-as-access-token
+  // model this page has always used. An order placed by a logged-in account,
+  // though, must only be viewable by that same account — otherwise any
+  // customer who learns another customer's order id/link could see their
+  // name, phone, and address here.
+  if (order.customerId) {
+    const session = await getCustomerSession();
+    if (!session || session.customerId !== order.customerId || session.shopId !== order.shopId) {
+      notFound();
+    }
+  }
 
   const { shop, ...orderFields } = order;
   const trackedOrder = toOrderEvent(orderFields);

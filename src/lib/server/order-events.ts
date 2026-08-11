@@ -9,6 +9,13 @@ export type OrderEventItem = {
   lineTotal: number;
 };
 
+// A status-change entry safe to show a customer — no `changedBy` (that's an
+// internal admin/staff/system identifier, stripped before this reaches them).
+export type PublicStatusEvent = {
+  status: string;
+  changedAt: string;
+};
+
 export type OrderEventOrder = {
   id: string;
   shopId: string;
@@ -27,6 +34,7 @@ export type OrderEventOrder = {
   // is explicitly passed in `data` — omitted here on the customer-order path,
   // which relies on the schema default instead. Runtime value is always present.
   paymentMethod?: string | null;
+  paymentStatus?: string;
   source?: string;
   discountType: string | null;
   discountValue: number | null;
@@ -37,6 +45,24 @@ export type OrderEventOrder = {
   createdAt: string;
   taxBreakdown: unknown;
   items: OrderEventItem[];
+  statusEvents?: PublicStatusEvent[];
+};
+
+// Superset of OrderEventOrder used ONLY by admin-facing routes — carries
+// fields that must never reach a customer (internal notes, cancellation
+// trail, transaction reference, who confirmed payment/changed status).
+export type AdminOrderEventOrder = OrderEventOrder & {
+  tokenNumber: number | null;
+  paidAmount: number | null;
+  transactionReference: string | null;
+  paymentConfirmedBy: string | null;
+  paymentConfirmedAt: string | null;
+  cancelReason: string | null;
+  cancelledAt: string | null;
+  cancelledBy: string | null;
+  ownerNote: string | null;
+  staffId: string | null;
+  statusEvents: (PublicStatusEvent & { changedBy: string | null })[];
 };
 
 export type TableSessionEventPayload = {
@@ -162,6 +188,7 @@ type RawOrderForEvent = {
   grandTotal: unknown;
   status: string;
   paymentMethod?: string | null;
+  paymentStatus?: string;
   source?: string;
   discountType: string | null;
   discountValue: unknown;
@@ -178,6 +205,7 @@ type RawOrderForEvent = {
     quantity: number;
     lineTotal: unknown;
   }[];
+  statusEvents?: { status: string; changedAt: unknown; changedBy: string | null }[];
 };
 
 // Deliberately takes a concrete (non-generic) shape and builds the result
@@ -200,6 +228,7 @@ export function toOrderEvent(order: RawOrderForEvent): OrderEventOrder {
     grandTotal: Number(order.grandTotal),
     status: order.status,
     paymentMethod: order.paymentMethod ?? null,
+    paymentStatus: order.paymentStatus ?? "PENDING",
     source: order.source ?? "qr",
     discountType: order.discountType,
     discountValue: order.discountValue == null ? null : Number(order.discountValue),
@@ -215,6 +244,53 @@ export function toOrderEvent(order: RawOrderForEvent): OrderEventOrder {
       price: Number(item.price),
       quantity: item.quantity,
       lineTotal: Number(item.lineTotal),
+    })),
+    // changedBy is internal (admin/staff id, or "customer") — never sent to a customer.
+    statusEvents: order.statusEvents?.map((e) => ({
+      status: e.status,
+      changedAt: (e.changedAt as Date).toISOString(),
+    })),
+  };
+}
+
+type RawOrderForAdminEvent = RawOrderForEvent & {
+  tokenNumber: number | null;
+  paidAmount: unknown;
+  transactionReference: string | null;
+  paymentConfirmedBy: string | null;
+  paymentConfirmedAt: unknown;
+  cancelReason: string | null;
+  cancelledAt: unknown;
+  cancelledBy: string | null;
+  ownerNote: string | null;
+  staffId: string | null;
+  statusEvents?: { status: string; changedAt: unknown; changedBy: string | null }[];
+};
+
+// Admin-only superset — includes internal fields (owner notes, cancellation
+// trail, transaction reference, who confirmed payment/changed status) that
+// toOrderEvent deliberately omits. Only ever sent from api/admin/* routes,
+// never published to the shared shop SSE channel (which customer tracking
+// streams also listen on) — see publishOrderEvent call sites, which all use
+// toOrderEvent instead.
+export function toAdminOrderEvent(order: RawOrderForAdminEvent): AdminOrderEventOrder {
+  const base = toOrderEvent(order);
+  return {
+    ...base,
+    tokenNumber: order.tokenNumber,
+    paidAmount: order.paidAmount == null ? null : Number(order.paidAmount),
+    transactionReference: order.transactionReference,
+    paymentConfirmedBy: order.paymentConfirmedBy,
+    paymentConfirmedAt: order.paymentConfirmedAt ? (order.paymentConfirmedAt as Date).toISOString() : null,
+    cancelReason: order.cancelReason,
+    cancelledAt: order.cancelledAt ? (order.cancelledAt as Date).toISOString() : null,
+    cancelledBy: order.cancelledBy,
+    ownerNote: order.ownerNote,
+    staffId: order.staffId,
+    statusEvents: (order.statusEvents ?? []).map((e) => ({
+      status: e.status,
+      changedAt: (e.changedAt as Date).toISOString(),
+      changedBy: e.changedBy,
     })),
   };
 }

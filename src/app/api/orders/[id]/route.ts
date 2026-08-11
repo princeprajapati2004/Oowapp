@@ -2,11 +2,26 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { handleApiError, NotFoundError } from "@/lib/api-utils";
+import { ForbiddenError } from "@/lib/session";
+import { getCustomerSession } from "@/lib/customer-session";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { calculateBill } from "@/lib/services/billing";
 import { sendOrderStatusNotification } from "@/lib/services/push";
 import { publishOrderEvent, toOrderEvent } from "@/lib/server/order-events";
 import type { Prisma } from "@/generated/prisma/client";
+
+// Orders placed by a guest (the common case, no customerId) keep using the
+// unguessable cuid as their access token — unchanged. Orders placed by a
+// logged-in customer account, though, must only be viewable/actionable by
+// that same account: without this, any caller who learned the id could
+// GET/cancel/confirm/edit another customer's order (see research notes).
+async function assertOwnsOrderIfLinked(order: { shopId: string; customerId: string | null }) {
+  if (!order.customerId) return;
+  const session = await getCustomerSession();
+  if (!session || session.customerId !== order.customerId || session.shopId !== order.shopId) {
+    throw new ForbiddenError("You don't have access to this order.");
+  }
+}
 
 // Once the kitchen has acted on an order, customer-initiated changes would be
 // disruptive — only orders still awaiting confirmation/prep can be self-edited.
@@ -40,6 +55,7 @@ export async function GET(
     const { id } = await params;
     const order = await db.order.findUnique({ where: { id }, include: { items: true } });
     if (!order) throw new NotFoundError("Order not found");
+    await assertOwnsOrderIfLinked(order);
     return NextResponse.json({ order: toOrderEvent(order) });
   } catch (error) {
     return handleApiError(error);
@@ -68,6 +84,7 @@ export async function PATCH(
       },
     });
     if (!order) throw new NotFoundError("Order not found");
+    await assertOwnsOrderIfLinked(order);
 
     if (!EDITABLE_STATUSES.includes(order.status)) {
       return NextResponse.json(

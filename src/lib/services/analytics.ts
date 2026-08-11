@@ -72,10 +72,12 @@ const PAYMENT_LABELS: Record<string, string> = {
 };
 
 const STATUS_LABELS: Record<string, string> = {
-  PENDING: "Pending",
+  PENDING: "New",
   CONFIRMED: "Confirmed",
-  PREPARING: "Preparing",
+  PREPARING: "Processing",
   READY: "Ready",
+  OUT_FOR_DELIVERY: "Out for Delivery",
+  DELIVERED: "Delivered",
   COMPLETED: "Completed",
   CANCELLED: "Cancelled",
 };

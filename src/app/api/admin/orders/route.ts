@@ -10,7 +10,36 @@ import { sendNewOrderNotification } from "@/lib/services/push";
 import { publishOrderEvent, toOrderEvent } from "@/lib/server/order-events";
 import { createNotification } from "@/lib/services/notification";
 import { formatCurrency } from "@/lib/utils/currency";
+import { searchOrders, type OrderSourceFilter, type OrderTypeFilter } from "@/lib/services/order-search";
 import type { Prisma } from "@/generated/prisma/client";
+
+// GET — the owner order management list (brief §2/§12–§18): server-side
+// search/status/payment/type/date filtering with keyset pagination, scoped
+// to the caller's shop only. Reuses searchOrders so the orders RSC page's
+// initial load and this endpoint never drift from each other.
+export async function GET(request: Request) {
+  try {
+    const session = await requireAdminSession();
+    const url = new URL(request.url);
+    const params = url.searchParams;
+
+    const result = await searchOrders(session.shopId, {
+      search: params.get("search") ?? undefined,
+      status: params.get("status") ?? undefined,
+      paymentStatus: params.get("paymentStatus") ?? undefined,
+      type: (params.get("type") as OrderTypeFilter | null) ?? undefined,
+      source: (params.get("source") as OrderSourceFilter | null) ?? undefined,
+      dateFrom: params.get("dateFrom") ?? undefined,
+      dateTo: params.get("dateTo") ?? undefined,
+      cursor: params.get("cursor") ?? undefined,
+      pageSize: params.get("pageSize") ? Number(params.get("pageSize")) : undefined,
+    });
+
+    return NextResponse.json(result);
+  } catch (error) {
+    return handleApiError(error);
+  }
+}
 
 const orderItemSchema = z.object({
   productId: z.string().optional(),

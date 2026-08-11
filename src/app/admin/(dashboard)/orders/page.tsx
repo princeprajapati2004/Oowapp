@@ -3,20 +3,14 @@ import Link from "next/link";
 import { ClipboardList } from "lucide-react";
 import { getAdminSession } from "@/lib/session";
 import { getShopById } from "@/lib/services/shop";
-import { db } from "@/lib/db";
-import { serializeOrders } from "@/lib/serialize";
+import { searchOrders } from "@/lib/services/order-search";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/shared/empty-state";
-import { OrdersManager } from "@/components/admin/orders-manager";
+import { OrdersListView } from "@/components/admin/orders/orders-list-view";
 
-export default async function OrdersPage({
-  searchParams,
-}: {
-  searchParams: Promise<{ q?: string }>;
-}) {
+export default async function OrdersPage() {
   const session = await getAdminSession();
   if (!session) redirect("/login");
-  const { q } = await searchParams;
 
   const shop = await getShopById(session.shopId);
 
@@ -38,17 +32,34 @@ export default async function OrdersPage({
     );
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const orders = await (db.order as any).findMany({
-    where: { shopId: session.shopId },
-    orderBy: { createdAt: "desc" },
-    take: 100,
-    include: { items: true },
-  });
-  const serialized = serializeOrders(orders);
+  const { orders, nextCursor, hasMore } = await searchOrders(session.shopId, { pageSize: 20 });
+  const shopAny = shop as unknown as Record<string, unknown>;
 
   return (
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    <OrdersManager initialOrders={serialized as any} currency={shop.currency} shopSlug={shop.slug} initialQuery={q} />
+    <OrdersListView
+      initialOrders={orders}
+      initialNextCursor={nextCursor}
+      initialHasMore={hasMore}
+      currency={shop.currency}
+      shop={{
+        slug: shop.slug,
+        businessName: shop.businessName,
+        logoUrl: shop.logoUrl,
+        address: shop.address,
+        phone: shop.phone,
+        whatsappNumber: shop.whatsappNumber,
+        gstNumber: shop.gstNumber,
+        currency: shop.currency,
+        upiId: shop.upiId,
+        acceptCash: shop.acceptCash,
+        bankAccountNumber: shop.bankAccountNumber,
+        bankName: shop.bankName,
+        bankIfsc: shop.bankIfsc,
+        paymentQrImageUrl: shop.paymentQrImageUrl,
+        paymentDisplayName: (shopAny.paymentDisplayName as string | null) ?? null,
+        enableTableNumber: (shopAny.enableTableNumber as boolean) ?? true,
+        enableOrderBarcodeLabels: (shopAny.enableOrderBarcodeLabels as boolean) ?? false,
+      }}
+    />
   );
 }

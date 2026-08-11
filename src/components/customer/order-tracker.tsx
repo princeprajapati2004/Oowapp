@@ -19,6 +19,7 @@ import {
   Receipt,
   Download,
   Share2,
+  Truck,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { QtyStepper } from "@/components/shared/qty-stepper";
@@ -47,19 +48,31 @@ type Shop = {
   paymentQrImageUrl?: string | null;
 };
 
-const STEPS = [
+const BASE_STEPS = [
   { status: "PENDING", label: "Order placed", icon: Clock },
   { status: "CONFIRMED", label: "Confirmed", icon: CircleCheck },
   { status: "PREPARING", label: "Preparing", icon: ChefHat },
   { status: "READY", label: "Ready", icon: PackageCheck },
-  { status: "COMPLETED", label: "Completed", icon: CircleCheck },
 ] as const;
+
+// Delivery orders get two extra fulfillment steps between "Ready" and
+// completion; dine-in/takeaway orders go straight from Ready to Completed —
+// there's no fulfillment leg to show for those.
+const DELIVERY_STEPS = [
+  ...BASE_STEPS,
+  { status: "OUT_FOR_DELIVERY", label: "Out for delivery", icon: Truck },
+  { status: "DELIVERED", label: "Delivered", icon: CircleCheck },
+] as const;
+
+const PICKUP_STEPS = [...BASE_STEPS, { status: "COMPLETED", label: "Completed", icon: CircleCheck }] as const;
 
 const STATUS_LABELS: Record<string, string> = {
   PENDING: "Order placed",
   CONFIRMED: "Confirmed",
   PREPARING: "Preparing",
   READY: "Ready for pickup",
+  OUT_FOR_DELIVERY: "Out for delivery",
+  DELIVERED: "Delivered",
   COMPLETED: "Completed",
   CANCELLED: "Cancelled",
 };
@@ -278,12 +291,13 @@ export function OrderTracker({
   const base = order.subtotal + order.taxTotal;
   const finalTotal = order.discountedTotal ?? base;
   const isCancelled = order.status === "CANCELLED";
+  const STEPS = order.deliveryAddress ? DELIVERY_STEPS : PICKUP_STEPS;
   const stepIndex = STEPS.findIndex((s) => s.status === order.status);
   // A "bill" implies a settled order — once confirmed, show the bill-specific
   // fields (customer name, payment status, thank-you, print) alongside the
   // still-live status stepper, rather than replacing it.
   const isConfirmedOrLater = !isCancelled && order.status !== "PENDING";
-  const isPaid = session ? session.status === "PAID" : order.status === "COMPLETED";
+  const isPaid = session ? session.status === "PAID" : (order.paymentStatus ?? "PENDING") === "PAID" || order.status === "COMPLETED";
 
   // For a table session, the invoice covers every accumulated round (sessionItems/sessionBill);
   // for a one-off order it's just this order's own items and totals. Referenced by
@@ -528,7 +542,7 @@ export function OrderTracker({
             <div className="px-5 py-3 flex items-center justify-between text-sm">
               <span className="text-muted-foreground">Payment status</span>
               <span className={cn("font-semibold", isPaid ? "text-emerald-600 dark:text-emerald-400" : "text-amber-600 dark:text-amber-400")}>
-                {isPaid ? "Paid" : "Unpaid"}
+                {isPaid ? "Paid" : order.paymentStatus === "PARTIALLY_PAID" ? "Partially Paid" : "Unpaid"}
               </span>
             </div>
             {ownerApprovalStatus && (
