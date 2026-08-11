@@ -2,6 +2,12 @@
 
 set -euo pipefail
 
+# Load nvm so the correct Node version is available
+export NVM_DIR="$HOME/.nvm"
+# shellcheck source=/dev/null
+[ -s "$NVM_DIR/nvm.sh" ] && source "$NVM_DIR/nvm.sh"
+nvm use default --silent 2>/dev/null || true
+
 ########################################
 # CONFIGURATION
 ########################################
@@ -70,6 +76,9 @@ git pull
 echo "  -> extracting .next..."
 unzip -oq .next.zip
 rm -f .next.zip
+
+echo "  -> syncing database schema..."
+node scripts/db-deploy.mjs
 
 # Locate PM2 under nvm
 NVM_DIR="$HOME/.nvm"

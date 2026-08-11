@@ -5,7 +5,7 @@
   "scripts": {
     "predb": "node scripts/select-db-provider.mjs",
     "dev": "npm run predb && next dev",
-    "build": "npm run predb && node scripts/db-deploy.mjs && next build",
+    "build": "npm run predb && prisma generate && next build",
     "start": "next start",
     "lint": "eslint",
     "postinstall": "npm run predb && prisma generate",
