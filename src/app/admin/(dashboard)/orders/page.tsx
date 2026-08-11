@@ -8,9 +8,14 @@ import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/shared/empty-state";
 import { OrdersListView } from "@/components/admin/orders/orders-list-view";
 
-export default async function OrdersPage() {
+export default async function OrdersPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ search?: string }>;
+}) {
   const session = await getAdminSession();
   if (!session) redirect("/login");
+  const { search } = await searchParams;
 
   const shop = await getShopById(session.shopId);
 
@@ -32,34 +37,15 @@ export default async function OrdersPage() {
     );
   }
 
-  const { orders, nextCursor, hasMore } = await searchOrders(session.shopId, { pageSize: 20 });
-  const shopAny = shop as unknown as Record<string, unknown>;
+  const { orders, nextCursor, hasMore } = await searchOrders(session.shopId, { search, pageSize: 20 });
 
   return (
     <OrdersListView
       initialOrders={orders}
       initialNextCursor={nextCursor}
       initialHasMore={hasMore}
+      initialSearch={search ?? ""}
       currency={shop.currency}
-      shop={{
-        slug: shop.slug,
-        businessName: shop.businessName,
-        logoUrl: shop.logoUrl,
-        address: shop.address,
-        phone: shop.phone,
-        whatsappNumber: shop.whatsappNumber,
-        gstNumber: shop.gstNumber,
-        currency: shop.currency,
-        upiId: shop.upiId,
-        acceptCash: shop.acceptCash,
-        bankAccountNumber: shop.bankAccountNumber,
-        bankName: shop.bankName,
-        bankIfsc: shop.bankIfsc,
-        paymentQrImageUrl: shop.paymentQrImageUrl,
-        paymentDisplayName: (shopAny.paymentDisplayName as string | null) ?? null,
-        enableTableNumber: (shopAny.enableTableNumber as boolean) ?? true,
-        enableOrderBarcodeLabels: (shopAny.enableOrderBarcodeLabels as boolean) ?? false,
-      }}
     />
   );
 }

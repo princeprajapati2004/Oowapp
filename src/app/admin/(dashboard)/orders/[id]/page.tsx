@@ -2,9 +2,10 @@ import { notFound, redirect } from "next/navigation";
 import { getAdminSession } from "@/lib/session";
 import { getShopById } from "@/lib/services/shop";
 import { db } from "@/lib/db";
-import { BillDetail, type BillOrderData } from "@/components/admin/bill-detail";
+import { toAdminOrderEvent } from "@/lib/server/order-events";
+import { OrderDetailPage } from "@/components/admin/orders/order-detail-page";
 
-export default async function BillDetailPage({
+export default async function OrderDetailRoute({
   params,
   searchParams,
 }: {
@@ -24,34 +25,13 @@ export default async function BillDetailPage({
   });
   if (!order) notFound();
 
-  // Serialize Decimal/Date values for RSC → client boundary
-  const serializedOrder = {
-    ...order,
-    subtotal: Number(order.subtotal),
-    taxTotal: Number(order.taxTotal),
-    grandTotal: Number(order.grandTotal),
-    discountValue: order.discountValue !== null ? Number(order.discountValue) : null,
-    discountedTotal: order.discountedTotal !== null ? Number(order.discountedTotal) : null,
-    paidAmount: order.paidAmount !== null ? Number(order.paidAmount) : null,
-    createdAt: order.createdAt.toISOString(),
-    paymentStatus: order.paymentStatus ?? "PENDING",
-    paymentConfirmedAt: order.paymentConfirmedAt ? order.paymentConfirmedAt.toISOString() : null,
-    cancelledAt: order.cancelledAt ? order.cancelledAt.toISOString() : null,
-    items: order.items.map((item) => ({
-      ...item,
-      price: Number(item.price),
-      lineTotal: Number(item.lineTotal),
-    })),
-    statusEvents: order.statusEvents.map((e) => ({ status: e.status, changedAt: e.changedAt.toISOString() })),
-    taxBreakdown: (Array.isArray(order.taxBreakdown) ? order.taxBreakdown : []) as unknown as BillOrderData["taxBreakdown"],
-  };
-
   const shopAny = shop as unknown as Record<string, unknown>;
 
   return (
-    <BillDetail
-      order={serializedOrder}
+    <OrderDetailPage
+      initialOrder={toAdminOrderEvent(order)}
       justCreated={created === "1"}
+      currency={shop.currency}
       shop={{
         slug: shop.slug,
         businessName: shop.businessName,

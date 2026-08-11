@@ -588,9 +588,9 @@ export function CreateOrderPage({
         `Order ${res.billNumber} created — ${totalQty} item(s)${res.tokenNumber ? ` · Token #${res.tokenNumber}` : ""}`
       );
       clearLocalStore(shopSlug, "draftOrder");
-      // Straight to the invoice preview (the bill-detail page) instead of
-      // back to the list — that page already renders the full invoice and
-      // now carries Print/Share/Complete actions for this exact moment.
+      // Straight to the order detail page instead of back to the list —
+      // that page already renders the full order and carries Print/Share/
+      // status actions for this exact moment.
       router.push(`/admin/orders/${res.orderId}?created=1`);
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : "Failed to create order");

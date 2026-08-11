@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { ChevronRight } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { formatCurrency } from "@/lib/utils/currency";
@@ -16,11 +17,9 @@ import type { AdminOrderEventOrder } from "@/lib/server/order-events";
 export function OrderCard({
   order,
   currency,
-  onClick,
 }: {
   order: AdminOrderEventOrder;
   currency: string;
-  onClick: () => void;
 }) {
   const status = order.status as OrderStatus;
   const paymentStatus = (order.paymentStatus ?? "PENDING") as PaymentStatus;
@@ -28,10 +27,9 @@ export function OrderCard({
   const created = new Date(order.createdAt);
 
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="w-full text-left rounded-xl border bg-card px-4 py-3.5 hover:bg-muted/40 hover:border-border transition-colors"
+    <Link
+      href={`/admin/orders/${order.id}`}
+      className="block w-full text-left rounded-xl border bg-card px-4 py-3.5 hover:bg-muted/40 hover:border-border transition-colors"
     >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1 space-y-2">
@@ -71,6 +69,6 @@ export function OrderCard({
           <ChevronRight className="size-4 text-muted-foreground" />
         </div>
       </div>
-    </button>
+    </Link>
   );
 }

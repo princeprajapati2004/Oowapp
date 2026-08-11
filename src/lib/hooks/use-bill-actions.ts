@@ -1,10 +1,10 @@
 "use client";
 
 /**
- * Print / Download PDF / Share handlers for an order's bill — lifted out of
- * bill-detail.tsx so both the full bill page and the new order-detail
- * drawer's bottom action buttons call the exact same, already-working
- * window.print() / jsPDF / Web Share logic instead of duplicating it.
+ * Print / Download PDF / Share handlers for an order's bill — a single
+ * shared implementation so every place that needs to print/share/export an
+ * order's bill calls the exact same, already-working window.print() /
+ * jsPDF / Web Share logic instead of duplicating it.
  */
 import { useState } from "react";
 import { toast } from "sonner";

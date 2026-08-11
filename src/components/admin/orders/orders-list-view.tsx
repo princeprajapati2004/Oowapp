@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { ClipboardList, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -9,10 +8,8 @@ import { EmptyState } from "@/components/shared/empty-state";
 import { api } from "@/lib/api-client";
 import { useOrderEvents } from "@/lib/hooks/use-order-events";
 import type { AdminOrderEventOrder } from "@/lib/server/order-events";
-import type { BillShopData } from "@/lib/hooks/use-bill-actions";
 import { OrderCard } from "./order-card";
 import { OrderFiltersBar, DEFAULT_ORDER_FILTERS, type OrderFilters } from "./order-filters-bar";
-import { OrderDetailDrawer } from "./order-detail-drawer";
 
 type SearchResponse = {
   orders: AdminOrderEventOrder[];
@@ -37,20 +34,16 @@ export function OrdersListView({
   initialOrders,
   initialNextCursor,
   initialHasMore,
+  initialSearch,
   currency,
-  shop,
 }: {
   initialOrders: AdminOrderEventOrder[];
   initialNextCursor: string | null;
   initialHasMore: boolean;
+  initialSearch: string;
   currency: string;
-  shop: BillShopData;
 }) {
-  const router = useRouter();
-  const searchParams = useSearchParams();
-  const selectedOrderId = searchParams.get("order");
-
-  const [filters, setFilters] = useState<OrderFilters>(DEFAULT_ORDER_FILTERS);
+  const [filters, setFilters] = useState<OrderFilters>({ ...DEFAULT_ORDER_FILTERS, search: initialSearch });
   const [orders, setOrders] = useState(initialOrders);
   const [nextCursor, setNextCursor] = useState(initialNextCursor);
   const [hasMore, setHasMore] = useState(initialHasMore);
@@ -74,8 +67,8 @@ export function OrdersListView({
   }, []);
 
   // Skip the redundant fetch on first mount — initialOrders already reflects
-  // the (empty) default filters from the server-rendered page. A ref (not
-  // state) so the skip itself never triggers a render/effect cycle.
+  // the server-rendered page's filters (including any ?search= it read). A
+  // ref (not state) so the skip itself never triggers a render/effect cycle.
   const isFirstRun = useRef(true);
   useEffect(() => {
     if (isFirstRun.current) {
@@ -134,22 +127,6 @@ export function OrdersListView({
     },
   });
 
-  function openOrder(id: string) {
-    const params = new URLSearchParams(searchParams.toString());
-    params.set("order", id);
-    router.push(`/admin/orders?${params.toString()}`, { scroll: false });
-  }
-
-  function closeDrawer() {
-    const params = new URLSearchParams(searchParams.toString());
-    params.delete("order");
-    router.push(`/admin/orders${params.toString() ? `?${params.toString()}` : ""}`, { scroll: false });
-  }
-
-  function handleOrderChanged(updated: AdminOrderEventOrder) {
-    setOrders((prev) => prev.map((o) => (o.id === updated.id ? updated : o)));
-  }
-
   return (
     <div className="space-y-4">
       <div>
@@ -176,7 +153,7 @@ export function OrdersListView({
       ) : (
         <div className="space-y-2">
           {orders.map((order) => (
-            <OrderCard key={order.id} order={order} currency={currency} onClick={() => openOrder(order.id)} />
+            <OrderCard key={order.id} order={order} currency={currency} />
           ))}
         </div>
       )}
@@ -188,17 +165,6 @@ export function OrdersListView({
           </Button>
         </div>
       )}
-
-      <OrderDetailDrawer
-        orderId={selectedOrderId}
-        onClose={closeDrawer}
-        shop={shop}
-        currency={currency}
-        onOrderChanged={handleOrderChanged}
-        onFilterByPhone={(phone) => {
-          setFilters({ ...DEFAULT_ORDER_FILTERS, search: phone });
-        }}
-      />
     </div>
   );
 }
