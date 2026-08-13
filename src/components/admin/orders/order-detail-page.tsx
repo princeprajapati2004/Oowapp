@@ -29,6 +29,8 @@ import {
   X,
   PartyPopper,
   Wallet,
+  MessageCircle,
+  CheckCircle2,
 } from "lucide-react";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -54,6 +56,8 @@ import { formatOrderDateParts } from "@/lib/utils/date";
 import { cn } from "@/lib/utils";
 import { useOrderEvents } from "@/lib/hooks/use-order-events";
 import { useBillActions, type BillOrderData, type BillShopData } from "@/lib/hooks/use-bill-actions";
+import { buildWhatsAppUrl } from "@/lib/services/whatsapp";
+import { buildUpiPaymentUri } from "@/lib/utils/upi";
 import {
   STATUS_LABELS,
   STATUS_BADGE_CLASS,
@@ -298,6 +302,8 @@ export function OrderDetailPage({
   const actions = getPrimaryActions({ ...order, status });
   const canCancelNow = !["DELIVERED", "COMPLETED", "CANCELLED"].includes(status);
   const { date: orderDateLabel, dayTime: orderDayTimeLabel } = formatOrderDateParts(order.createdAt);
+  const orderTotal = order.discountedTotal ?? order.grandTotal;
+  const amountDue = Math.max(0, orderTotal - (order.paidAmount ?? 0));
 
   const billActions = useBillActions(toBillOrderData(order), shop);
 
@@ -364,6 +370,51 @@ export function OrderDetailPage({
     } finally {
       setActionLoading(false);
     }
+  }
+
+  // Sends the shop's real UPI id + a working upi://pay deep link (same
+  // builder the owner payment modal's own QR already uses) to the
+  // customer's phone — never a fabricated amount/UPI id/payment link.
+  function sendPaymentQrOnWhatsApp() {
+    if (!order.customerPhone || !shop.upiId) return;
+    const payUri = buildUpiPaymentUri({
+      upiId: shop.upiId,
+      payeeName: shop.paymentDisplayName || shop.businessName,
+      amount: amountDue,
+      note: order.billNumber,
+    });
+    const message = [
+      `*Payment Request — ${shop.businessName}*`,
+      "",
+      `Order: ${order.billNumber}`,
+      `Amount Due: ${formatCurrency(amountDue, currency)}`,
+      "",
+      `UPI ID: ${shop.upiId}`,
+      `Tap to pay: ${payUri}`,
+      "",
+      "Thank you!",
+    ].join("\n");
+    window.open(buildWhatsAppUrl(order.customerPhone, message), "_blank");
+  }
+
+  function shareReceiptOnWhatsApp() {
+    if (!order.customerPhone) return;
+    const total = order.discountedTotal ?? order.grandTotal;
+    const lines = [
+      `*Receipt — ${shop.businessName}*`,
+      "",
+      `Order: ${order.billNumber}`,
+      order.customerName ? `Customer: ${order.customerName}` : null,
+      "",
+      "Items:",
+      ...order.items.map((item) => `${item.quantity} x ${item.name} = ${formatCurrency(item.lineTotal, currency)}`),
+      "",
+      `Total: ${formatCurrency(total, currency)}`,
+      `Payment: ${paymentMethodLabel(order.paymentMethod)} — ${PAYMENT_LABELS[paymentStatus]}`,
+      "",
+      "Thank you for your order!",
+    ].filter((line): line is string => line !== null);
+    window.open(buildWhatsAppUrl(order.customerPhone, lines.join("\n")), "_blank");
   }
 
   async function saveNote() {
@@ -555,7 +606,7 @@ export function OrderDetailPage({
             <div className="flex justify-between border-t pt-1.5 mt-1.5">
               <span className="text-muted-foreground">Amount Due</span>
               <span className="font-semibold text-amber-600 dark:text-amber-400">
-                {formatCurrency(Math.max(0, (order.discountedTotal ?? order.grandTotal) - (order.paidAmount ?? 0)), currency)}
+                {formatCurrency(amountDue, currency)}
               </span>
             </div>
           )}
@@ -600,7 +651,30 @@ export function OrderDetailPage({
 
       <DiscountTool order={order} currency={currency} onDiscountApplied={updatePatch} />
 
-      {(shop.upiId || shop.bankAccountNumber || shop.acceptCash || shop.paymentQrImageUrl) && (
+      {paymentStatus === "PAID" ? (
+        <div className="rounded-xl border border-emerald-200 bg-emerald-50 overflow-hidden dark:border-emerald-900/50 dark:bg-emerald-900/20">
+          <div className="px-4 py-3 flex items-center gap-2">
+            <CheckCircle2 className="size-5 shrink-0 text-emerald-600 dark:text-emerald-400" />
+            <p className="font-semibold text-sm text-emerald-800 dark:text-emerald-400">Payment Received</p>
+          </div>
+          <div className="px-4 pb-3 space-y-1 text-sm">
+            <div className="flex justify-between">
+              <span className="text-emerald-700/70 dark:text-emerald-400/70">Amount</span>
+              <span className="font-medium text-emerald-800 dark:text-emerald-400">{formatCurrency(order.paidAmount ?? orderTotal, currency)}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-emerald-700/70 dark:text-emerald-400/70">Method</span>
+              <span className="font-medium text-emerald-800 dark:text-emerald-400">{paymentMethodLabel(order.paymentMethod)}</span>
+            </div>
+            {order.transactionReference && (
+              <div className="flex justify-between">
+                <span className="text-emerald-700/70 dark:text-emerald-400/70">Transaction Ref</span>
+                <span className="font-medium font-mono text-xs text-emerald-800 dark:text-emerald-400">{order.transactionReference}</span>
+              </div>
+            )}
+          </div>
+        </div>
+      ) : (shop.upiId || shop.bankAccountNumber || shop.acceptCash || shop.paymentQrImageUrl) && (
         <div className="rounded-xl border bg-card overflow-hidden">
           <div className="px-4 py-2.5 bg-muted/30 border-b">
             <p className="font-semibold text-xs uppercase tracking-wide text-muted-foreground">Payment Methods</p>
@@ -631,6 +705,15 @@ export function OrderDetailPage({
                 <Image src={shop.paymentQrImageUrl} alt="Scan to pay" width={64} height={64} unoptimized className="rounded-md border bg-white object-contain p-1" />
                 <p className="text-xs text-muted-foreground">Scan to pay via {shop.businessName}</p>
               </div>
+            )}
+            {order.customerPhone && shop.upiId && (
+              <Button
+                variant="outline"
+                className="w-full gap-1.5 border-[#25d366]/40 text-[#128c4a] hover:bg-[#25d366]/10 dark:text-[#25d366] print:hidden"
+                onClick={sendPaymentQrOnWhatsApp}
+              >
+                <MessageCircle className="size-4" /> Send Payment QR & Link
+              </Button>
             )}
           </div>
         </div>
@@ -703,6 +786,15 @@ export function OrderDetailPage({
             </Button>
           );
         })}
+        {paymentStatus === "PAID" && order.customerPhone && (
+          <Button
+            variant="outline"
+            className="flex-1 min-w-24 gap-1.5 border-[#25d366]/40 text-[#128c4a] hover:bg-[#25d366]/10 dark:text-[#25d366]"
+            onClick={shareReceiptOnWhatsApp}
+          >
+            <MessageCircle className="size-4" /> Share Receipt
+          </Button>
+        )}
         {canCancelNow && (
           <Button variant="ghost" size="sm" className="w-full text-destructive hover:bg-destructive/10 hover:text-destructive" onClick={() => setCancelOpen(true)}>
             Cancel Order
