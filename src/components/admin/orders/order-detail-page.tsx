@@ -87,6 +87,17 @@ const DIRECT_STATUS_ACTIONS: Partial<Record<PrimaryAction, OrderStatus>> = {
   complete: "COMPLETED",
 };
 
+// Each workflow step gets its own color so the footer reads at a glance
+// instead of every step looking the same — same idea as STATUS_BADGE_CLASS's
+// distinct-hue-per-status, applied to the action buttons that drive it.
+const ACTION_COLOR_CLASS: Partial<Record<PrimaryAction, string>> = {
+  start_processing: "bg-blue-600 hover:bg-blue-700 text-white",
+  mark_ready: "bg-purple-600 hover:bg-purple-700 text-white",
+  out_for_delivery: "bg-cyan-600 hover:bg-cyan-700 text-white",
+  mark_delivered: "bg-orange-600 hover:bg-orange-700 text-white",
+  complete: "bg-teal-600 hover:bg-teal-700 text-white",
+};
+
 function toBillOrderData(order: AdminOrderEventOrder): BillOrderData {
   return {
     id: order.id,
@@ -708,8 +719,7 @@ export function OrderDetailPage({
             )}
             {order.customerPhone && shop.upiId && (
               <Button
-                variant="outline"
-                className="w-full gap-1.5 border-[#25d366]/40 text-[#128c4a] hover:bg-[#25d366]/10 dark:text-[#25d366] print:hidden"
+                className="w-full gap-1.5 bg-[#25d366] hover:bg-[#1ebc57] text-white print:hidden"
                 onClick={sendPaymentQrOnWhatsApp}
               >
                 <MessageCircle className="size-4" /> Send Payment QR & Link
@@ -753,7 +763,12 @@ export function OrderDetailPage({
           }
           if (action === "payment") {
             return (
-              <Button key={action} variant="outline" className="flex-1 min-w-24 gap-1.5" disabled={actionLoading} onClick={() => setPaymentOpen(true)}>
+              <Button
+                key={action}
+                className="flex-1 min-w-24 gap-1.5 bg-amber-500 hover:bg-amber-600 text-white"
+                disabled={actionLoading}
+                onClick={() => setPaymentOpen(true)}
+              >
                 <CreditCard className="size-3.5" /> {actionLabel(action)}
               </Button>
             );
@@ -780,7 +795,13 @@ export function OrderDetailPage({
             );
           }
           return (
-            <Button key={action} variant="secondary" className="flex-1 min-w-28 gap-1.5" disabled={actionLoading} onClick={() => runStatusAction(action)}>
+            <Button
+              key={action}
+              variant={ACTION_COLOR_CLASS[action] ? undefined : "secondary"}
+              className={cn("flex-1 min-w-28 gap-1.5", ACTION_COLOR_CLASS[action])}
+              disabled={actionLoading}
+              onClick={() => runStatusAction(action)}
+            >
               {actionLoading && <Loader2 className="size-3.5 animate-spin" />}
               {actionLabel(action)}
             </Button>
@@ -788,8 +809,7 @@ export function OrderDetailPage({
         })}
         {paymentStatus === "PAID" && order.customerPhone && (
           <Button
-            variant="outline"
-            className="flex-1 min-w-24 gap-1.5 border-[#25d366]/40 text-[#128c4a] hover:bg-[#25d366]/10 dark:text-[#25d366]"
+            className="flex-1 min-w-24 gap-1.5 bg-[#25d366] hover:bg-[#1ebc57] text-white"
             onClick={shareReceiptOnWhatsApp}
           >
             <MessageCircle className="size-4" /> Share Receipt
