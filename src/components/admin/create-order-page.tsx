@@ -588,10 +588,30 @@ export function CreateOrderPage({
         `Order ${res.billNumber} created — ${totalQty} item(s)${res.tokenNumber ? ` · Token #${res.tokenNumber}` : ""}`
       );
       clearLocalStore(shopSlug, "draftOrder");
+
+      // Skip the manual "Confirm Order" review step and go straight to
+      // Payment — same backend transition the Confirm Order button always
+      // did (PENDING -> CONFIRMED), just run automatically right after
+      // creation instead of waiting for a separate click. A table order
+      // added to an already-open tab (Payment Method locked to Pending,
+      // see occupiedTablePreview above) is excluded: that payment is
+      // deliberately deferred until the whole table is settled later, so it
+      // keeps landing on the normal review screen.
+      let readyForPayment = false;
+      if (paymentMethod !== "PENDING") {
+        try {
+          await api.patch(`/api/admin/orders/${res.orderId}`, { action: "status", status: "CONFIRMED" });
+          readyForPayment = true;
+        } catch {
+          // Auto-confirm failed (e.g. transient network error) — fall back
+          // to the normal review screen rather than blocking navigation.
+        }
+      }
+
       // Straight to the order detail page instead of back to the list —
       // that page already renders the full order and carries Print/Share/
       // status actions for this exact moment.
-      router.push(`/admin/orders/${res.orderId}?created=1`);
+      router.push(`/admin/orders/${res.orderId}?created=1${readyForPayment ? "&pay=1" : ""}`);
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : "Failed to create order");
     } finally {

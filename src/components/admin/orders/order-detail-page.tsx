@@ -28,6 +28,7 @@ import {
   Tag,
   X,
   PartyPopper,
+  Wallet,
 } from "lucide-react";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -49,6 +50,7 @@ import {
 import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 import { api, ApiError } from "@/lib/api-client";
 import { formatCurrency } from "@/lib/utils/currency";
+import { formatOrderDateParts } from "@/lib/utils/date";
 import { cn } from "@/lib/utils";
 import { useOrderEvents } from "@/lib/hooks/use-order-events";
 import { useBillActions, type BillOrderData, type BillShopData } from "@/lib/hooks/use-bill-actions";
@@ -265,11 +267,13 @@ export function OrderDetailPage({
   shop,
   currency,
   justCreated,
+  openPayment,
 }: {
   initialOrder: AdminOrderEventOrder;
   shop: BillShopData;
   currency: string;
   justCreated?: boolean;
+  openPayment?: boolean;
 }) {
   const router = useRouter();
   const [order, setOrder] = useState(initialOrder);
@@ -279,17 +283,22 @@ export function OrderDetailPage({
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [cancelOpen, setCancelOpen] = useState(false);
-  const [paymentOpen, setPaymentOpen] = useState(false);
+  // Manual Order creation auto-confirms the order and lands here with
+  // openPayment=true so staff go straight to Payment instead of an extra
+  // Confirm Order click — see create-order-page.tsx's handleSubmit.
+  const [paymentOpen, setPaymentOpen] = useState(!!openPayment);
   const [noteOpen, setNoteOpen] = useState(false);
   const [noteDraft, setNoteDraft] = useState("");
   const [savingNote, setSavingNote] = useState(false);
   const [trackingQr, setTrackingQr] = useState<string | null>(null);
+  const [party, setParty] = useState<{ id: string } | null>(null);
 
   const status = order.status as OrderStatus;
   const paymentStatus = (order.paymentStatus ?? "PENDING") as PaymentStatus;
   const orderType = deriveOrderType(order);
   const actions = getPrimaryActions({ ...order, status });
   const canCancelNow = !["DELIVERED", "COMPLETED", "CANCELLED"].includes(status);
+  const { date: orderDateLabel, dayTime: orderDayTimeLabel } = formatOrderDateParts(order.createdAt);
 
   const billActions = useBillActions(toBillOrderData(order), shop);
 
@@ -300,6 +309,30 @@ export function OrderDetailPage({
       .then(setTrackingQr)
       .catch(() => {});
   }, [shop.slug, order.id]);
+
+  // This order's Party/khata-book contact, if one exists — Party has no FK
+  // on Order (see prisma schema comment on the Party model), so the two are
+  // matched by phone number here exactly like the admin customer directory
+  // already does. Reuses the existing parties list endpoint as-is.
+  useEffect(() => {
+    const phone = order.customerPhone;
+    let cancelled = false;
+    const lookup = phone
+      ? api
+          .get<{ id: string; phone: string }[]>("/api/admin/parties")
+          .then((parties) => parties.find((p) => p.phone === phone) ?? null)
+      : Promise.resolve(null);
+    lookup
+      .then((found) => {
+        if (!cancelled) setParty(found);
+      })
+      .catch(() => {
+        if (!cancelled) setParty(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [order.customerPhone]);
 
   useOrderEvents("/api/admin/orders/stream", {
     onUpdated: (updated) => {
@@ -382,43 +415,17 @@ export function OrderDetailPage({
         </div>
       )}
 
-      {/* Back link + business header — screen chrome, hidden on print */}
-      <div className="flex items-center gap-3 print:hidden">
-        <Button variant="ghost" size="icon" className="shrink-0" render={<Link href="/admin/orders" />}>
-          <ArrowLeft className="size-4" />
-        </Button>
-        <span className="text-sm text-muted-foreground">Back to Orders</span>
-      </div>
-
-      <div className="hidden print:flex items-center gap-3 pb-2 border-b">
-        {shop.logoUrl ? (
-          <Image src={shop.logoUrl} alt={shop.businessName} width={40} height={40} unoptimized className="rounded-full object-cover" />
-        ) : null}
-        <div>
-          <p className="font-bold">{shop.businessName}</p>
-          <p className="text-xs text-muted-foreground">
-            {[shop.address, shop.phone, shop.gstNumber ? `GSTIN: ${shop.gstNumber}` : null].filter(Boolean).join(" · ")}
-          </p>
-        </div>
-      </div>
-
-      {/* Header */}
-      <div className="flex items-start justify-between gap-3 flex-wrap">
-        <div>
-          <div className="flex items-center gap-2 flex-wrap">
-            <h1 className="text-xl font-bold font-mono">{order.billNumber}</h1>
-            {order.tokenNumber ? <span className="text-sm font-medium text-muted-foreground">Token #{order.tokenNumber}</span> : null}
-            <span className={cn("inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium", STATUS_BADGE_CLASS[status])}>
-              {STATUS_LABELS[status]}
-            </span>
-          </div>
-          <p className="text-sm text-muted-foreground">
-            Placed on {new Date(order.createdAt).toLocaleString(undefined, { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}
-          </p>
+      {/* Back + page title + more-actions menu — screen chrome, hidden on print */}
+      <div className="flex items-center justify-between gap-3 print:hidden">
+        <div className="flex min-w-0 items-center gap-3">
+          <Button variant="ghost" size="icon" className="shrink-0" render={<Link href="/admin/orders" />} aria-label="Back to Orders">
+            <ArrowLeft className="size-4" />
+          </Button>
+          <h1 className="truncate text-base font-semibold">Order Details</h1>
         </div>
 
         <DropdownMenu>
-          <DropdownMenuTrigger className={cn(buttonVariants({ variant: "outline", size: "icon" }), "h-9 w-9 print:hidden")} aria-label="More actions">
+          <DropdownMenuTrigger className={cn(buttonVariants({ variant: "outline", size: "icon" }), "h-9 w-9 shrink-0")} aria-label="More actions">
             <MoreHorizontal className="size-4" />
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-48">
@@ -435,6 +442,31 @@ export function OrderDetailPage({
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
+      </div>
+
+      <div className="hidden print:flex items-center gap-3 pb-2 border-b">
+        {shop.logoUrl ? (
+          <Image src={shop.logoUrl} alt={shop.businessName} width={40} height={40} unoptimized className="rounded-full object-cover" />
+        ) : null}
+        <div>
+          <p className="font-bold">{shop.businessName}</p>
+          <p className="text-xs text-muted-foreground">
+            {[shop.address, shop.phone, shop.gstNumber ? `GSTIN: ${shop.gstNumber}` : null].filter(Boolean).join(" · ")}
+          </p>
+        </div>
+      </div>
+
+      {/* Order identification */}
+      <div>
+        <div className="flex items-center gap-2 flex-wrap">
+          <h2 className="text-xl font-bold font-mono">{order.billNumber}</h2>
+          {order.tokenNumber ? <span className="text-sm font-medium text-muted-foreground">Token #{order.tokenNumber}</span> : null}
+          <span className={cn("inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium", STATUS_BADGE_CLASS[status])}>
+            {STATUS_LABELS[status]}
+          </span>
+        </div>
+        <p className="text-sm text-muted-foreground">{orderDateLabel}</p>
+        <p className="text-sm text-muted-foreground">{orderDayTimeLabel}</p>
       </div>
 
       {status === "CANCELLED" && order.cancelReason && (
@@ -463,6 +495,11 @@ export function OrderDetailPage({
                   <User className="size-3.5" /> View orders from this customer
                 </DropdownMenuItem>
               )}
+              {party && (
+                <DropdownMenuItem render={<Link href={`/admin/parties/${party.id}`} />}>
+                  <Wallet className="size-3.5" /> View Party Statement
+                </DropdownMenuItem>
+              )}
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
@@ -471,16 +508,18 @@ export function OrderDetailPage({
             <span className="text-muted-foreground">Name</span>
             <span className="font-medium">{order.customerName || "Walk-in Customer"}</span>
           </div>
+          {order.customerPhone && (
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Phone</span>
+              <span className="font-medium">{order.customerPhone}</span>
+            </div>
+          )}
           <div className="flex justify-between">
-            <span className="text-muted-foreground">Phone</span>
-            <span className="font-medium">{order.customerPhone || "—"}</span>
-          </div>
-          <div className="flex justify-between">
-            <span className="text-muted-foreground">Order Type</span>
+            <span className="text-muted-foreground">Order Channel</span>
             <span className="font-medium">{deriveOrderSource(order)}</span>
           </div>
           <div className="flex justify-between">
-            <span className="text-muted-foreground">Order Source</span>
+            <span className="text-muted-foreground">Order Type</span>
             <span className="font-medium">{orderType}</span>
           </div>
           {order.ownerNote && (

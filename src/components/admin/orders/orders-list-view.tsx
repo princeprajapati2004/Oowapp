@@ -130,8 +130,8 @@ export function OrdersListView({
   return (
     <div className="space-y-4">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight">Orders</h1>
-        <p className="text-muted-foreground text-sm">Click on any order to view details & manage payments.</p>
+        <h1 className="text-2xl font-bold tracking-tight">Order History</h1>
+        <p className="text-muted-foreground text-sm">Tap any order card to check details and manage payments.</p>
       </div>
 
       <OrderFiltersBar filters={filters} onChange={(patch) => setFilters((prev) => ({ ...prev, ...patch }))} />

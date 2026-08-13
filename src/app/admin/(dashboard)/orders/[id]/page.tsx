@@ -10,13 +10,13 @@ export default async function OrderDetailRoute({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ created?: string }>;
+  searchParams: Promise<{ created?: string; pay?: string }>;
 }) {
   const session = await getAdminSession();
   if (!session) redirect("/login");
 
   const { id } = await params;
-  const { created } = await searchParams;
+  const { created, pay } = await searchParams;
   const shop = await getShopById(session.shopId);
 
   const order = await db.order.findFirst({
@@ -31,6 +31,7 @@ export default async function OrderDetailRoute({
     <OrderDetailPage
       initialOrder={toAdminOrderEvent(order)}
       justCreated={created === "1"}
+      openPayment={pay === "1"}
       currency={shop.currency}
       shop={{
         slug: shop.slug,
