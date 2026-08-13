@@ -1,17 +1,15 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import type { OrderEventOrder, TableSessionEventPayload, NotificationEventPayload, KotEventPayload } from "@/lib/server/order-events";
+import type { OrderEventOrder, TableSessionEventPayload, NotificationEventPayload } from "@/lib/server/order-events";
 
-export type { OrderEventOrder, TableSessionEventPayload, NotificationEventPayload, KotEventPayload };
+export type { OrderEventOrder, TableSessionEventPayload, NotificationEventPayload };
 
 type OrderEventHandlers = {
   onCreated?: (order: OrderEventOrder) => void;
   onUpdated?: (order: OrderEventOrder) => void;
   onSessionUpdated?: (session: TableSessionEventPayload) => void;
   onNotification?: (notification: NotificationEventPayload) => void;
-  onKotCreated?: (kot: KotEventPayload) => void;
-  onKotUpdated?: (kot: KotEventPayload) => void;
 };
 
 type HandlerKind = keyof OrderEventHandlers;
@@ -100,16 +98,6 @@ function getOrCreateConnection(endpoint: string): SharedConnection {
       if (notification) broadcast("onNotification", notification);
     });
 
-    source.addEventListener("kot.created", (event) => {
-      const kot = parseField<KotEventPayload>(event, "kot");
-      if (kot) broadcast("onKotCreated", kot);
-    });
-
-    source.addEventListener("kot.updated", (event) => {
-      const kot = parseField<KotEventPayload>(event, "kot");
-      if (kot) broadcast("onKotUpdated", kot);
-    });
-
     source.onerror = () => {
       source.close();
       if (conn.stopped) return;
@@ -139,13 +127,11 @@ function releaseConnection(endpoint: string) {
  * reconnects with backoff on drop. EventSource's own auto-reconnect is
  * disabled once we call close(), so backoff is manual.
  */
-export function useOrderEvents(endpoint: string, { onCreated, onUpdated, onSessionUpdated, onNotification, onKotCreated, onKotUpdated }: OrderEventHandlers) {
+export function useOrderEvents(endpoint: string, { onCreated, onUpdated, onSessionUpdated, onNotification }: OrderEventHandlers) {
   const onCreatedRef = useRef(onCreated);
   const onUpdatedRef = useRef(onUpdated);
   const onSessionUpdatedRef = useRef(onSessionUpdated);
   const onNotificationRef = useRef(onNotification);
-  const onKotCreatedRef = useRef(onKotCreated);
-  const onKotUpdatedRef = useRef(onKotUpdated);
 
   // Runs after every render (no deps) so the refs never go stale, without
   // reconnecting the EventSource whenever the caller passes new inline
@@ -155,8 +141,6 @@ export function useOrderEvents(endpoint: string, { onCreated, onUpdated, onSessi
     onUpdatedRef.current = onUpdated;
     onSessionUpdatedRef.current = onSessionUpdated;
     onNotificationRef.current = onNotification;
-    onKotCreatedRef.current = onKotCreated;
-    onKotUpdatedRef.current = onKotUpdated;
   });
 
   useEffect(() => {
@@ -178,12 +162,6 @@ export function useOrderEvents(endpoint: string, { onCreated, onUpdated, onSessi
           break;
         case "onNotification":
           onNotificationRef.current?.(payload as NotificationEventPayload);
-          break;
-        case "onKotCreated":
-          onKotCreatedRef.current?.(payload as KotEventPayload);
-          break;
-        case "onKotUpdated":
-          onKotUpdatedRef.current?.(payload as KotEventPayload);
           break;
       }
     };

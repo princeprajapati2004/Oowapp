@@ -24,7 +24,6 @@ import {
   FileSpreadsheet,
   Receipt,
   ChevronDown,
-  Clipboard,
   type LucideIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -69,7 +68,6 @@ function buildNavEntries(foodBusiness: boolean, copy: ShellCopy): NavEntry[] {
   ];
   if (foodBusiness) {
     operationsItems.push({ href: "/admin/tables", label: "Tables", icon: Table2 });
-    operationsItems.push({ href: "/admin/waiter", label: "Waiter KOT", icon: Clipboard });
   }
 
   return [

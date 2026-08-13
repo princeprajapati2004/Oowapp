@@ -11,6 +11,7 @@ import { publishOrderEvent, toOrderEvent } from "@/lib/server/order-events";
 import { createNotification } from "@/lib/services/notification";
 import { formatCurrency } from "@/lib/utils/currency";
 import { searchOrders, type OrderSourceFilter, type OrderTypeFilter } from "@/lib/services/order-search";
+import { writeAuditLog, extractRequestMeta } from "@/lib/services/audit-log";
 import type { Prisma } from "@/generated/prisma/client";
 
 // GET — the owner order management list (brief §2/§12–§18): server-side
@@ -220,6 +221,20 @@ export async function POST(request: Request) {
     }).catch(() => {});
 
     publishOrderEvent(shop.id, { type: "order.created", order: toOrderEvent(order) });
+
+    const { ipAddress, userAgent, requestId } = extractRequestMeta(request);
+    writeAuditLog({
+      action: "ORDER_CREATED",
+      actorType: "admin",
+      actorId: session.adminId,
+      targetType: "order",
+      targetId: order.id,
+      shopId: shop.id,
+      metadata: { billNumber: order.billNumber, source: "manual", grandTotal: bill.grandTotal, paymentMethod: input.paymentMethod },
+      ipAddress,
+      userAgent,
+      requestId,
+    });
 
     return NextResponse.json(
       { ok: true, orderId: order.id, billNumber: order.billNumber, tokenNumber: order.tokenNumber },

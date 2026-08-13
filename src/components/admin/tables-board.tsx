@@ -370,6 +370,12 @@ function TableCard({
         <span className="text-xl font-bold tabular-nums text-primary">{formatCurrency(session.grandTotal, currency)}</span>
       </div>
 
+      {session.paidAmount > 0 && (
+        <p className="text-xs font-medium text-amber-600 dark:text-amber-400">
+          {formatCurrency(session.paidAmount, currency)} paid · {formatCurrency(session.remaining, currency)} due
+        </p>
+      )}
+
       <div className="flex gap-2">
         <Button size="sm" variant="outline" className="flex-1 h-9 gap-1.5 text-xs" onClick={onViewDetail}>
           <ReceiptText className="size-3.5" /> View Orders
@@ -396,8 +402,21 @@ function MarkPaidDialog({
 }) {
   const [method, setMethod] = useState<(typeof PAYMENT_METHODS)[number]["value"]>("CASH");
   const [note, setNote] = useState("");
+  const [amount, setAmount] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [rejecting, setRejecting] = useState(false);
+
+  const remaining = table?.session?.remaining ?? table?.session?.grandTotal ?? 0;
+
+  // Reset the amount field to the current remaining balance exactly when a
+  // new table opens in this dialog — adjusting state from a prop change
+  // during render, not in an effect, so it never shows a stale amount from
+  // whichever table was open before.
+  const [lastTableId, setLastTableId] = useState(table?.session?.id ?? null);
+  if ((table?.session?.id ?? null) !== lastTableId) {
+    setLastTableId(table?.session?.id ?? null);
+    setAmount(remaining > 0 ? remaining.toFixed(2) : "");
+  }
 
   async function handleReject() {
     if (!table?.session) return;
@@ -415,14 +434,27 @@ function MarkPaidDialog({
 
   async function handleConfirm() {
     if (!table?.session) return;
+    const parsedAmount = amount.trim() ? parseFloat(amount) : undefined;
+    if (parsedAmount !== undefined && (!Number.isFinite(parsedAmount) || parsedAmount <= 0)) {
+      toast.error("Enter a valid payment amount");
+      return;
+    }
     setSubmitting(true);
     try {
-      await api.patch(`/api/admin/table-sessions/${table.session.id}`, {
-        action: "mark_paid",
-        paymentMethod: method,
-        paymentNote: note.trim() || undefined,
-      });
-      toast.success(`Table ${table.tableNumber} marked as paid`);
+      const res = await api.patch<{ ok: boolean; partial?: boolean; remaining?: number }>(
+        `/api/admin/table-sessions/${table.session.id}`,
+        {
+          action: "mark_paid",
+          paymentMethod: method,
+          paymentNote: note.trim() || undefined,
+          paidAmount: parsedAmount,
+        }
+      );
+      toast.success(
+        res.partial
+          ? `Payment recorded — ${formatCurrency(res.remaining ?? 0, currency)} still due on Table ${table.tableNumber}`
+          : `Table ${table.tableNumber} marked as paid`
+      );
       setNote("");
       setMethod("CASH");
       onPaid();
@@ -443,11 +475,37 @@ function MarkPaidDialog({
         </DialogHeader>
 
         {table?.session && (
-          <div className="flex items-baseline justify-between rounded-lg bg-muted/40 px-3 py-2 text-sm">
-            <span className="text-muted-foreground">Amount due</span>
-            <span className="font-bold">{formatCurrency(table.session.grandTotal, currency)}</span>
+          <div className="space-y-1 rounded-lg bg-muted/40 px-3 py-2 text-sm">
+            <div className="flex items-baseline justify-between">
+              <span className="text-muted-foreground">Bill total</span>
+              <span className="font-medium">{formatCurrency(table.session.grandTotal, currency)}</span>
+            </div>
+            {table.session.paidAmount > 0 && (
+              <div className="flex items-baseline justify-between text-emerald-600 dark:text-emerald-400">
+                <span>Already paid</span>
+                <span className="font-medium">{formatCurrency(table.session.paidAmount, currency)}</span>
+              </div>
+            )}
+            <div className="flex items-baseline justify-between border-t pt-1">
+              <span className="text-muted-foreground">Remaining</span>
+              <span className="font-bold">{formatCurrency(remaining, currency)}</span>
+            </div>
           </div>
         )}
+
+        <div className="space-y-1.5">
+          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Amount to collect</p>
+          <Input
+            type="number"
+            step="0.01"
+            min="0"
+            value={amount}
+            onChange={(e) => setAmount(e.target.value)}
+            placeholder={remaining.toFixed(2)}
+            className="h-9"
+          />
+          <p className="text-xs text-muted-foreground">Less than the remaining balance records a partial payment and keeps the table open.</p>
+        </div>
 
         <div className="space-y-2">
           <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Payment method</p>
@@ -534,6 +592,7 @@ function TableDetailDialog({
   const [savingGuestCount, setSavingGuestCount] = useState(false);
   const [payMethod, setPayMethod] = useState<(typeof PAYMENT_METHODS)[number]["value"]>("CASH");
   const [payNote, setPayNote] = useState("");
+  const [payAmount, setPayAmount] = useState("");
   const [paying, setPaying] = useState(false);
   const [showPayConfirm, setShowPayConfirm] = useState(false);
   const [rejectingPayment, setRejectingPayment] = useState(false);
@@ -751,14 +810,28 @@ function TableDetailDialog({
 
   async function handleMarkPaid() {
     if (!table?.session) return;
+    const parsedAmount = payAmount.trim() ? parseFloat(payAmount) : undefined;
+    if (parsedAmount !== undefined && (!Number.isFinite(parsedAmount) || parsedAmount <= 0)) {
+      toast.error("Enter a valid payment amount");
+      return;
+    }
     setPaying(true);
     try {
-      await api.patch(`/api/admin/table-sessions/${table.session.id}`, {
-        action: "mark_paid",
-        paymentMethod: payMethod,
-        paymentNote: payNote.trim() || undefined,
-      });
-      toast.success(`Table ${table.tableNumber} marked as paid`);
+      const res = await api.patch<{ ok: boolean; partial?: boolean; remaining?: number }>(
+        `/api/admin/table-sessions/${table.session.id}`,
+        {
+          action: "mark_paid",
+          paymentMethod: payMethod,
+          paymentNote: payNote.trim() || undefined,
+          paidAmount: parsedAmount,
+        }
+      );
+      toast.success(
+        res.partial
+          ? `Payment recorded — ${formatCurrency(res.remaining ?? 0, currency)} still due on Table ${table.tableNumber}`
+          : `Table ${table.tableNumber} marked as paid`
+      );
+      setPayAmount("");
       onChanged();
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : "Couldn't mark as paid");
@@ -1218,6 +1291,24 @@ function TableDetailDialog({
                   {showPayConfirm ? (
                     <div className="rounded-xl border bg-card p-4 space-y-3">
                       <p className="text-sm font-semibold">Confirm Payment — Table {table?.tableNumber}</p>
+                      {table?.session && table.session.paidAmount > 0 && (
+                        <div className="flex items-baseline justify-between rounded-lg bg-muted/40 px-3 py-2 text-sm">
+                          <span className="text-emerald-600 dark:text-emerald-400">Already paid {formatCurrency(table.session.paidAmount, currency)}</span>
+                          <span className="font-bold">{formatCurrency(table.session.remaining, currency)} due</span>
+                        </div>
+                      )}
+                      <div className="space-y-1.5">
+                        <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Amount to collect</p>
+                        <Input
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          value={payAmount}
+                          onChange={(e) => setPayAmount(e.target.value)}
+                          placeholder={(table?.session?.remaining ?? table?.session?.grandTotal ?? 0).toFixed(2)}
+                          className="h-9"
+                        />
+                      </div>
                       <div className="flex flex-wrap gap-1.5">
                         {PAYMENT_METHODS.map((m) => (
                           <button

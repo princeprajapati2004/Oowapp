@@ -30,7 +30,7 @@ export default async function KitchenPage() {
   const startOfToday = new Date();
   startOfToday.setHours(0, 0, 0, 0);
 
-  const [orders, completedToday, activeKots] = await Promise.all([
+  const [orders, completedToday] = await Promise.all([
     db.order.findMany({
       where: { shopId: session.shopId, status: { in: ["PENDING", "CONFIRMED", "PREPARING", "READY"] } },
       orderBy: { createdAt: "asc" },
@@ -42,38 +42,7 @@ export default async function KitchenPage() {
       include: { items: true },
       take: 100,
     }),
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (db as any).kitchenTicket.findMany({
-      where: { shopId: session.shopId, status: { in: ["PENDING", "PREPARING", "READY"] } },
-      include: {
-        items: true,
-        tableSession: { select: { tableNumber: true, customerName: true } },
-        staff: { select: { name: true } },
-      },
-      orderBy: { createdAt: "asc" },
-    }),
   ]);
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const serializedKots = (activeKots as any[]).map((kt: any) => ({
-    id: kt.id,
-    shopId: kt.shopId,
-    tableSessionId: kt.tableSessionId,
-    kotNumber: kt.kotNumber,
-    status: kt.status,
-    notes: kt.notes,
-    createdAt: kt.createdAt.toISOString(),
-    tableSession: { tableNumber: kt.tableSession.tableNumber, customerName: kt.tableSession.customerName },
-    staffName: kt.staff?.name ?? null,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    items: kt.items.map((i: any) => ({
-      id: i.id,
-      name: i.name,
-      price: Number(i.price),
-      quantity: i.quantity,
-      notes: i.notes,
-    })),
-  }));
 
   return (
     <KitchenDisplay
@@ -81,7 +50,6 @@ export default async function KitchenPage() {
       initialOrders={(orders as any[]).map(toOrderEvent)}
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       completedToday={(completedToday as any[]).map(toOrderEvent)}
-      initialKots={serializedKots}
       shopName={shop.businessName}
     />
   );

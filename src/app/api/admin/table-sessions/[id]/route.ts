@@ -1,11 +1,48 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { requireAdminSession } from "@/lib/session";
+import { ForbiddenError } from "@/lib/session";
+import { requireShopActor, actorAuditFields, type ShopActor } from "@/lib/shop-actor";
 import { handleApiError, NotFoundError } from "@/lib/api-utils";
 import { db } from "@/lib/db";
 import { createNotification } from "@/lib/services/notification";
 import { publishOrderEvent, toOrderEvent, toTableSessionEvent } from "@/lib/server/order-events";
-import { OPEN_STATUSES } from "@/lib/services/table-session";
+import { OPEN_STATUSES, computeSessionBill } from "@/lib/services/table-session";
+import { writeAuditLog, extractRequestMeta } from "@/lib/services/audit-log";
+import type { StaffRole } from "@/generated/prisma/client";
+
+type TableSessionAction =
+  | "mark_paid"
+  | "request_bill"
+  | "release_table"
+  | "reject_payment"
+  | "transfer_table"
+  | "merge_into"
+  | "set_guest_count";
+
+// release_table (void, no payment collected) and merge_into (combining two
+// tables' bills) are reserved for MANAGER+ — the rest match the Waiter
+// capabilities from the app's permission model (request bill, collect
+// payment, change table, correct a bad payment claim, adjust guest count).
+const STAFF_ALLOWED_ACTIONS: Record<StaffRole, Set<TableSessionAction>> = {
+  KITCHEN: new Set(),
+  WAITER: new Set(["mark_paid", "request_bill", "reject_payment", "transfer_table", "set_guest_count"]),
+  MANAGER: new Set([
+    "mark_paid",
+    "request_bill",
+    "release_table",
+    "reject_payment",
+    "transfer_table",
+    "merge_into",
+    "set_guest_count",
+  ]),
+};
+
+function assertActorCanPerform(actor: ShopActor, action: TableSessionAction) {
+  if (actor.kind === "admin") return;
+  if (!STAFF_ALLOWED_ACTIONS[actor.staffRole].has(action)) {
+    throw new ForbiddenError(`Your role (${actor.staffRole}) can't perform "${action}" on a table.`);
+  }
+}
 
 const patchSchema = z.discriminatedUnion("action", [
   z.object({
@@ -13,6 +50,10 @@ const patchSchema = z.discriminatedUnion("action", [
     // QR = customer scanned restaurant's payment QR; UPI = UPI deep link; VOID = release without payment
     paymentMethod: z.enum(["CASH", "UPI", "QR", "CARD", "WALLET", "SPLIT", "VOID", "OTHER"]),
     paymentNote: z.string().trim().max(200).optional(),
+    // Amount being paid in THIS transaction — omit to pay the full remaining
+    // balance (existing behavior). Less than the remaining balance records a
+    // partial payment and keeps the table open instead of closing it.
+    paidAmount: z.number().min(0).optional(),
   }),
   z.object({ action: z.literal("request_bill") }),
   z.object({
@@ -42,11 +83,11 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const session = await requireAdminSession();
+    const actor = await requireShopActor();
     const { id } = await params;
 
     const tableSession = await db.tableSession.findFirst({
-      where: { id, shopId: session.shopId },
+      where: { id, shopId: actor.shopId },
       include: {
         orders: {
           orderBy: { createdAt: "asc" },
@@ -63,6 +104,7 @@ export async function GET(
       updatedAt: tableSession.updatedAt.toISOString(),
       billRequestedAt: tableSession.billRequestedAt?.toISOString() ?? null,
       paidAt: tableSession.paidAt?.toISOString() ?? null,
+      paidAmount: tableSession.paidAmount != null ? Number(tableSession.paidAmount) : null,
       orders: tableSession.orders.map((o) => ({
         ...o,
         subtotal: Number(o.subtotal),
@@ -85,12 +127,13 @@ export async function GET(
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const session = await requireAdminSession();
+    const actor = await requireShopActor();
     const { id } = await params;
     const body = await request.json();
     const input = patchSchema.parse(body);
+    assertActorCanPerform(actor, input.action);
 
-    const tableSession = await db.tableSession.findFirst({ where: { id, shopId: session.shopId } });
+    const tableSession = await db.tableSession.findFirst({ where: { id, shopId: actor.shopId } });
     if (!tableSession) throw new NotFoundError("Table session not found");
 
     if (input.action === "request_bill") {
@@ -104,7 +147,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         where: { id },
         data: { status: "AWAITING_PAYMENT", billRequestedAt: new Date() },
       });
-      publishOrderEvent(session.shopId, { type: "session.updated", session: toTableSessionEvent(updated) });
+      publishOrderEvent(actor.shopId, { type: "session.updated", session: toTableSessionEvent(updated) });
       return NextResponse.json({ ok: true, session: toTableSessionEvent(updated) });
     }
 
@@ -123,13 +166,13 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         where: { id },
         data: { status: "ACTIVE", billRequestedAt: null },
       });
-      publishOrderEvent(session.shopId, { type: "session.updated", session: toTableSessionEvent(updated) });
+      publishOrderEvent(actor.shopId, { type: "session.updated", session: toTableSessionEvent(updated) });
       return NextResponse.json({ ok: true, session: toTableSessionEvent(updated) });
     }
 
     if (input.action === "set_guest_count") {
       const updated = await db.tableSession.update({ where: { id }, data: { guestCount: input.guestCount } });
-      publishOrderEvent(session.shopId, { type: "session.updated", session: toTableSessionEvent(updated) });
+      publishOrderEvent(actor.shopId, { type: "session.updated", session: toTableSessionEvent(updated) });
       return NextResponse.json({ ok: true, session: toTableSessionEvent(updated) });
     }
 
@@ -138,7 +181,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       if (tableSession.status === "PAID") {
         return NextResponse.json({ error: "This table has already been released." }, { status: 409 });
       }
-      return closeTable(id, "VOID", input.paymentNote, session.shopId, session.adminId);
+      return closeTable(id, "VOID", input.paymentNote, actor, existingPaidAmount(tableSession), request);
     }
 
     if (input.action === "transfer_table") {
@@ -149,7 +192,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         return NextResponse.json({ error: "That's already this table." }, { status: 400 });
       }
       const clash = await db.tableSession.findFirst({
-        where: { shopId: session.shopId, tableNumber: input.newTableNumber, status: { in: [...OPEN_STATUSES] } },
+        where: { shopId: actor.shopId, tableNumber: input.newTableNumber, status: { in: [...OPEN_STATUSES] } },
       });
       if (clash) {
         return NextResponse.json(
@@ -168,10 +211,19 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         return [updated, orders] as const;
       });
 
-      publishOrderEvent(session.shopId, { type: "session.updated", session: toTableSessionEvent(updatedSession) });
+      publishOrderEvent(actor.shopId, { type: "session.updated", session: toTableSessionEvent(updatedSession) });
       for (const order of movedOrders) {
-        publishOrderEvent(session.shopId, { type: "order.updated", order: toOrderEvent(order) });
+        publishOrderEvent(actor.shopId, { type: "order.updated", order: toOrderEvent(order) });
       }
+      writeAuditLog({
+        action: "TABLE_SESSION_TRANSFERRED",
+        ...actorAuditFields(actor),
+        targetType: "table_session",
+        targetId: id,
+        shopId: actor.shopId,
+        metadata: { fromTable: tableSession.tableNumber, toTable: input.newTableNumber },
+        ...extractRequestMeta(request),
+      });
       return NextResponse.json({ ok: true, session: toTableSessionEvent(updatedSession) });
     }
 
@@ -183,7 +235,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         return NextResponse.json({ error: "Can't merge a table into itself." }, { status: 400 });
       }
       const targetSession = await db.tableSession.findFirst({
-        where: { shopId: session.shopId, tableNumber: input.targetTableNumber, status: { in: [...OPEN_STATUSES] } },
+        where: { shopId: actor.shopId, tableNumber: input.targetTableNumber, status: { in: [...OPEN_STATUSES] } },
       });
       if (!targetSession) {
         return NextResponse.json(
@@ -207,11 +259,20 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         return [source, target, orders] as const;
       });
 
-      publishOrderEvent(session.shopId, { type: "session.updated", session: toTableSessionEvent(mergedSourceSession) });
-      publishOrderEvent(session.shopId, { type: "session.updated", session: toTableSessionEvent(updatedTargetSession) });
+      publishOrderEvent(actor.shopId, { type: "session.updated", session: toTableSessionEvent(mergedSourceSession) });
+      publishOrderEvent(actor.shopId, { type: "session.updated", session: toTableSessionEvent(updatedTargetSession) });
       for (const order of movedOrders) {
-        publishOrderEvent(session.shopId, { type: "order.updated", order: toOrderEvent(order) });
+        publishOrderEvent(actor.shopId, { type: "order.updated", order: toOrderEvent(order) });
       }
+      writeAuditLog({
+        action: "TABLE_SESSION_MERGED",
+        ...actorAuditFields(actor),
+        targetType: "table_session",
+        targetId: id,
+        shopId: actor.shopId,
+        metadata: { fromTable: tableSession.tableNumber, intoTable: input.targetTableNumber, targetSessionId: targetSession.id },
+        ...extractRequestMeta(request),
+      });
       return NextResponse.json({ ok: true, session: toTableSessionEvent(updatedTargetSession) });
     }
 
@@ -220,18 +281,72 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       return NextResponse.json({ error: "This table has already been paid." }, { status: 409 });
     }
 
-    return closeTable(id, input.paymentMethod, input.paymentNote, session.shopId, session.adminId);
+    // VOID never collects money — always closes outright, same as release_table.
+    if (input.paymentMethod === "VOID") {
+      return closeTable(id, input.paymentMethod, input.paymentNote, actor, existingPaidAmount(tableSession), request);
+    }
+
+    const [shop, sessionOrders] = await Promise.all([
+      db.shop.findUnique({ where: { id: actor.shopId }, include: { taxes: { where: { isEnabled: true } } } }),
+      db.order.findMany({ where: { tableSessionId: id, status: { not: "CANCELLED" } }, include: { items: true } }),
+    ]);
+    if (!shop) throw new NotFoundError("Shop not found");
+
+    const taxes = shop.taxes.map((t) => ({ ...t, value: Number(t.value) }));
+    const total = computeSessionBill(sessionOrders, taxes).grandTotal;
+    const alreadyPaid = existingPaidAmount(tableSession) ?? 0;
+    const amountNow = input.paidAmount ?? Math.max(0, total - alreadyPaid);
+    const newPaidTotal = alreadyPaid + amountNow;
+
+    // Short of the full bill — record what's been collected and leave the
+    // table open, exactly like a standalone order's PARTIALLY_PAID: payment
+    // status advances independently of the table/order lifecycle status.
+    if (newPaidTotal + 0.005 < total) {
+      const updated = await db.tableSession.update({
+        where: { id },
+        data: { paidAmount: newPaidTotal, paymentMethod: input.paymentMethod, paymentNote: input.paymentNote ?? null },
+      });
+      publishOrderEvent(actor.shopId, { type: "session.updated", session: toTableSessionEvent(updated) });
+      createNotification(actor.shopId, {
+        type: "PAYMENT_RECEIVED",
+        title: `Table ${updated.tableNumber} — Partial payment received`,
+        body: `Paid via ${input.paymentMethod} — balance still due`,
+        link: "/admin/tables",
+      }).catch(() => {});
+      writeAuditLog({
+        action: "TABLE_SESSION_MARKED_PAID",
+        ...actorAuditFields(actor),
+        targetType: "table_session",
+        targetId: id,
+        shopId: actor.shopId,
+        metadata: { paymentMethod: input.paymentMethod, amountNow, paidAmount: newPaidTotal, partial: true, remaining: total - newPaidTotal },
+        ...extractRequestMeta(request),
+      });
+      return NextResponse.json({
+        ok: true,
+        session: toTableSessionEvent(updated),
+        partial: true,
+        remaining: Math.max(0, total - newPaidTotal),
+      });
+    }
+
+    return closeTable(id, input.paymentMethod, input.paymentNote, actor, newPaidTotal, request);
   } catch (error) {
     return handleApiError(error);
   }
+}
+
+function existingPaidAmount(tableSession: { paidAmount: unknown }): number | null {
+  return tableSession.paidAmount != null ? Number(tableSession.paidAmount) : null;
 }
 
 async function closeTable(
   id: string,
   paymentMethod: string,
   paymentNote: string | undefined,
-  shopId: string,
-  adminId: string
+  actor: ShopActor,
+  finalPaidAmount: number | null,
+  request: Request
 ) {
   const [updatedSession, completedOrders] = await db.$transaction(async (tx) => {
     const updated = await tx.tableSession.update({
@@ -239,9 +354,10 @@ async function closeTable(
       data: {
         status: "PAID",
         paidAt: new Date(),
-        paidBy: adminId,
+        paidBy: actor.actorId,
         paymentMethod,
         paymentNote: paymentNote ?? null,
+        paidAmount: finalPaidAmount,
       },
     });
 
@@ -259,7 +375,7 @@ async function closeTable(
             status: "COMPLETED",
             paymentStatus: isVoid ? "PENDING" : "PAID",
             paymentMethod: isVoid ? null : paymentMethod,
-            paymentConfirmedBy: isVoid ? null : adminId,
+            paymentConfirmedBy: isVoid ? null : actor.actorId,
             paymentConfirmedAt: isVoid ? null : new Date(),
           },
           include: { items: true },
@@ -270,10 +386,21 @@ async function closeTable(
     return [updated, orders] as const;
   });
 
+  const shopId = actor.shopId;
   publishOrderEvent(shopId, { type: "session.updated", session: toTableSessionEvent(updatedSession) });
   for (const order of completedOrders) {
     publishOrderEvent(shopId, { type: "order.updated", order: toOrderEvent(order) });
   }
+
+  writeAuditLog({
+    action: paymentMethod === "VOID" ? "TABLE_SESSION_RELEASED" : "TABLE_SESSION_MARKED_PAID",
+    ...actorAuditFields(actor),
+    targetType: "table_session",
+    targetId: id,
+    shopId,
+    metadata: { paymentMethod, paidAmount: finalPaidAmount, partial: false },
+    ...extractRequestMeta(request),
+  });
 
   // closeTable() is shared by both mark_paid and release_table (void) —
   // notify with whichever of the two actually happened.

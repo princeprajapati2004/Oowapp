@@ -58,6 +58,7 @@ export default async function TablesPage() {
       billRequestedAt: s.billRequestedAt,
       customerName: s.customerName,
       guestCount: s.guestCount,
+      paidAmount: s.paidAmount,
       orders: s.orders.map((o) => ({
         status: o.status,
         items: o.items.map((item) => ({

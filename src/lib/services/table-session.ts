@@ -122,6 +122,11 @@ export type TableBoardEntry = {
     label: "Preparing" | "Served" | "Awaiting payment" | "Paid";
     orderCount: number;
     grandTotal: number;
+    // Cumulative amount collected so far (see TableSession.paidAmount) and
+    // what's left — remaining is 0 once fully settled, even before the
+    // session formally closes to PAID.
+    paidAmount: number;
+    remaining: number;
     createdAt: string;
     billRequestedAt: string | null;
     customerName: string | null;
@@ -144,6 +149,7 @@ export function buildTableBoard(
     billRequestedAt: Date | null;
     customerName: string | null;
     guestCount: number | null;
+    paidAmount?: number | Prisma.Decimal | null;
     orders: SessionOrderLike[];
   }[],
   taxes: BillTax[],
@@ -177,6 +183,7 @@ function toBoardEntry(
         billRequestedAt: Date | null;
         customerName: string | null;
         guestCount: number | null;
+        paidAmount?: number | Prisma.Decimal | null;
         orders: SessionOrderLike[];
       }
     | undefined,
@@ -193,6 +200,7 @@ function toBoardEntry(
     };
   }
   const bill = computeSessionBill(session.orders, taxes);
+  const paidAmount = session.paidAmount != null ? Number(session.paidAmount) : 0;
   return {
     tableNumber,
     occupied: true,
@@ -202,6 +210,8 @@ function toBoardEntry(
       label: deriveSessionLabel(session.status, session.orders),
       orderCount: session.orders.filter((o) => o.status !== "CANCELLED").length,
       grandTotal: bill.grandTotal,
+      paidAmount,
+      remaining: Math.max(0, bill.grandTotal - paidAmount),
       createdAt: session.createdAt.toISOString(),
       billRequestedAt: session.billRequestedAt?.toISOString() ?? null,
       customerName: session.customerName,

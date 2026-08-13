@@ -29,9 +29,6 @@ export async function GET(
     if (event.type === "notification.created") {
       return false;
     }
-    if (event.type === "kot.created" || event.type === "kot.updated") {
-      return event.kot.tableSessionId === id;
-    }
     return event.order.tableSessionId === id;
   });
 }

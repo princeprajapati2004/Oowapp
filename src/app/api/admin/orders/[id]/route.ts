@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { requireAdminSession } from "@/lib/session";
+import { ForbiddenError } from "@/lib/session";
+import { requireShopActor, actorAuditFields, type ShopActor } from "@/lib/shop-actor";
 import { handleApiError, NotFoundError } from "@/lib/api-utils";
+import { writeAuditLog, extractRequestMeta } from "@/lib/services/audit-log";
 import { db } from "@/lib/db";
 import { calculateBill } from "@/lib/services/billing";
 import { sendOrderStatusNotification } from "@/lib/services/push";
@@ -14,9 +16,50 @@ import {
   getNextStatuses,
   canCancel,
 } from "@/lib/order-status";
-import type { Prisma } from "@/generated/prisma/client";
+import type { Prisma, StaffRole } from "@/generated/prisma/client";
 
 const PAYMENT_METHOD_VALUES = PAYMENT_METHODS.map((m) => m.value) as [string, ...string[]];
+
+type UpdateOrderAction =
+  | "status"
+  | "discount"
+  | "remove_discount"
+  | "priority"
+  | "edit_items"
+  | "mark_paid"
+  | "mark_refunded"
+  | "cancel"
+  | "note";
+
+// Kitchen only ever advances prep status / tags priority. Waiter handles the
+// front-of-house/payment-collection actions (this is the same permission set
+// Cash Counter — the waiter/manager screen — already exercises). Manager gets
+// everything an owner could do on an individual order except deleting it
+// outright (see the DELETE handler below, which is admin/MANAGER only).
+const STAFF_ALLOWED_ACTIONS: Record<StaffRole, Set<UpdateOrderAction>> = {
+  KITCHEN: new Set(["status", "priority"]),
+  WAITER: new Set(["status", "priority", "edit_items", "cancel", "mark_paid", "note"]),
+  MANAGER: new Set([
+    "status",
+    "priority",
+    "edit_items",
+    "cancel",
+    "mark_paid",
+    "mark_refunded",
+    "note",
+    "discount",
+    "remove_discount",
+  ]),
+};
+
+// Frontend buttons hide unavailable actions, but that's not security — every
+// action is re-checked here regardless of what the UI happened to show.
+function assertActorCanPerform(actor: ShopActor, action: UpdateOrderAction) {
+  if (actor.kind === "admin") return;
+  if (!STAFF_ALLOWED_ACTIONS[actor.staffRole].has(action)) {
+    throw new ForbiddenError(`Your role (${actor.staffRole}) can't perform "${action}" on orders.`);
+  }
+}
 
 const updateOrderSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("status"), status: z.enum(ORDER_STATUSES as [string, ...string[]]) }),
@@ -60,11 +103,11 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const session = await requireAdminSession();
+    const actor = await requireShopActor();
     const { id } = await params;
 
     const order = await db.order.findFirst({
-      where: { id, shopId: session.shopId },
+      where: { id, shopId: actor.shopId },
       include: { items: true, statusEvents: { orderBy: { changedAt: "asc" } } },
     });
     if (!order) throw new NotFoundError("Order not found");
@@ -80,19 +123,21 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const session = await requireAdminSession();
+    const actor = await requireShopActor();
     const { id } = await params;
     const body = await request.json();
 
-    const existing = await db.order.findFirst({ where: { id, shopId: session.shopId } });
+    const existing = await db.order.findFirst({ where: { id, shopId: actor.shopId } });
     if (!existing) throw new NotFoundError("Order not found");
 
     // Support both old { status } format and new { action } format for backward compat.
     let data: Record<string, unknown>;
     let statusEventStatus: string | null = null;
+    let auditEntry: { action: "ORDER_MARKED_PAID" | "ORDER_CANCELLED"; metadata: Record<string, unknown> } | null = null;
 
     if ("action" in body) {
       const parsed = updateOrderSchema.parse(body);
+      assertActorCanPerform(actor, parsed.action);
 
       if (parsed.action === "edit_items") {
         return handleEditItems(id, parsed.items, existing.shopId);
@@ -119,9 +164,10 @@ export async function PATCH(
           status: "CANCELLED",
           cancelReason: parsed.note ? `${parsed.reason}: ${parsed.note}` : parsed.reason,
           cancelledAt: new Date(),
-          cancelledBy: session.adminId,
+          cancelledBy: actor.actorId,
         };
         statusEventStatus = "CANCELLED";
+        auditEntry = { action: "ORDER_CANCELLED", metadata: { reason: parsed.reason, note: parsed.note } };
       } else if (parsed.action === "mark_refunded") {
         if (existing.status !== "CANCELLED" || !["PAID", "PARTIALLY_PAID"].includes(existing.paymentStatus)) {
           return NextResponse.json(
@@ -174,8 +220,12 @@ export async function PATCH(
           paymentStatus: paidAmount + 0.005 >= finalTotal ? "PAID" : "PARTIALLY_PAID",
           paidAmount,
           transactionReference: parsed.transactionReference || null,
-          paymentConfirmedBy: session.adminId,
+          paymentConfirmedBy: actor.actorId,
           paymentConfirmedAt: new Date(),
+        };
+        auditEntry = {
+          action: "ORDER_MARKED_PAID",
+          metadata: { paymentMethod: parsed.paymentMethod, paidAmount, paymentStatus: data.paymentStatus },
         };
       } else {
         // priority
@@ -183,6 +233,7 @@ export async function PATCH(
       }
     } else {
       // Legacy format: { status }
+      assertActorCanPerform(actor, "status");
       const statusSchema = z.object({ status: z.enum(ORDER_STATUSES as [string, ...string[]]) });
       const { status } = statusSchema.parse(body);
       const allowed = getNextStatuses(existing);
@@ -207,7 +258,7 @@ export async function PATCH(
         data: {
           orderId: id,
           status: statusEventStatus as Prisma.OrderStatusEventCreateInput["status"],
-          changedBy: session.adminId,
+          changedBy: actor.actorId,
         },
       });
     }
@@ -234,6 +285,21 @@ export async function PATCH(
 
     publishOrderEvent(existing.shopId, { type: "order.updated", order: toOrderEvent(updated) });
 
+    if (auditEntry) {
+      const { ipAddress, userAgent, requestId } = extractRequestMeta(request);
+      writeAuditLog({
+        action: auditEntry.action,
+        ...actorAuditFields(actor),
+        targetType: "order",
+        targetId: id,
+        shopId: actor.shopId,
+        metadata: { ...auditEntry.metadata, billNumber: existing.billNumber },
+        ipAddress,
+        userAgent,
+        requestId,
+      });
+    }
+
     return NextResponse.json(toAdminOrderEvent({ ...updated, statusEvents }));
   } catch (error) {
     return handleApiError(error);
@@ -245,9 +311,9 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const session = await requireAdminSession();
+    const actor = await requireShopActor("MANAGER");
     const { id } = await params;
-    const order = await db.order.findFirst({ where: { id, shopId: session.shopId } });
+    const order = await db.order.findFirst({ where: { id, shopId: actor.shopId } });
     if (!order) throw new NotFoundError("Order not found");
     await db.order.delete({ where: { id } });
     return NextResponse.json({ ok: true });

@@ -1,16 +1,16 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { requireAdminSession } from "@/lib/session";
+import { requireShopActor } from "@/lib/shop-actor";
 import { handleApiError } from "@/lib/api-utils";
 import { db } from "@/lib/db";
 import { buildTableBoard } from "@/lib/services/table-session";
 
 export async function GET() {
   try {
-    const session = await requireAdminSession();
+    const actor = await requireShopActor();
 
     const shop = await db.shop.findUnique({
-      where: { id: session.shopId },
+      where: { id: actor.shopId },
       include: { taxes: { where: { isEnabled: true } } },
     });
     if (!shop) throw new Error("Shop not found");
@@ -41,6 +41,7 @@ export async function GET() {
         billRequestedAt: s.billRequestedAt,
         customerName: s.customerName,
         guestCount: s.guestCount,
+        paidAmount: s.paidAmount,
         orders: s.orders.map((o) => ({
           status: o.status,
           items: o.items.map((item) => ({
@@ -73,28 +74,28 @@ const setTableStateSchema = z.object({
 // callers are responsible for not offering this on an occupied table.
 export async function PATCH(request: Request) {
   try {
-    const session = await requireAdminSession();
+    const actor = await requireShopActor("WAITER", "MANAGER");
     const body = await request.json();
     const input = setTableStateSchema.parse(body);
 
     if (input.state === null) {
-      await db.tableState.deleteMany({ where: { shopId: session.shopId, tableNumber: input.tableNumber } });
+      await db.tableState.deleteMany({ where: { shopId: actor.shopId, tableNumber: input.tableNumber } });
       return NextResponse.json({ ok: true });
     }
 
     const tableState = await db.tableState.upsert({
-      where: { shopId_tableNumber: { shopId: session.shopId, tableNumber: input.tableNumber } },
+      where: { shopId_tableNumber: { shopId: actor.shopId, tableNumber: input.tableNumber } },
       create: {
-        shopId: session.shopId,
+        shopId: actor.shopId,
         tableNumber: input.tableNumber,
         state: input.state,
         note: input.note || null,
-        updatedBy: session.adminId,
+        updatedBy: actor.actorId,
       },
       update: {
         state: input.state,
         note: input.note || null,
-        updatedBy: session.adminId,
+        updatedBy: actor.actorId,
       },
     });
     return NextResponse.json({ ok: true, tableState });

@@ -220,7 +220,11 @@ enum AuditAction {
   // Orders
   ORDER_CREATED
   ORDER_MARKED_PAID
+  ORDER_CANCELLED
   TABLE_SESSION_MARKED_PAID
+  TABLE_SESSION_RELEASED
+  TABLE_SESSION_TRANSFERRED
+  TABLE_SESSION_MERGED
   // Platform
   PLATFORM_SETTINGS_UPDATED
   SUBSCRIPTION_CHANGED
@@ -622,6 +626,12 @@ model TableSession {
   paymentNote     String?
   paidAt          DateTime?
   paidBy          String?
+  // Cumulative amount collected against this session's running bill so far.
+  // Null/0 until the first mark_paid; a session stays ACTIVE/AWAITING_PAYMENT
+  // (not PAID) while this is less than the computed grand total — see
+  // closeTable() in api/admin/table-sessions/[id]/route.ts, which is the only
+  // place this is written.
+  paidAmount      Decimal?            @db.Decimal(10, 2)
   createdAt       DateTime            @default(now())
   updatedAt       DateTime            @updatedAt
 

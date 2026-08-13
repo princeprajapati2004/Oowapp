@@ -77,6 +77,10 @@ export type TableSessionEventPayload = {
   // exposed so the customer's Final Bill screen can show "Paid (Cash)" vs
   // "Paid (Online)" once settled.
   paymentMethod: string | null;
+  // Cumulative amount collected so far — less than the session's computed
+  // grand total while a partial payment is outstanding, null until the
+  // first payment. See closeTable() in the table-sessions API route.
+  paidAmount: number | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -92,34 +96,12 @@ export type NotificationEventPayload = {
   createdAt: string;
 };
 
-export type KotEventItem = {
-  id: string;
-  name: string;
-  price: number;
-  quantity: number;
-  notes: string | null;
-};
-
-export type KotEventPayload = {
-  id: string;
-  shopId: string;
-  tableSessionId: string;
-  kotNumber: number;
-  status: string;
-  notes: string | null;
-  createdAt: string;
-  tableSession: { tableNumber: string };
-  items: KotEventItem[];
-};
-
 export type OrderEvent =
   | { type: "order.created"; order: OrderEventOrder }
   | { type: "order.updated"; order: OrderEventOrder }
   | { type: "session.created"; session: TableSessionEventPayload }
   | { type: "session.updated"; session: TableSessionEventPayload }
-  | { type: "notification.created"; notification: NotificationEventPayload }
-  | { type: "kot.created"; kot: KotEventPayload }
-  | { type: "kot.updated"; kot: KotEventPayload };
+  | { type: "notification.created"; notification: NotificationEventPayload };
 
 type RawSessionForEvent = {
   id: string;
@@ -130,6 +112,7 @@ type RawSessionForEvent = {
   billRequestedAt: unknown;
   paidAt: unknown;
   paymentMethod?: string | null;
+  paidAmount?: unknown;
   createdAt: unknown;
   updatedAt: unknown;
 };
@@ -144,6 +127,7 @@ export function toTableSessionEvent(session: RawSessionForEvent): TableSessionEv
     billRequestedAt: session.billRequestedAt ? (session.billRequestedAt as Date).toISOString() : null,
     paidAt: session.paidAt ? (session.paidAt as Date).toISOString() : null,
     paymentMethod: session.paymentMethod ?? null,
+    paidAmount: session.paidAmount != null ? Number(session.paidAmount) : null,
     createdAt: (session.createdAt as Date).toISOString(),
     updatedAt: (session.updatedAt as Date).toISOString(),
   };
