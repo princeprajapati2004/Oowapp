@@ -4,7 +4,10 @@ import { useEffect, useState } from "react";
 import { Search, X, CalendarRange, SlidersHorizontal } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Label } from "@/components/ui/label";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetFooter } from "@/components/ui/sheet";
 import {
   Select,
   SelectContent,
@@ -121,6 +124,16 @@ export function OrderFiltersBar({
   const [draftFrom, setDraftFrom] = useState(filters.dateFrom);
   const [draftTo, setDraftTo] = useState(filters.dateTo);
 
+  // The Status/Payment/Type/Source selects live inside the Filter sheet as a
+  // staged draft — nothing reaches Order History until "Apply Filters" is
+  // pressed (see applyFilters). Re-seeded from the live filters every time
+  // the sheet opens, so closing without applying is a free "cancel".
+  const [filterSheetOpen, setFilterSheetOpen] = useState(false);
+  const [draftStatus, setDraftStatus] = useState(filters.status);
+  const [draftPaymentStatus, setDraftPaymentStatus] = useState(filters.paymentStatus);
+  const [draftType, setDraftType] = useState(filters.type);
+  const [draftSource, setDraftSource] = useState(filters.source);
+
   useEffect(() => {
     const t = setTimeout(() => {
       if (searchInput !== filters.search) onChange({ search: searchInput });
@@ -129,13 +142,9 @@ export function OrderFiltersBar({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchInput]);
 
-  const hasActiveFilters =
-    filters.status !== "ALL" ||
-    filters.paymentStatus !== "ALL" ||
-    filters.type !== "ALL" ||
-    filters.source !== "ALL" ||
-    !!filters.dateFrom ||
-    !!filters.dateTo;
+  const activeFilterCount = [filters.status, filters.paymentStatus, filters.type, filters.source].filter(
+    (v) => v !== "ALL"
+  ).length;
 
   const dateLabel =
     filters.dateFrom && filters.dateTo
@@ -144,166 +153,222 @@ export function OrderFiltersBar({
         : `${filters.dateFrom} → ${filters.dateTo}`
       : "Date Range";
 
+  function openFilterSheet() {
+    setDraftStatus(filters.status);
+    setDraftPaymentStatus(filters.paymentStatus);
+    setDraftType(filters.type);
+    setDraftSource(filters.source);
+    setFilterSheetOpen(true);
+  }
+
+  function resetDraft() {
+    setDraftStatus("ALL");
+    setDraftPaymentStatus("ALL");
+    setDraftType("ALL");
+    setDraftSource("ALL");
+  }
+
+  function applyFilters() {
+    onChange({ status: draftStatus, paymentStatus: draftPaymentStatus, type: draftType, source: draftSource });
+    setFilterSheetOpen(false);
+  }
+
   return (
-    <div className="flex flex-wrap items-center gap-2">
-      <div className="relative flex-1 min-w-[220px]">
-        <Search className="absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
-        <Input
-          value={searchInput}
-          onChange={(e) => setSearchInput(e.target.value)}
-          placeholder="Search bill no., customer name, or phone…"
-          className="h-9 pl-8 pr-7"
-          aria-label="Search orders"
-        />
-        {searchInput && (
-          <button
-            onClick={() => setSearchInput("")}
-            aria-label="Clear search"
-            className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-          >
-            <X className="size-3.5" />
-          </button>
-        )}
-      </div>
+    <div className="space-y-2">
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="relative min-w-[200px] flex-1">
+          <Search className="absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
+            placeholder="Search bill no., customer name, or phone"
+            className="h-11 pl-8 pr-7"
+            aria-label="Search orders"
+          />
+          {searchInput && (
+            <button
+              onClick={() => setSearchInput("")}
+              aria-label="Clear search"
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+            >
+              <X className="size-3.5" />
+            </button>
+          )}
+        </div>
 
-      <Select value={filters.status} onValueChange={(v) => onChange({ status: v ?? "ALL" })}>
-        <SelectTrigger className="h-9 w-36">
-          <SelectValue>{filters.status === "ALL" ? "All Statuses" : STATUS_LABELS[filters.status as keyof typeof STATUS_LABELS]}</SelectValue>
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value="ALL">All Statuses</SelectItem>
-          {ORDER_STATUSES.map((s) => (
-            <SelectItem key={s} value={s}>{STATUS_LABELS[s]}</SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-
-      <Select value={filters.paymentStatus} onValueChange={(v) => onChange({ paymentStatus: v ?? "ALL" })}>
-        <SelectTrigger className="h-9 w-32">
-          <SelectValue>{filters.paymentStatus === "ALL" ? "All Payments" : PAYMENT_LABELS[filters.paymentStatus as keyof typeof PAYMENT_LABELS]}</SelectValue>
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value="ALL">All Payments</SelectItem>
-          {PAYMENT_STATUSES.map((s) => (
-            <SelectItem key={s} value={s}>{PAYMENT_LABELS[s]}</SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-
-      <Select value={filters.type} onValueChange={(v) => onChange({ type: v ?? "ALL" })}>
-        <SelectTrigger className="h-9 w-32">
-          <SelectValue>{TYPE_OPTIONS.find((o) => o.value === filters.type)?.label}</SelectValue>
-        </SelectTrigger>
-        <SelectContent>
-          {TYPE_OPTIONS.map((o) => (
-            <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-
-      <Select value={filters.source} onValueChange={(v) => onChange({ source: v ?? "ALL" })}>
-        <SelectTrigger className="h-9 w-36">
-          <SelectValue>{SOURCE_OPTIONS.find((o) => o.value === filters.source)?.label}</SelectValue>
-        </SelectTrigger>
-        <SelectContent>
-          {SOURCE_OPTIONS.map((o) => (
-            <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-
-      <Popover open={dateOpen} onOpenChange={setDateOpen}>
-        <PopoverTrigger
-          render={
-            <Button variant="outline" size="sm" className={cn("h-9 gap-1.5", (filters.dateFrom || filters.dateTo) && "border-primary text-primary")} />
-          }
+        <Button
+          variant="outline"
+          size="icon"
+          className={cn("relative h-11 w-11 shrink-0", activeFilterCount > 0 && "border-primary text-primary")}
+          onClick={openFilterSheet}
+          aria-label="Filters"
         >
-          <CalendarRange className="size-3.5" />
-          {dateLabel}
-        </PopoverTrigger>
-        <PopoverContent className="w-64" align="start">
-          <div className="grid grid-cols-2 gap-1">
-            {DATE_PRESETS.map((preset) => (
-              <button
-                key={preset}
-                type="button"
-                onClick={() => {
-                  const { from, to } = presetRange(preset);
-                  onChange({ dateFrom: from, dateTo: to });
-                  setDraftFrom(from);
-                  setDraftTo(to);
-                  setDateOpen(false);
-                }}
-                className="rounded-md px-2 py-1.5 text-left text-xs hover:bg-muted transition-colors"
-              >
-                {preset}
-              </button>
-            ))}
-          </div>
-          <div className="border-t pt-2.5 space-y-2">
-            <p className="text-xs font-medium text-muted-foreground">Custom Range</p>
-            <div className="flex items-center gap-2">
-              <Input
-                type="date"
-                value={draftFrom}
-                onChange={(e) => setDraftFrom(e.target.value)}
-                className="h-8 text-xs"
-                aria-label="From date"
-              />
-              <span className="text-xs text-muted-foreground">to</span>
-              <Input
-                type="date"
-                value={draftTo}
-                onChange={(e) => setDraftTo(e.target.value)}
-                className="h-8 text-xs"
-                aria-label="To date"
-              />
-            </div>
-            <div className="flex gap-2">
+          <SlidersHorizontal className="size-4" />
+          {activeFilterCount > 0 && (
+            <Badge className="absolute -top-1 -right-1 h-4 min-w-4 justify-center rounded-full px-1 text-[10px] leading-none">
+              {activeFilterCount}
+            </Badge>
+          )}
+        </Button>
+
+        <Popover open={dateOpen} onOpenChange={setDateOpen}>
+          <PopoverTrigger
+            render={
               <Button
-                size="sm"
-                className="h-8 flex-1 text-xs"
-                onClick={() => {
-                  onChange({ dateFrom: draftFrom, dateTo: draftTo });
-                  setDateOpen(false);
-                }}
-              >
-                Apply
-              </Button>
-              {(filters.dateFrom || filters.dateTo) && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-8 text-xs"
+                variant="outline"
+                className={cn("h-11 shrink-0 gap-1.5", (filters.dateFrom || filters.dateTo) && "border-primary text-primary")}
+              />
+            }
+          >
+            <CalendarRange className="size-3.5" />
+            {dateLabel}
+          </PopoverTrigger>
+          <PopoverContent className="w-64" align="end">
+            <div className="grid grid-cols-2 gap-1">
+              {DATE_PRESETS.map((preset) => (
+                <button
+                  key={preset}
+                  type="button"
                   onClick={() => {
-                    onChange({ dateFrom: "", dateTo: "" });
-                    setDraftFrom("");
-                    setDraftTo("");
+                    const { from, to } = presetRange(preset);
+                    onChange({ dateFrom: from, dateTo: to });
+                    setDraftFrom(from);
+                    setDraftTo(to);
+                    setDateOpen(false);
+                  }}
+                  className="rounded-md px-2 py-1.5 text-left text-xs hover:bg-muted transition-colors"
+                >
+                  {preset}
+                </button>
+              ))}
+            </div>
+            <div className="border-t pt-2.5 space-y-2">
+              <p className="text-xs font-medium text-muted-foreground">Custom Range</p>
+              <div className="flex items-center gap-2">
+                <Input
+                  type="date"
+                  value={draftFrom}
+                  onChange={(e) => setDraftFrom(e.target.value)}
+                  className="h-8 text-xs"
+                  aria-label="From date"
+                />
+                <span className="text-xs text-muted-foreground">to</span>
+                <Input
+                  type="date"
+                  value={draftTo}
+                  onChange={(e) => setDraftTo(e.target.value)}
+                  className="h-8 text-xs"
+                  aria-label="To date"
+                />
+              </div>
+              <div className="flex gap-2">
+                <Button
+                  size="sm"
+                  className="h-8 flex-1 text-xs"
+                  onClick={() => {
+                    onChange({ dateFrom: draftFrom, dateTo: draftTo });
                     setDateOpen(false);
                   }}
                 >
-                  Clear
+                  Apply
                 </Button>
-              )}
+                {(filters.dateFrom || filters.dateTo) && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-8 text-xs"
+                    onClick={() => {
+                      onChange({ dateFrom: "", dateTo: "" });
+                      setDraftFrom("");
+                      setDraftTo("");
+                      setDateOpen(false);
+                    }}
+                  >
+                    Clear
+                  </Button>
+                )}
+              </div>
+            </div>
+          </PopoverContent>
+        </Popover>
+      </div>
+
+      <Sheet open={filterSheetOpen} onOpenChange={setFilterSheetOpen}>
+        <SheetContent side="bottom" className="max-h-[85vh] overflow-y-auto rounded-t-2xl">
+          <SheetHeader>
+            <SheetTitle>Filters</SheetTitle>
+          </SheetHeader>
+
+          <div className="space-y-4 px-4">
+            <div className="space-y-1.5">
+              <Label className="text-xs">Status</Label>
+              <Select value={draftStatus} onValueChange={(v) => setDraftStatus((v as string) ?? "ALL")}>
+                <SelectTrigger className="h-11 w-full">
+                  <SelectValue>{draftStatus === "ALL" ? "All Statuses" : STATUS_LABELS[draftStatus as keyof typeof STATUS_LABELS]}</SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ALL">All Statuses</SelectItem>
+                  {ORDER_STATUSES.map((s) => (
+                    <SelectItem key={s} value={s}>{STATUS_LABELS[s]}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label className="text-xs">Payment</Label>
+              <Select value={draftPaymentStatus} onValueChange={(v) => setDraftPaymentStatus((v as string) ?? "ALL")}>
+                <SelectTrigger className="h-11 w-full">
+                  <SelectValue>{draftPaymentStatus === "ALL" ? "All Payments" : PAYMENT_LABELS[draftPaymentStatus as keyof typeof PAYMENT_LABELS]}</SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ALL">All Payments</SelectItem>
+                  {PAYMENT_STATUSES.map((s) => (
+                    <SelectItem key={s} value={s}>{PAYMENT_LABELS[s]}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label className="text-xs">Order Type</Label>
+              <Select value={draftType} onValueChange={(v) => setDraftType((v as string) ?? "ALL")}>
+                <SelectTrigger className="h-11 w-full">
+                  <SelectValue>{TYPE_OPTIONS.find((o) => o.value === draftType)?.label}</SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  {TYPE_OPTIONS.map((o) => (
+                    <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label className="text-xs">Source</Label>
+              <Select value={draftSource} onValueChange={(v) => setDraftSource((v as string) ?? "ALL")}>
+                <SelectTrigger className="h-11 w-full">
+                  <SelectValue>{SOURCE_OPTIONS.find((o) => o.value === draftSource)?.label}</SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  {SOURCE_OPTIONS.map((o) => (
+                    <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
           </div>
-        </PopoverContent>
-      </Popover>
 
-      {hasActiveFilters && (
-        <Button
-          variant="ghost"
-          size="sm"
-          className="h-9 gap-1.5 text-muted-foreground"
-          onClick={() => {
-            onChange({ status: "ALL", paymentStatus: "ALL", type: "ALL", source: "ALL", dateFrom: "", dateTo: "" });
-            setDraftFrom("");
-            setDraftTo("");
-          }}
-        >
-          <SlidersHorizontal className="size-3.5" /> Clear filters
-        </Button>
-      )}
+          <SheetFooter className="flex-row gap-2">
+            <Button variant="outline" className="h-11 flex-1" onClick={resetDraft}>
+              Reset
+            </Button>
+            <Button className="h-11 flex-1" onClick={applyFilters}>
+              Apply Filters
+            </Button>
+          </SheetFooter>
+        </SheetContent>
+      </Sheet>
     </div>
   );
 }

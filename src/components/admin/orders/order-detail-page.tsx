@@ -71,11 +71,11 @@ import {
 import type { AdminOrderEventOrder } from "@/lib/server/order-events";
 import { OrderItemsSummary } from "./order-items-summary";
 import { OrderTimeline } from "./order-timeline";
-import { OrderConfirmDialog } from "./order-confirm-dialog";
 import { OrderCancelDialog } from "./order-cancel-dialog";
 import { OrderPaymentModal } from "./order-payment-modal";
 
 const DIRECT_STATUS_ACTIONS: Partial<Record<PrimaryAction, OrderStatus>> = {
+  confirm: "CONFIRMED",
   start_processing: "PREPARING",
   mark_ready: "READY",
   out_for_delivery: "OUT_FOR_DELIVERY",
@@ -281,7 +281,6 @@ export function OrderDetailPage({
   const [actionLoading, setActionLoading] = useState(false);
   const [deletingOrder, setDeletingOrder] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  const [confirmOpen, setConfirmOpen] = useState(false);
   const [cancelOpen, setCancelOpen] = useState(false);
   // Manual Order creation auto-confirms the order and lands here with
   // openPayment=true so staff go straight to Payment instead of an extra
@@ -663,7 +662,8 @@ export function OrderDetailPage({
         {actions.map((action) => {
           if (action === "confirm") {
             return (
-              <Button key={action} className="flex-1 min-w-28" disabled={actionLoading} onClick={() => setConfirmOpen(true)}>
+              <Button key={action} className="flex-1 min-w-28 gap-1.5" disabled={actionLoading} onClick={() => runStatusAction(action)}>
+                {actionLoading && <Loader2 className="size-3.5 animate-spin" />}
                 {actionLabel(action)}
               </Button>
             );
@@ -710,7 +710,6 @@ export function OrderDetailPage({
         )}
       </div>
 
-      <OrderConfirmDialog order={order} currency={currency} open={confirmOpen} onOpenChange={setConfirmOpen} onConfirmed={applyUpdate} />
       <OrderCancelDialog order={order} open={cancelOpen} onOpenChange={setCancelOpen} onCancelled={applyUpdate} />
       <OrderPaymentModal order={order} currency={currency} shop={shop} open={paymentOpen} onOpenChange={setPaymentOpen} onPaid={applyUpdate} />
 
