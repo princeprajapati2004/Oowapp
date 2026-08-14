@@ -305,16 +305,37 @@ export function OrderDetailPage({
   const [noteDraft, setNoteDraft] = useState("");
   const [savingNote, setSavingNote] = useState(false);
   const [trackingQr, setTrackingQr] = useState<string | null>(null);
+  const [paymentQr, setPaymentQr] = useState<string | null>(null);
   const [party, setParty] = useState<{ id: string } | null>(null);
 
   const status = order.status as OrderStatus;
   const paymentStatus = (order.paymentStatus ?? "PENDING") as PaymentStatus;
   const orderType = deriveOrderType(order);
-  const actions = getPrimaryActions({ ...order, status });
+  // getPrimaryActions() derives the action list from order.status alone —
+  // "payment" would otherwise keep showing at every status once the order
+  // happens to already be fully paid. Payment status and order status are
+  // independent, so that filter has to happen here, not in the shared
+  // status-transition helper.
+  const actions = getPrimaryActions({ ...order, status }).filter(
+    (action) => action !== "payment" || paymentStatus !== "PAID"
+  );
   const canCancelNow = !["DELIVERED", "COMPLETED", "CANCELLED"].includes(status);
   const { date: orderDateLabel, dayTime: orderDayTimeLabel } = formatOrderDateParts(order.createdAt);
   const orderTotal = order.discountedTotal ?? order.grandTotal;
   const amountDue = Math.max(0, orderTotal - (order.paidAmount ?? 0));
+  // Real upi://pay deep link for THIS order's current remaining balance —
+  // same builder the payment-recording modal's own QR already uses, so it's
+  // never a fixed/stale amount. Recomputed whenever amountDue changes (e.g.
+  // after a partial payment lowers what's still owed).
+  const payUri =
+    shop.upiId && amountDue > 0
+      ? buildUpiPaymentUri({
+          upiId: shop.upiId,
+          payeeName: shop.paymentDisplayName || shop.businessName,
+          amount: amountDue,
+          note: order.billNumber,
+        })
+      : null;
 
   const billActions = useBillActions(toBillOrderData(order), shop);
 
@@ -325,6 +346,21 @@ export function OrderDetailPage({
       .then(setTrackingQr)
       .catch(() => {});
   }, [shop.slug, order.id]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const generate = payUri ? QRCode.toDataURL(payUri, { width: 200, margin: 1 }) : Promise.resolve(null);
+    generate
+      .then((url) => {
+        if (!cancelled) setPaymentQr(url);
+      })
+      .catch(() => {
+        if (!cancelled) setPaymentQr(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [payUri]);
 
   // This order's Party/khata-book contact, if one exists — Party has no FK
   // on Order (see prisma schema comment on the Party model), so the two are
@@ -387,13 +423,7 @@ export function OrderDetailPage({
   // builder the owner payment modal's own QR already uses) to the
   // customer's phone — never a fabricated amount/UPI id/payment link.
   function sendPaymentQrOnWhatsApp() {
-    if (!order.customerPhone || !shop.upiId) return;
-    const payUri = buildUpiPaymentUri({
-      upiId: shop.upiId,
-      payeeName: shop.paymentDisplayName || shop.businessName,
-      amount: amountDue,
-      note: order.billNumber,
-    });
+    if (!order.customerPhone || !payUri || !shop.upiId) return;
     const message = [
       `*Payment Request — ${shop.businessName}*`,
       "",
@@ -422,6 +452,8 @@ export function OrderDetailPage({
       "",
       `Total: ${formatCurrency(total, currency)}`,
       `Payment: ${paymentMethodLabel(order.paymentMethod)} — ${PAYMENT_LABELS[paymentStatus]}`,
+      `Date: ${orderDateLabel}`,
+      `Time: ${orderDayTimeLabel.split(" • ")[1] ?? orderDayTimeLabel}`,
       "",
       "Thank you for your order!",
     ].filter((line): line is string => line !== null);
@@ -614,11 +646,19 @@ export function OrderDetailPage({
             <span className="font-medium font-mono text-xs">{order.transactionReference || "N/A"}</span>
           </div>
           {(paymentStatus === "PENDING" || paymentStatus === "PARTIALLY_PAID") && (
-            <div className="flex justify-between border-t pt-1.5 mt-1.5">
-              <span className="text-muted-foreground">Amount Due</span>
-              <span className="font-semibold text-amber-600 dark:text-amber-400">
-                {formatCurrency(amountDue, currency)}
-              </span>
+            <div className="border-t pt-1.5 mt-1.5 space-y-1.5">
+              {paymentStatus === "PARTIALLY_PAID" && (
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Paid Amount</span>
+                  <span className="font-medium">{formatCurrency(order.paidAmount ?? 0, currency)}</span>
+                </div>
+              )}
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">{paymentStatus === "PARTIALLY_PAID" ? "Remaining" : "Amount Due"}</span>
+                <span className="font-semibold text-amber-600 dark:text-amber-400">
+                  {formatCurrency(amountDue, currency)}
+                </span>
+              </div>
             </div>
           )}
         </div>
@@ -711,11 +751,26 @@ export function OrderDetailPage({
                 <span>Cash accepted</span>
               </div>
             )}
-            {shop.paymentQrImageUrl && (
+            {paymentQr ? (
               <div className="flex items-center gap-3 rounded-lg bg-muted/40 px-3 py-2">
-                <Image src={shop.paymentQrImageUrl} alt="Scan to pay" width={64} height={64} unoptimized className="rounded-md border bg-white object-contain p-1" />
-                <p className="text-xs text-muted-foreground">Scan to pay via {shop.businessName}</p>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={paymentQr} alt="Scan to pay" width={64} height={64} className="rounded-md border bg-white object-contain p-1" />
+                <p className="text-xs text-muted-foreground">
+                  Scan to pay <span className="font-semibold text-foreground">{formatCurrency(amountDue, currency)}</span> via {shop.businessName}
+                </p>
               </div>
+            ) : (
+              shop.paymentQrImageUrl && (
+                <div className="flex items-center gap-3 rounded-lg bg-muted/40 px-3 py-2">
+                  <Image src={shop.paymentQrImageUrl} alt="Scan to pay" width={64} height={64} unoptimized className="rounded-md border bg-white object-contain p-1" />
+                  <p className="text-xs text-muted-foreground">Scan to pay via {shop.businessName}</p>
+                </div>
+              )
+            )}
+            {payUri && (
+              <Button variant="outline" className="w-full gap-1.5" render={<a href={payUri} />}>
+                <CreditCard className="size-3.5" /> Pay via UPI
+              </Button>
             )}
             {order.customerPhone && shop.upiId && (
               <Button
@@ -775,7 +830,7 @@ export function OrderDetailPage({
           }
           if (action === "receipt" || action === "print_bill") {
             return (
-              <Button key={action} variant="outline" className="flex-1 min-w-24 gap-1.5" onClick={billActions.print}>
+              <Button key={action} className="flex-1 min-w-24 gap-1.5 bg-slate-800 hover:bg-slate-900 text-white" onClick={billActions.print}>
                 <Printer className="size-3.5" /> {actionLabel(action)}
               </Button>
             );

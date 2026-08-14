@@ -174,7 +174,7 @@ const ACTION_LABELS: Record<PrimaryAction, string> = {
   mark_delivered: "Mark Delivered",
   complete: "Complete Order",
   tracking: "Tracking",
-  payment: "Payment",
+  payment: "Add/confirm Payment",
   print_bill: "Print Bill",
   share_bill: "Share Bill",
 };
