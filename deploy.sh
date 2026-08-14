@@ -28,7 +28,7 @@ echo "========================================"
 npm run build
 
 ########################################
-# ZIP .next
+# ZIP .next  (remove any stale local zip first)
 ########################################
 
 echo ""
@@ -74,19 +74,26 @@ cd "$REMOTE_PROJECT"
 echo "  -> git pull"
 git pull
 
-echo "  -> extracting .next..."
+echo "  -> removing old .next build..."
+rm -rf .next
+
+echo "  -> extracting new .next..."
 unzip -oq .next.zip
 rm -f .next.zip
+
+echo "  -> npm install (sync dependencies)..."
+export NVM_DIR="$HOME/.nvm"
+[ -s "$NVM_DIR/nvm.sh" ] && source "$NVM_DIR/nvm.sh"
+nvm use default --silent 2>/dev/null || true
+npm install --omit=dev
 
 echo "  -> syncing database schema..."
 node scripts/db-deploy.mjs
 
 # Locate PM2 under nvm
-NVM_DIR="$HOME/.nvm"
 PM2_BIN=$(find "$NVM_DIR/versions/node" -type f -name pm2 2>/dev/null | sort | tail -n1)
 
 if [ -z "$PM2_BIN" ]; then
-  # Fall back to PATH
   PM2_BIN=$(command -v pm2 2>/dev/null || true)
 fi
 
@@ -97,11 +104,9 @@ fi
 
 echo "  -> pm2 at $PM2_BIN"
 
-# Use ecosystem.config.cjs so PM2 starts the app with the correct absolute
-# Node binary path — avoids EADDRINUSE and nvm-not-loaded failures.
 if "$PM2_BIN" describe "$PM2_NAME" >/dev/null 2>&1; then
-  echo "  -> reloading $PM2_NAME via ecosystem config"
-  "$PM2_BIN" reload ecosystem.config.cjs --update-env
+  echo "  -> reloading $PM2_NAME"
+  "$PM2_BIN" reload "$PM2_NAME" --update-env
 else
   echo "  -> starting $PM2_NAME via ecosystem config"
   "$PM2_BIN" start ecosystem.config.cjs
