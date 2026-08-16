@@ -46,9 +46,9 @@ function buildWhere(shopId: string, filters: OrderSearchFilters): Prisma.OrderWh
   const search = filters.search?.trim();
   if (search) {
     const or: Prisma.OrderWhereInput[] = [
-      { billNumber: { contains: search, mode: "insensitive" } },
-      { customerName: { contains: search, mode: "insensitive" } },
-      { customerPhone: { contains: search, mode: "insensitive" } },
+      { billNumber: { contains: search } },
+      { customerName: { contains: search } },
+      { customerPhone: { contains: search } },
     ];
     const asNumber = Number(search);
     if (Number.isFinite(asNumber) && search !== "") {
