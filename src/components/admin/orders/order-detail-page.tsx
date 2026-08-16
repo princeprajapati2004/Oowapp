@@ -511,7 +511,7 @@ export function OrderDetailPage({
       {/* Back + page title + more-actions menu — screen chrome, hidden on print */}
       <div className="flex items-center justify-between gap-3 print:hidden">
         <div className="flex min-w-0 items-center gap-3">
-          <Button variant="ghost" size="icon" className="shrink-0" render={<Link href="/admin/orders" />} aria-label="Back to Orders">
+          <Button variant="ghost" size="icon" className="shrink-0" render={<Link href="/admin/orders" />} nativeButton={false} aria-label="Back to Orders">
             <ArrowLeft className="size-4" />
           </Button>
           <h1 className="truncate text-base font-semibold">Order Details</h1>
@@ -768,7 +768,7 @@ export function OrderDetailPage({
               )
             )}
             {payUri && (
-              <Button variant="outline" className="w-full gap-1.5" render={<a href={payUri} />}>
+              <Button variant="outline" className="w-full gap-1.5" render={<a href={payUri} />} nativeButton={false}>
                 <CreditCard className="size-3.5" /> Pay via UPI
               </Button>
             )}
@@ -844,7 +844,7 @@ export function OrderDetailPage({
           }
           if (action === "tracking") {
             return (
-              <Button key={action} variant="outline" className="flex-1 min-w-24 gap-1.5" render={<a href="#order-timeline-anchor" />}>
+              <Button key={action} variant="outline" className="flex-1 min-w-24 gap-1.5" render={<a href="#order-timeline-anchor" />} nativeButton={false}>
                 <ReceiptText className="size-3.5" /> {actionLabel(action)}
               </Button>
             );
