@@ -2,7 +2,7 @@ import { db } from "@/lib/db";
 import { slugify, randomSuffix } from "@/lib/utils/slugify";
 import { isDeliveryFirst, type BusinessType } from "@/lib/business-types";
 import { NotFoundError } from "@/lib/api-utils";
-import type { OrderMode } from "@/generated/prisma/client";
+import type { OrderMode, PrintFormat } from "@/generated/prisma/client";
 
 async function generateUniqueSlug(businessName: string) {
   const base = slugify(businessName) || "shop";
@@ -95,6 +95,7 @@ export type ShopSettingsInput = Partial<{
   orderMode: OrderMode;
   billNumberPrefix: string;
   billNumberNext: number;
+  printFormat: PrintFormat;
 }>;
 
 export async function updateShopSettings(shopId: string, data: ShopSettingsInput) {

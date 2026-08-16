@@ -14,6 +14,7 @@ import { PaymentSettingsForm } from "@/components/admin/settings/payment-setting
 import { OrderSettingsForm } from "@/components/admin/settings/order-settings-form";
 import { MenuSettingsForm } from "@/components/admin/settings/menu-settings-form";
 import { BillNumberingForm } from "@/components/admin/settings/bill-numbering-form";
+import { PrintSettingsForm } from "@/components/admin/settings/print-settings-form";
 import { RestaurantSettingsForm } from "@/components/admin/settings/restaurant-settings-form";
 import { NotificationSettingsForm } from "@/components/admin/settings/notification-settings-form";
 import { SubscriptionBillingSection } from "@/components/admin/settings/subscription-billing-section";
@@ -141,6 +142,12 @@ export default async function SettingsPage() {
           nextNumber={(shopAny.billNumberNext as number) ?? 1}
         />
       ),
+    },
+    {
+      id: "print",
+      title: "Print settings",
+      description: "Default bill/receipt layout for every print action.",
+      content: <PrintSettingsForm bare defaultFormat={shop.printFormat} />,
     },
     {
       id: "restaurant",

@@ -51,6 +51,7 @@ export default async function OrderDetailRoute({
         paymentDisplayName: (shopAny.paymentDisplayName as string | null) ?? null,
         enableTableNumber: (shopAny.enableTableNumber as boolean) ?? true,
         enableOrderBarcodeLabels: (shopAny.enableOrderBarcodeLabels as boolean) ?? false,
+        printFormat: shop.printFormat,
       }}
     />
   );

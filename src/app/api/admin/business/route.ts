@@ -11,6 +11,7 @@ import {
   notificationSettingsSchema,
   billNumberingSchema,
   billNumberResetSchema,
+  printSettingsSchema,
 } from "@/lib/validation/shop-settings";
 
 export async function GET() {
@@ -47,6 +48,8 @@ export async function PATCH(request: Request) {
       data = { billNumberPrefix: parsed.billNumberPrefix || "" };
     } else if (section === "billNumberReset") {
       data = billNumberResetSchema.parse(rest);
+    } else if (section === "print") {
+      data = printSettingsSchema.parse(rest);
     } else return NextResponse.json({ error: "Unknown settings section" }, { status: 400 });
 
     const shop = await updateShopSettings(session.shopId, data);

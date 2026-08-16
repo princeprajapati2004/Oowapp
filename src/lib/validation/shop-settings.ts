@@ -1,6 +1,14 @@
 import { z } from "zod";
 import { BUSINESS_TYPES } from "@/lib/business-types";
 import { CURRENCIES } from "@/lib/currencies";
+import { PRINT_FORMATS, type PrintFormat } from "@/lib/types/print";
+
+const PRINT_FORMAT_VALUES = PRINT_FORMATS.map((f) => f.value) as [PrintFormat, ...PrintFormat[]];
+
+export const printSettingsSchema = z.object({
+  printFormat: z.enum(PRINT_FORMAT_VALUES),
+});
+export type PrintSettingsInput = z.infer<typeof printSettingsSchema>;
 
 export const businessInfoSchema = z.object({
   businessName: z.string().trim().min(2, "Business name is too short").max(100),

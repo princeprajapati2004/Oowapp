@@ -56,6 +56,7 @@ import { formatOrderDateParts } from "@/lib/utils/date";
 import { cn } from "@/lib/utils";
 import { useOrderEvents } from "@/lib/hooks/use-order-events";
 import { useBillActions, type BillOrderData, type BillShopData } from "@/lib/hooks/use-bill-actions";
+import { PrintOnlyBill } from "@/components/printing/bill-document";
 import { buildWhatsAppUrl } from "@/lib/services/whatsapp";
 import { buildUpiPaymentUri } from "@/lib/utils/upi";
 import {
@@ -491,7 +492,8 @@ export function OrderDetailPage({
   }
 
   return (
-    <div className="max-w-3xl mx-auto space-y-4 print:max-w-none">
+    <>
+    <div className="max-w-3xl mx-auto space-y-4 print:hidden">
       {showCreatedBanner && (
         <div className="flex items-center justify-between gap-3 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-emerald-800 print:hidden dark:border-emerald-900/50 dark:bg-emerald-900/20 dark:text-emerald-400">
           <div className="flex items-center gap-2">
@@ -535,18 +537,6 @@ export function OrderDetailPage({
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
-      </div>
-
-      <div className="hidden print:flex items-center gap-3 pb-2 border-b">
-        {shop.logoUrl ? (
-          <Image src={shop.logoUrl} alt={shop.businessName} width={40} height={40} unoptimized className="rounded-full object-cover" />
-        ) : null}
-        <div>
-          <p className="font-bold">{shop.businessName}</p>
-          <p className="text-xs text-muted-foreground">
-            {[shop.address, shop.phone, shop.gstNumber ? `GSTIN: ${shop.gstNumber}` : null].filter(Boolean).join(" · ")}
-          </p>
-        </div>
       </div>
 
       {/* Order identification */}
@@ -903,5 +893,7 @@ export function OrderDetailPage({
         onConfirm={handleDeleteOrder}
       />
     </div>
+    <PrintOnlyBill format={shop.printFormat} order={toBillOrderData(order)} shop={shop} />
+    </>
   );
 }

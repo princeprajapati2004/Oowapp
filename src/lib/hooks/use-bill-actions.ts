@@ -8,8 +8,12 @@
  */
 import { useState } from "react";
 import { toast } from "sonner";
-import { deriveOrderType, STATUS_LABELS, type OrderStatus } from "@/lib/order-status";
+import { STATUS_LABELS, type OrderStatus } from "@/lib/order-status";
 import { formatCurrency } from "@/lib/utils/currency";
+import { deriveBillFigures, isOrderPaid } from "@/lib/utils/bill-figures";
+import type { PrintFormat } from "@/lib/types/print";
+
+export { isOrderPaid };
 
 export type TaxLine = { id: string; name: string; amount: number };
 
@@ -68,24 +72,14 @@ export type BillShopData = {
   paymentDisplayName: string | null;
   enableTableNumber: boolean;
   enableOrderBarcodeLabels: boolean;
+  printFormat: PrintFormat;
 };
-
-export function isOrderPaid(order: Pick<BillOrderData, "paymentStatus" | "paymentMethod">): boolean {
-  return (
-    order.paymentStatus === "PAID" ||
-    (!order.paymentStatus && !!order.paymentMethod && order.paymentMethod !== "PENDING")
-  );
-}
 
 export function useBillActions(order: BillOrderData, shop: BillShopData) {
   const [downloadingPdf, setDownloadingPdf] = useState(false);
 
   const taxBreakdown = order.taxBreakdown;
-  const base = order.subtotal + order.taxTotal;
-  const finalTotal = order.discountedTotal ?? base;
-  const discountAmt = order.discountedTotal !== null ? base - order.discountedTotal : 0;
-  const orderType = deriveOrderType(order);
-  const isPaid = isOrderPaid(order);
+  const { finalTotal, discountAmt, orderType, isPaid } = deriveBillFigures(order);
 
   function print() {
     window.print();

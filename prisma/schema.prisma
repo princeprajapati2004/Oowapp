@@ -40,6 +40,17 @@ enum TaxAppliesTo {
   CATEGORY
 }
 
+// Bill/receipt print layout — see src/components/printing.
+enum PrintFormat {
+  THERMAL_58
+  THERMAL_80
+  A4_STYLE_1
+  A4_STYLE_2
+  A4_STYLE_3
+  A4_STYLE_4
+  A3
+}
+
 enum ShopStatus {
   ACTIVE
   SUSPENDED
@@ -324,6 +335,10 @@ model Shop {
   // "starting number".
   billNumberPrefix String @default("")
   billNumberNext   Int    @default(1)
+
+  // Default receipt/invoice layout for every "Print Bill" action — see
+  // src/components/printing/bill-document.tsx.
+  printFormat PrintFormat @default(A4_STYLE_1)
 
   isPublished Boolean  @default(true)
 
