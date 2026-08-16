@@ -1,18 +1,14 @@
 import { PrismaPg } from "@prisma/adapter-pg";
-import { PrismaMariaDb } from "@prisma/adapter-mariadb";
 import { PrismaClient } from "@/generated/prisma/client";
 
 const globalForPrisma = globalThis as unknown as {
   prisma: PrismaClient | undefined;
 };
 
-// Which driver adapter to use is inferred from DATABASE_URL's scheme, so
-// switching between Postgres and MySQL/MariaDB is purely a .env change —
-// see scripts/select-db-provider.mjs for the matching schema.prisma switch.
+// Postgres-only — MySQL/MariaDB support was dropped along with the
+// @prisma/adapter-mariadb import. schema.prisma's provider still gets
+// synced from DATABASE_URL's scheme by scripts/select-db-provider.mjs.
 function createAdapter(url: string) {
-  if (url.startsWith("mysql://") || url.startsWith("mariadb://")) {
-    return new PrismaMariaDb(url);
-  }
   if (url.startsWith("postgres://") || url.startsWith("postgresql://")) {
     return new PrismaPg({
       connectionString: url,
@@ -38,7 +34,7 @@ function createAdapter(url: string) {
   }
   const scheme = url.split("://")[0];
   throw new Error(
-    `Unrecognized DATABASE_URL scheme "${scheme}://". Expected postgres:// (or postgresql://) or mysql:// (or mariadb://).`
+    `Unrecognized DATABASE_URL scheme "${scheme}://". Expected postgres:// (or postgresql://).`
   );
 }
 
