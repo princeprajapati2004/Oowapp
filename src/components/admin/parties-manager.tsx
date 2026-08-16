@@ -1,7 +1,8 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   Plus,
   Pencil,
@@ -132,6 +133,7 @@ export function PartiesManager({
   initialParties: PartyRow[];
   currency: string;
 }) {
+  const router = useRouter();
   const [parties, setParties] = useState(initialParties);
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<FilterValue>("all");
@@ -140,6 +142,17 @@ export function PartiesManager({
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<PartyRow | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<PartyRow | null>(null);
+
+  // Launched from the Quick Actions FAB ("Add Party / Customer" →
+  // /admin/parties?new=1).
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get("new") !== "1") return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setEditing(null);
+    setDialogOpen(true);
+    router.replace("/admin/parties", { scroll: false });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();

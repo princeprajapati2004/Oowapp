@@ -1,8 +1,9 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import {
   Plus,
@@ -76,6 +77,7 @@ export function ProductsManager({
   currency: string;
   businessType: BusinessType;
 }) {
+  const router = useRouter();
   const [products, setProducts] = useState(initialProducts);
   const [search, setSearch] = useState("");
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
@@ -117,6 +119,18 @@ export function ProductsManager({
     setCategorySearch("");
     setDialogOpen(true);
   }
+
+  // Launched from the Quick Actions FAB ("Add Product" → /admin/products?new=1)
+  // — opens the same add dialog a manual "Add product" click would. Read via
+  // location.search (not useSearchParams) so this page doesn't need a
+  // Suspense boundary just for this one-shot check.
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get("new") !== "1") return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    openCreate();
+    router.replace("/admin/products", { scroll: false });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   function openEdit(product: ProductRow) {
     setEditing(product);

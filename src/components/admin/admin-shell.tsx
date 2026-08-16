@@ -30,7 +30,7 @@ import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger, SheetTitle } from "@/components/ui/sheet";
 import { ThemeToggle } from "@/components/shared/theme-toggle";
 import { InstallApp } from "@/components/shared/install-app";
-import { CreateOrderFab } from "@/components/admin/create-order-fab";
+import { QuickActionsFab } from "@/components/admin/quick-actions-fab";
 import { NotificationBell } from "@/components/admin/notification-bell";
 import { cn } from "@/lib/utils";
 import { api } from "@/lib/api-client";
@@ -376,7 +376,7 @@ export function AdminShell({
 
   return (
     <div className="flex min-h-screen">
-      <CreateOrderFab />
+      <QuickActionsFab />
       <aside className="hidden md:flex w-60 shrink-0 flex-col border-r bg-background print:hidden">
         <div className="flex h-14 items-center gap-2.5 border-b px-4">
           <Image

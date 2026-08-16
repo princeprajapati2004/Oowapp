@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   Plus,
   Pencil,
@@ -578,6 +579,7 @@ export function ExpensesManager({
   initialExpenses: Expense[];
   currency: string;
 }) {
+  const router = useRouter();
   const [expenses, setExpenses] = useState<Expense[]>(initialExpenses);
   const [search, setSearch] = useState("");
   const [period, setPeriod] = useState<Period>("month");
@@ -585,6 +587,15 @@ export function ExpensesManager({
   const [addFormOpen, setAddFormOpen] = useState(false);
   const [editing, setEditing] = useState<Expense | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Expense | null>(null);
+
+  // Launched from the Quick Actions FAB ("Add Expense" → /admin/expenses?new=1).
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get("new") !== "1") return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setAddFormOpen(true);
+    router.replace("/admin/expenses", { scroll: false });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // ── Period label for display ───────────────────────────────────────────────
   const periodLabel = useMemo(() => {
