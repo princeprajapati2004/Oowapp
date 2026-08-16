@@ -8,7 +8,6 @@ import {
   Table2,
   CircleCheck,
   Clock,
-  ReceiptText,
   Users,
   Loader2,
   Minus,
@@ -38,7 +37,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { EmptyState } from "@/components/shared/empty-state";
 import { AddItemsPanel } from "@/components/admin/add-items-panel";
@@ -125,7 +124,6 @@ function StatCard({ label, value, accent }: { label: string; value: number; acce
 export function TablesBoard({ initialTables, currency }: { initialTables: TableBoardEntry[]; currency: string }) {
   const router = useRouter();
   const [tables, setTables] = useState(initialTables);
-  const [markPaidTarget, setMarkPaidTarget] = useState<TableBoardEntry | null>(null);
   const [detailTarget, setDetailTarget] = useState<TableBoardEntry | null>(null);
 
   const refresh = useCallback(async () => {
@@ -179,13 +177,12 @@ export function TablesBoard({ initialTables, currency }: { initialTables: TableB
           description="Add table names in Settings → Restaurant settings to get started."
         />
       ) : (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5">
           {tables.map((table) => (
             <TableCard
               key={table.tableNumber}
               table={table}
               currency={currency}
-              onMarkPaid={() => setMarkPaidTarget(table)}
               onViewDetail={() => setDetailTarget(table)}
               onCreateOrder={() => router.push(`/admin/orders/create?type=DINE_IN&table=${encodeURIComponent(table.tableNumber)}`)}
               onSetState={(state) => setTableState(table.tableNumber, state)}
@@ -193,16 +190,6 @@ export function TablesBoard({ initialTables, currency }: { initialTables: TableB
           ))}
         </div>
       )}
-
-      <MarkPaidDialog
-        table={markPaidTarget}
-        currency={currency}
-        onClose={() => setMarkPaidTarget(null)}
-        onPaid={() => {
-          setMarkPaidTarget(null);
-          refresh();
-        }}
-      />
 
       <TableDetailDialog
         table={detailTarget}
@@ -242,17 +229,19 @@ const STATE_META: Record<TableManualState, { label: string; badge: string; icon:
 };
 
 // ── Table card ────────────────────────────────────────────────────────────────
+// Deliberately compact — just the table number, its status, and (when
+// occupied) a one-line amount/customer hint. Everything else — time, guest
+// count, rounds, paid/due, actions — lives one tap away in TableDetailDialog,
+// which the whole card opens for an occupied table.
 function TableCard({
   table,
   currency,
-  onMarkPaid,
   onViewDetail,
   onCreateOrder,
   onSetState,
 }: {
   table: TableBoardEntry;
   currency: string;
-  onMarkPaid: () => void;
   onViewDetail: () => void;
   onCreateOrder: () => void;
   onSetState: (state: TableManualState | null) => void;
@@ -263,34 +252,32 @@ function TableCard({
     const StateIcon = meta?.icon;
 
     return (
-      <div className="w-full rounded-2xl border border-dashed bg-muted/20 p-4 space-y-2 transition-colors">
-        <button
-          type="button"
-          onClick={blocked ? undefined : onCreateOrder}
-          disabled={blocked}
-          className={cn(
-            "flex w-full items-center justify-between gap-2 text-left rounded-lg -m-1 p-1 transition-colors",
-            !blocked && "hover:bg-emerald-50/50 dark:hover:bg-emerald-900/10"
-          )}
-        >
-          <p className="text-lg font-bold text-muted-foreground">Table {table.tableNumber}</p>
-          {!blocked && <Plus className="size-4 text-muted-foreground" />}
-        </button>
-
-        <div className="flex items-center justify-between gap-2">
-          <span
+      <div className="w-full rounded-xl border border-dashed bg-muted/20 p-3 transition-colors">
+        <div className="flex items-start justify-between gap-1">
+          <button
+            type="button"
+            onClick={blocked ? undefined : onCreateOrder}
+            disabled={blocked}
             className={cn(
-              "inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium",
-              meta ? meta.badge : "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400"
+              "min-w-0 flex-1 rounded-lg -m-1 p-1 text-left transition-colors",
+              !blocked && "hover:bg-emerald-50/50 dark:hover:bg-emerald-900/10"
             )}
           >
-            {StateIcon && <StateIcon className="size-3" />}
-            {meta ? meta.label : "Available — tap to create order"}
-          </span>
+            <p className="truncate text-sm font-bold text-muted-foreground">Table {table.tableNumber}</p>
+            <span
+              className={cn(
+                "mt-1 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium",
+                meta ? meta.badge : "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400"
+              )}
+            >
+              {StateIcon && <StateIcon className="size-3" />}
+              {meta ? meta.label : "Available"}
+            </span>
+          </button>
 
           <DropdownMenu>
             <DropdownMenuTrigger
-              className={cn(buttonVariants({ variant: "ghost", size: "icon-sm" }), "shrink-0 text-muted-foreground")}
+              className={cn(buttonVariants({ variant: "ghost", size: "icon-sm" }), "shrink-0 -mr-1 -mt-1 text-muted-foreground")}
               aria-label="Table actions"
             >
               <MoreVertical className="size-3.5" />
@@ -331,230 +318,22 @@ function TableCard({
 
   const { session } = table;
   return (
-    <div className="rounded-2xl border-2 border-primary/30 bg-primary/5 p-4 space-y-3">
-      <div className="flex items-start justify-between gap-2">
-        <div>
-          <p className="text-lg font-bold">Table {table.tableNumber}</p>
-          <p className="text-xs text-muted-foreground flex items-center gap-2 mt-0.5">
-            <span className="flex items-center gap-1">
-              <Clock className="size-3" /> {formatTime(session.createdAt)}
-            </span>
-            <span className="text-muted-foreground/50">·</span>
-            <span>{formatDuration(session.createdAt)}</span>
-          </p>
-        </div>
-        <span className={cn("shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold", LABEL_BADGE[session.label])}>
+    <button
+      type="button"
+      onClick={onViewDetail}
+      className="w-full rounded-xl border-2 border-primary/30 bg-primary/5 p-3 text-left transition-colors hover:bg-primary/10"
+    >
+      <div className="flex items-start justify-between gap-1">
+        <p className="truncate text-sm font-bold">Table {table.tableNumber}</p>
+        <span className={cn("shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold", LABEL_BADGE[session.label])}>
           {session.label}
         </span>
       </div>
-
-      {(session.customerName || session.guestCount) && (
-        <p className="flex items-center gap-1.5 text-sm text-muted-foreground">
-          {session.customerName && (
-            <span className="flex items-center gap-1">
-              <User className="size-3.5" /> {session.customerName}
-            </span>
-          )}
-          {session.guestCount && (
-            <span className="flex items-center gap-1">
-              <Users className="size-3.5" /> {session.guestCount} guest{session.guestCount !== 1 ? "s" : ""}
-            </span>
-          )}
-        </p>
-      )}
-
-      <div className="flex items-baseline justify-between border-t pt-2">
-        <span className="text-sm font-medium text-muted-foreground flex items-center gap-1">
-          <Users className="size-3.5" /> {session.orderCount} round{session.orderCount !== 1 ? "s" : ""}
-        </span>
-        <span className="text-xl font-bold tabular-nums text-primary">{formatCurrency(session.grandTotal, currency)}</span>
-      </div>
-
-      {session.paidAmount > 0 && (
-        <p className="text-xs font-medium text-amber-600 dark:text-amber-400">
-          {formatCurrency(session.paidAmount, currency)} paid · {formatCurrency(session.remaining, currency)} due
-        </p>
-      )}
-
-      <div className="flex gap-2">
-        <Button size="sm" variant="outline" className="flex-1 h-9 gap-1.5 text-xs" onClick={onViewDetail}>
-          <ReceiptText className="size-3.5" /> View Orders
-        </Button>
-        <Button size="sm" className="flex-1 h-9 gap-1.5 text-xs" onClick={onMarkPaid}>
-          <CircleCheck className="size-3.5" /> Mark Paid
-        </Button>
-      </div>
-    </div>
-  );
-}
-
-// ── Mark Paid dialog ──────────────────────────────────────────────────────────
-function MarkPaidDialog({
-  table,
-  currency,
-  onClose,
-  onPaid,
-}: {
-  table: TableBoardEntry | null;
-  currency: string;
-  onClose: () => void;
-  onPaid: () => void;
-}) {
-  const [method, setMethod] = useState<(typeof PAYMENT_METHODS)[number]["value"]>("CASH");
-  const [note, setNote] = useState("");
-  const [amount, setAmount] = useState("");
-  const [submitting, setSubmitting] = useState(false);
-  const [rejecting, setRejecting] = useState(false);
-
-  const remaining = table?.session?.remaining ?? table?.session?.grandTotal ?? 0;
-
-  // Reset the amount field to the current remaining balance exactly when a
-  // new table opens in this dialog — adjusting state from a prop change
-  // during render, not in an effect, so it never shows a stale amount from
-  // whichever table was open before.
-  const [lastTableId, setLastTableId] = useState(table?.session?.id ?? null);
-  if ((table?.session?.id ?? null) !== lastTableId) {
-    setLastTableId(table?.session?.id ?? null);
-    setAmount(remaining > 0 ? remaining.toFixed(2) : "");
-  }
-
-  async function handleReject() {
-    if (!table?.session) return;
-    setRejecting(true);
-    try {
-      await api.patch(`/api/admin/table-sessions/${table.session.id}`, { action: "reject_payment" });
-      toast.success(`Payment rejected — table ${table.tableNumber} back to ordering`);
-      onPaid();
-    } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "Couldn't reject this payment");
-    } finally {
-      setRejecting(false);
-    }
-  }
-
-  async function handleConfirm() {
-    if (!table?.session) return;
-    const parsedAmount = amount.trim() ? parseFloat(amount) : undefined;
-    if (parsedAmount !== undefined && (!Number.isFinite(parsedAmount) || parsedAmount <= 0)) {
-      toast.error("Enter a valid payment amount");
-      return;
-    }
-    setSubmitting(true);
-    try {
-      const res = await api.patch<{ ok: boolean; partial?: boolean; remaining?: number }>(
-        `/api/admin/table-sessions/${table.session.id}`,
-        {
-          action: "mark_paid",
-          paymentMethod: method,
-          paymentNote: note.trim() || undefined,
-          paidAmount: parsedAmount,
-        }
-      );
-      toast.success(
-        res.partial
-          ? `Payment recorded — ${formatCurrency(res.remaining ?? 0, currency)} still due on Table ${table.tableNumber}`
-          : `Table ${table.tableNumber} marked as paid`
-      );
-      setNote("");
-      setMethod("CASH");
-      onPaid();
-    } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "Couldn't mark this table as paid");
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
-  return (
-    <Dialog open={!!table} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="max-w-sm">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <ReceiptText className="size-4 text-primary" /> Mark Table {table?.tableNumber} as Paid
-          </DialogTitle>
-        </DialogHeader>
-
-        {table?.session && (
-          <div className="space-y-1 rounded-lg bg-muted/40 px-3 py-2 text-sm">
-            <div className="flex items-baseline justify-between">
-              <span className="text-muted-foreground">Bill total</span>
-              <span className="font-medium">{formatCurrency(table.session.grandTotal, currency)}</span>
-            </div>
-            {table.session.paidAmount > 0 && (
-              <div className="flex items-baseline justify-between text-emerald-600 dark:text-emerald-400">
-                <span>Already paid</span>
-                <span className="font-medium">{formatCurrency(table.session.paidAmount, currency)}</span>
-              </div>
-            )}
-            <div className="flex items-baseline justify-between border-t pt-1">
-              <span className="text-muted-foreground">Remaining</span>
-              <span className="font-bold">{formatCurrency(remaining, currency)}</span>
-            </div>
-          </div>
-        )}
-
-        <div className="space-y-1.5">
-          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Amount to collect</p>
-          <Input
-            type="number"
-            step="0.01"
-            min="0"
-            value={amount}
-            onChange={(e) => setAmount(e.target.value)}
-            placeholder={remaining.toFixed(2)}
-            className="h-9"
-          />
-          <p className="text-xs text-muted-foreground">Less than the remaining balance records a partial payment and keeps the table open.</p>
-        </div>
-
-        <div className="space-y-2">
-          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Payment method</p>
-          <div className="flex flex-wrap gap-1.5">
-            {PAYMENT_METHODS.map((m) => (
-              <button
-                key={m.value}
-                type="button"
-                onClick={() => setMethod(m.value)}
-                className={cn(
-                  "rounded-full px-3 py-1.5 text-sm font-medium transition-colors",
-                  method === m.value
-                    ? "bg-primary text-primary-foreground"
-                    : "bg-muted text-muted-foreground hover:bg-muted/80"
-                )}
-              >
-                {m.label}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <Textarea
-          placeholder={method === "SPLIT" ? "How was it split? e.g. Cash ₹200 + UPI ₹250" : "Note (optional)"}
-          value={note}
-          onChange={(e) => setNote(e.target.value)}
-          rows={2}
-        />
-
-        <DialogFooter className="sm:justify-between">
-          {table?.session?.status === "AWAITING_PAYMENT" && (
-            <Button
-              variant="outline"
-              className="text-destructive border-destructive/30 hover:bg-destructive/10"
-              onClick={handleReject}
-              disabled={submitting || rejecting}
-            >
-              {rejecting ? "Rejecting…" : "Reject Payment"}
-            </Button>
-          )}
-          <div className="flex gap-2">
-            <Button variant="outline" onClick={onClose} disabled={submitting || rejecting}>Cancel</Button>
-            <Button onClick={handleConfirm} disabled={submitting || rejecting}>
-              {submitting ? "Saving…" : "Confirm payment"}
-            </Button>
-          </div>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+      <p className="mt-1 truncate text-xs text-muted-foreground">
+        {session.customerName ? `${session.customerName} · ` : ""}
+        {formatCurrency(session.grandTotal, currency)}
+      </p>
+    </button>
   );
 }
 
