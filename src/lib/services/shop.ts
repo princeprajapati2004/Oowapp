@@ -96,6 +96,7 @@ export type ShopSettingsInput = Partial<{
   billNumberPrefix: string;
   billNumberNext: number;
   printFormat: PrintFormat;
+  autoPrintCompletedBill: boolean;
 }>;
 
 export async function updateShopSettings(shopId: string, data: ShopSettingsInput) {

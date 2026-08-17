@@ -15,6 +15,7 @@ import { OrderSettingsForm } from "@/components/admin/settings/order-settings-fo
 import { MenuSettingsForm } from "@/components/admin/settings/menu-settings-form";
 import { BillNumberingForm } from "@/components/admin/settings/bill-numbering-form";
 import { PrintSettingsForm } from "@/components/admin/settings/print-settings-form";
+import { PrinterSettingsPanel } from "@/components/admin/settings/printer-settings-panel";
 import { RestaurantSettingsForm } from "@/components/admin/settings/restaurant-settings-form";
 import { NotificationSettingsForm } from "@/components/admin/settings/notification-settings-form";
 import { SubscriptionBillingSection } from "@/components/admin/settings/subscription-billing-section";
@@ -148,6 +149,14 @@ export default async function SettingsPage() {
       title: "Print settings",
       description: "Default bill/receipt layout for every print action.",
       content: <PrintSettingsForm bare defaultFormat={shop.printFormat} />,
+    },
+    {
+      id: "printers",
+      title: "Printer devices",
+      description: "Connect real Bluetooth, Wi-Fi, or USB printers and manage the print queue.",
+      content: (
+        <PrinterSettingsPanel businessName={shop.businessName} initialAutoPrint={(shopAny.autoPrintCompletedBill as boolean) ?? false} />
+      ),
     },
     {
       id: "restaurant",

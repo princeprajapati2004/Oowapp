@@ -10,6 +10,11 @@ export const printSettingsSchema = z.object({
 });
 export type PrintSettingsInput = z.infer<typeof printSettingsSchema>;
 
+export const autoPrintSettingsSchema = z.object({
+  autoPrintCompletedBill: z.boolean(),
+});
+export type AutoPrintSettingsInput = z.infer<typeof autoPrintSettingsSchema>;
+
 export const businessInfoSchema = z.object({
   businessName: z.string().trim().min(2, "Business name is too short").max(100),
   businessType: z.enum(BUSINESS_TYPES),

@@ -57,6 +57,8 @@ import { cn } from "@/lib/utils";
 import { useOrderEvents } from "@/lib/hooks/use-order-events";
 import { useBillActions, type BillOrderData, type BillShopData } from "@/lib/hooks/use-bill-actions";
 import { PrintOnlyBill } from "@/components/printing/bill-document";
+import { printBill } from "@/lib/printing/print-service";
+import { printViaSystemDialog } from "@/lib/printing/adapters/system-print";
 import { buildWhatsAppUrl } from "@/lib/services/whatsapp";
 import { buildUpiPaymentUri } from "@/lib/utils/upi";
 import {
@@ -339,6 +341,24 @@ export function OrderDetailPage({
       : null;
 
   const billActions = useBillActions(toBillOrderData(order), shop);
+  const [printingBill, setPrintingBill] = useState(false);
+
+  async function handlePrintBill() {
+    if (printingBill) return; // guards against a double-click firing two print jobs
+    setPrintingBill(true);
+    try {
+      const outcome = await printBill(toBillOrderData(order), shop);
+      if (!outcome.ok) {
+        toast.error(outcome.error ?? "Print failed", {
+          action: { label: "Print via browser", onClick: () => printViaSystemDialog() },
+        });
+      } else if (outcome.printer && outcome.printer.connectionType !== "SYSTEM") {
+        toast.success(`Sent to ${outcome.printer.name}`);
+      }
+    } finally {
+      setPrintingBill(false);
+    }
+  }
 
   useEffect(() => {
     if (!shop.slug) return;
@@ -820,8 +840,14 @@ export function OrderDetailPage({
           }
           if (action === "receipt" || action === "print_bill") {
             return (
-              <Button key={action} className="flex-1 min-w-24 gap-1.5 bg-slate-800 hover:bg-slate-900 text-white" onClick={billActions.print}>
-                <Printer className="size-3.5" /> {actionLabel(action)}
+              <Button
+                key={action}
+                className="flex-1 min-w-24 gap-1.5 bg-slate-800 hover:bg-slate-900 text-white"
+                disabled={printingBill}
+                onClick={handlePrintBill}
+              >
+                {printingBill ? <Loader2 className="size-3.5 animate-spin" /> : <Printer className="size-3.5" />}
+                {actionLabel(action)}
               </Button>
             );
           }

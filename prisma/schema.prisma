@@ -51,6 +51,40 @@ enum PrintFormat {
   A3
 }
 
+// How a PrinterProfile is reached — see src/lib/printing.
+enum PrinterConnectionType {
+  BLUETOOTH
+  WIFI
+  USB
+  SYSTEM
+}
+
+// Actual verified connection state — never set to CONNECTED except after a
+// real handshake/test succeeds. Distinct from PrintJobStatus, which tracks
+// individual jobs, not the printer's live link.
+enum PrinterConnectionStatus {
+  DISCONNECTED
+  CONNECTING
+  CONNECTED
+  ERROR
+  UNSUPPORTED
+}
+
+enum PrintJobDocumentType {
+  BILL
+  KITCHEN_TICKET
+  TEST
+}
+
+enum PrintJobStatus {
+  PENDING
+  PRINTING
+  COMPLETED
+  FAILED
+  RETRYING
+  CANCELLED
+}
+
 enum ShopStatus {
   ACTIVE
   SUSPENDED
@@ -339,6 +373,9 @@ model Shop {
   // Default receipt/invoice layout for every "Print Bill" action — see
   // src/components/printing/bill-document.tsx.
   printFormat PrintFormat @default(A4_STYLE_1)
+  // OFF by default (print spec §28) — when on, completing payment on an
+  // order automatically queues a bill print on the default printer.
+  autoPrintCompletedBill Boolean @default(false)
 
   isPublished Boolean  @default(true)
 
@@ -382,6 +419,8 @@ model Shop {
   menuImports        MenuImport[]
   expenses           Expense[]
   kitchenTickets     KitchenTicket[]
+  printerProfiles    PrinterProfile[]
+  printJobs          PrintJob[]
 
   @@map("shops")
 }
@@ -773,6 +812,78 @@ model KotItem {
 
   @@index([kitchenTicketId])
   @@map("kot_items")
+}
+
+// A configured printer — one row per printer the owner has added in
+// Settings → Printer Settings, regardless of connection method. connection*
+// fields are only meaningful for their matching connectionType (e.g.
+// ipAddress/port only apply to WIFI). status/statusMessage/lastConnectedAt
+// reflect the last time this exact printer was actually verified — never
+// written to CONNECTED except after a real handshake succeeds (browser
+// GATT/USB connections are per-tab/per-session and can't be "connected" at
+// rest in the database; this stores the last known-good state and the
+// bluetoothDeviceId used to skip the chooser on a same-browser reconnect).
+model PrinterProfile {
+  id             String                  @id @default(cuid())
+  shopId         String
+  shop           Shop                    @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  name           String
+  connectionType PrinterConnectionType
+  paperSize      PrintFormat
+  purpose        String? // "Kitchen" | "Counter" | "Billing" | free text — informational routing hint
+  isDefault      Boolean                 @default(false)
+  isActive       Boolean                 @default(true)
+
+  // WIFI
+  ipAddress String?
+  port      Int?
+  protocol  String? // "RAW" | "ESC_POS"
+
+  // BLUETOOTH — deviceId is what navigator.bluetooth.getDevices() can match
+  // against for a same-browser reconnect without re-showing the chooser;
+  // it is not a secret and is meaningless outside the browser that paired it.
+  bluetoothDeviceId   String?
+  bluetoothDeviceName String?
+
+  // USB
+  usbVendorId  Int?
+  usbProductId Int?
+
+  status           PrinterConnectionStatus @default(DISCONNECTED)
+  statusMessage    String?
+  lastConnectedAt  DateTime?
+  lastTestAt       DateTime?
+  lastTestSuccess  Boolean?
+  createdAt        DateTime                @default(now())
+  updatedAt        DateTime                @updatedAt
+
+  printJobs PrintJob[]
+
+  @@index([shopId])
+  @@map("printer_profiles")
+}
+
+// One row per print attempt — the queue. Printing must never block on or
+// duplicate Order/Payment records (print spec's own "printing is read-only"
+// rule), so this is entirely separate from Order/OrderStatusEvent.
+model PrintJob {
+  id           String                @id @default(cuid())
+  shopId       String
+  shop         Shop                  @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  printerId    String?
+  printer      PrinterProfile?       @relation(fields: [printerId], references: [id], onDelete: SetNull)
+  documentType PrintJobDocumentType
+  orderId      String?
+  format       PrintFormat
+  status       PrintJobStatus        @default(PENDING)
+  attempts     Int                   @default(0)
+  errorMessage String?
+  createdAt    DateTime              @default(now())
+  updatedAt    DateTime              @updatedAt
+
+  @@index([shopId])
+  @@index([printerId])
+  @@map("print_jobs")
 }
 
 // Append-only status change log — written each time an order's status

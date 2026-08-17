@@ -12,6 +12,7 @@ import {
   billNumberingSchema,
   billNumberResetSchema,
   printSettingsSchema,
+  autoPrintSettingsSchema,
 } from "@/lib/validation/shop-settings";
 
 export async function GET() {
@@ -50,6 +51,8 @@ export async function PATCH(request: Request) {
       data = billNumberResetSchema.parse(rest);
     } else if (section === "print") {
       data = printSettingsSchema.parse(rest);
+    } else if (section === "autoPrint") {
+      data = autoPrintSettingsSchema.parse(rest);
     } else return NextResponse.json({ error: "Unknown settings section" }, { status: 400 });
 
     const shop = await updateShopSettings(session.shopId, data);

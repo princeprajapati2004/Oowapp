@@ -13,7 +13,8 @@
     "db:migrate": "npm run predb && prisma migrate dev",
     "db:studio": "npm run predb && prisma studio",
     "db:seed": "npx tsx scripts/seed-super-admin.ts",
-    "db:seed:plans": "npx tsx scripts/seed-plans-features.ts"
+    "db:seed:plans": "npx tsx scripts/seed-plans-features.ts",
+    "bridge": "node bridge/server.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.6.0",
@@ -56,6 +57,8 @@
     "@types/qrcode": "^1.5.6",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "@types/w3c-web-usb": "^1.0.14",
+    "@types/web-bluetooth": "^0.0.21",
     "@types/web-push": "^3.6.4",
     "dotenv": "^17.4.2",
     "eslint": "^9",
