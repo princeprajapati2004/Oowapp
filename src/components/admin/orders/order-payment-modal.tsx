@@ -82,6 +82,10 @@ export function OrderPaymentModal({
       toast.error("Enter a valid payment amount");
       return;
     }
+    if (amountNum > remaining + 0.005) {
+      toast.error(`Amount can't exceed the remaining balance of ${formatCurrency(remaining, currency)}`);
+      return;
+    }
     setSaving(true);
     try {
       const updated = await api.patch<AdminOrderEventOrder>(`/api/admin/orders/${order.id}`, {

@@ -816,7 +816,10 @@ export function OrderDetailPage({
       </Badge>
 
       {/* Action area */}
-      <div className="sticky bottom-0 -mx-4 sm:mx-0 border-t sm:border sm:rounded-xl bg-background sm:bg-card px-4 py-3 flex flex-wrap items-center gap-2 print:hidden">
+      <div
+        className="sticky bottom-0 -mx-4 sm:mx-0 border-t sm:border sm:rounded-xl bg-background sm:bg-card px-4 pt-3 flex flex-wrap items-center gap-2 print:hidden"
+        style={{ paddingBottom: "calc(0.75rem + env(safe-area-inset-bottom))" }}
+      >
         {actions.map((action) => {
           if (action === "confirm") {
             return (

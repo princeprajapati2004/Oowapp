@@ -29,6 +29,7 @@ export function OrderCard({
   const paymentStatus = (order.paymentStatus ?? "PENDING") as PaymentStatus;
   const total = order.discountedTotal ?? order.grandTotal;
   const { date, dayTime } = formatOrderDateParts(order.createdAt);
+  const orderType = deriveOrderType(order);
 
   return (
     <Link
@@ -38,6 +39,9 @@ export function OrderCard({
       <p className="font-mono text-sm font-semibold">{order.billNumber}</p>
       <p className="mt-0.5 text-xs text-muted-foreground">{date}</p>
       <p className="text-xs text-muted-foreground">{dayTime}</p>
+      {orderType === "Dine-in" && order.tableNumber && (
+        <p className="mt-1 text-xs font-medium text-foreground">Table {order.tableNumber}</p>
+      )}
 
       <div className="mt-2.5 flex items-center justify-between gap-3">
         <p className="min-w-0 truncate text-sm font-medium">{order.customerName || "Walk-in Customer"}</p>
@@ -55,7 +59,7 @@ export function OrderCard({
             {deriveOrderSource(order)}
           </Badge>
           <Badge variant="outline" className="text-[11px]">
-            {deriveOrderType(order)}
+            {orderType}
           </Badge>
         </div>
         <div className="flex flex-wrap items-center gap-1.5">
