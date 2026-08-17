@@ -320,6 +320,9 @@ export function OrderDetailPage({
             <MoreHorizontal className="size-4" />
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-48">
+            <DropdownMenuItem disabled={printingBill} onClick={handlePrintBill}>
+              {printingBill ? <Loader2 className="size-4 animate-spin" /> : <Printer className="size-4" />} Print Receipt
+            </DropdownMenuItem>
             <DropdownMenuItem disabled={billActions.downloadingPdf} onClick={billActions.downloadPdf}>
               <Download className="size-4" /> Download PDF
             </DropdownMenuItem>
@@ -565,19 +568,6 @@ export function OrderDetailPage({
                 onClick={() => setPaymentOpen(true)}
               >
                 <CreditCard className="size-3.5" /> {actionLabel(action)}
-              </Button>
-            );
-          }
-          if (action === "receipt" || action === "print_bill") {
-            return (
-              <Button
-                key={action}
-                className="flex-1 min-w-24 gap-1.5 bg-slate-800 hover:bg-slate-900 text-white"
-                disabled={printingBill}
-                onClick={handlePrintBill}
-              >
-                {printingBill ? <Loader2 className="size-3.5 animate-spin" /> : <Printer className="size-3.5" />}
-                {actionLabel(action)}
               </Button>
             );
           }

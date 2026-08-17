@@ -153,7 +153,6 @@ export const CANCEL_REASONS = [
 ] as const;
 
 export type PrimaryAction =
-  | "receipt"
   | "confirm"
   | "start_processing"
   | "mark_ready"
@@ -161,11 +160,9 @@ export type PrimaryAction =
   | "mark_delivered"
   | "complete"
   | "payment"
-  | "print_bill"
   | "share_bill";
 
 const ACTION_LABELS: Record<PrimaryAction, string> = {
-  receipt: "Receipt",
   confirm: "Confirm Order",
   start_processing: "Start Processing",
   mark_ready: "Mark Ready",
@@ -173,7 +170,6 @@ const ACTION_LABELS: Record<PrimaryAction, string> = {
   mark_delivered: "Mark Delivered",
   complete: "Complete Order",
   payment: "Add/confirm Payment",
-  print_bill: "Print Bill",
   share_bill: "Share Bill",
 };
 
@@ -189,24 +185,24 @@ export function actionLabel(action: PrimaryAction): string {
 export function getPrimaryActions(order: OrderStatusFacts): PrimaryAction[] {
   switch (order.status) {
     case "PENDING":
-      return ["receipt", "confirm"];
+      return ["confirm"];
     case "CONFIRMED":
-      return ["receipt", "start_processing", "payment"];
+      return ["start_processing", "payment"];
     case "PREPARING":
-      return ["receipt", "payment"];
+      return ["payment"];
     case "READY":
       return isDeliveryOrder(order)
-        ? ["receipt", "out_for_delivery", "payment"]
-        : ["receipt", "complete", "payment"];
+        ? ["out_for_delivery", "payment"]
+        : ["complete", "payment"];
     case "OUT_FOR_DELIVERY":
-      return ["receipt", "mark_delivered", "payment"];
+      return ["mark_delivered", "payment"];
     case "DELIVERED":
-      return ["print_bill", "share_bill", "complete"];
+      return ["share_bill", "complete"];
     case "COMPLETED":
-      return ["print_bill", "share_bill"];
+      return ["share_bill"];
     case "CANCELLED":
-      return ["print_bill", "share_bill"];
+      return ["share_bill"];
     default:
-      return ["receipt"];
+      return [];
   }
 }
