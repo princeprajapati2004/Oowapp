@@ -160,7 +160,6 @@ export type PrimaryAction =
   | "out_for_delivery"
   | "mark_delivered"
   | "complete"
-  | "tracking"
   | "payment"
   | "print_bill"
   | "share_bill";
@@ -173,7 +172,6 @@ const ACTION_LABELS: Record<PrimaryAction, string> = {
   out_for_delivery: "Out for Delivery",
   mark_delivered: "Mark Delivered",
   complete: "Complete Order",
-  tracking: "Tracking",
   payment: "Add/confirm Payment",
   print_bill: "Print Bill",
   share_bill: "Share Bill",
@@ -195,7 +193,7 @@ export function getPrimaryActions(order: OrderStatusFacts): PrimaryAction[] {
     case "CONFIRMED":
       return ["receipt", "start_processing", "payment"];
     case "PREPARING":
-      return ["receipt", "tracking", "payment"];
+      return ["receipt", "payment"];
     case "READY":
       return isDeliveryOrder(order)
         ? ["receipt", "out_for_delivery", "payment"]
