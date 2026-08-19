@@ -2,32 +2,22 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import Image from "next/image";
 import { useRouter } from "next/navigation";
 import QRCode from "qrcode";
 import { toast } from "sonner";
 import {
   ArrowLeft,
-  User,
-  MapPin,
-  Hash,
-  ShoppingBag,
-  CreditCard,
+  MoreHorizontal,
   Loader2,
   Printer,
-  Share2,
   Download,
   Barcode,
-  Truck,
-  MoreHorizontal,
   Trash2,
-  X,
+  Ban,
   PartyPopper,
-  MessageCircle,
-  CheckCircle2,
+  X,
 } from "lucide-react";
 import { Button, buttonVariants } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -50,39 +40,22 @@ import {
   STATUS_LABELS,
   STATUS_BADGE_CLASS,
   PAYMENT_LABELS,
-  PAYMENT_BADGE_CLASS,
   deriveOrderType,
   paymentMethodLabel,
-  actionLabel,
-  getPrimaryActions,
+  getNextStatus,
+  canCancel,
   type OrderStatus,
   type PaymentStatus,
-  type PrimaryAction,
 } from "@/lib/order-status";
 import type { AdminOrderEventOrder } from "@/lib/server/order-events";
 import { OrderItemsSummary } from "./order-items-summary";
 import { OrderCancelDialog } from "./order-cancel-dialog";
 import { OrderPaymentModal } from "./order-payment-modal";
-
-const DIRECT_STATUS_ACTIONS: Partial<Record<PrimaryAction, OrderStatus>> = {
-  confirm: "CONFIRMED",
-  start_processing: "PREPARING",
-  mark_ready: "READY",
-  out_for_delivery: "OUT_FOR_DELIVERY",
-  mark_delivered: "DELIVERED",
-  complete: "COMPLETED",
-};
-
-// Each workflow step gets its own color so the footer reads at a glance
-// instead of every step looking the same — same idea as STATUS_BADGE_CLASS's
-// distinct-hue-per-status, applied to the action buttons that drive it.
-const ACTION_COLOR_CLASS: Partial<Record<PrimaryAction, string>> = {
-  start_processing: "bg-blue-600 hover:bg-blue-700 text-white",
-  mark_ready: "bg-purple-600 hover:bg-purple-700 text-white",
-  out_for_delivery: "bg-cyan-600 hover:bg-cyan-700 text-white",
-  mark_delivered: "bg-orange-600 hover:bg-orange-700 text-white",
-  complete: "bg-teal-600 hover:bg-teal-700 text-white",
-};
+import { CustomerDetailsCard } from "./customer-details-card";
+import { PaymentDetailsCard } from "./payment-details-card";
+import { PaymentMethodsCard } from "./payment-methods-card";
+import { OrderActionBar } from "./order-action-bar";
+import { OrderRoundsSection } from "./order-rounds-section";
 
 function toBillOrderData(order: AdminOrderEventOrder): BillOrderData {
   return {
@@ -143,15 +116,8 @@ export function OrderDetailPage({
   const status = order.status as OrderStatus;
   const paymentStatus = (order.paymentStatus ?? "PENDING") as PaymentStatus;
   const orderType = deriveOrderType(order);
-  // getPrimaryActions() derives the action list from order.status alone —
-  // "payment" would otherwise keep showing at every status once the order
-  // happens to already be fully paid. Payment status and order status are
-  // independent, so that filter has to happen here, not in the shared
-  // status-transition helper.
-  const actions = getPrimaryActions({ ...order, status }).filter(
-    (action) => action !== "payment" || paymentStatus !== "PAID"
-  );
-  const canCancelNow = !["DELIVERED", "COMPLETED", "CANCELLED"].includes(status);
+  const nextStatus = getNextStatus({ ...order, status });
+  const canCancelNow = canCancel({ ...order, status });
   const { date: orderDateLabel, dayTime: orderDayTimeLabel } = formatOrderDateParts(order.createdAt);
   const orderTotal = order.discountedTotal ?? order.grandTotal;
   const amountDue = Math.max(0, orderTotal - (order.paidAmount ?? 0));
@@ -215,17 +181,15 @@ export function OrderDetailPage({
     setOrder(updated);
   }
 
-  async function runStatusAction(action: PrimaryAction) {
-    const nextStatus = DIRECT_STATUS_ACTIONS[action];
-    if (!nextStatus) return;
+  async function advanceStatus(next: OrderStatus) {
     setActionLoading(true);
     try {
       const updated = await api.patch<AdminOrderEventOrder>(`/api/admin/orders/${order.id}`, {
         action: "status",
-        status: nextStatus,
+        status: next,
       });
       applyUpdate(updated);
-      toast.success(`Marked as ${STATUS_LABELS[nextStatus]}`);
+      toast.success(`Marked as ${STATUS_LABELS[next]}`);
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : "Couldn't update the order");
     } finally {
@@ -253,7 +217,10 @@ export function OrderDetailPage({
   }
 
   function shareReceiptOnWhatsApp() {
-    if (!order.customerPhone) return;
+    if (!order.customerPhone) {
+      toast.error("This order has no customer phone number to share with");
+      return;
+    }
     const total = order.discountedTotal ?? order.grandTotal;
     const lines = [
       `*Receipt — ${shop.businessName}*`,
@@ -287,323 +254,167 @@ export function OrderDetailPage({
     }
   }
 
+  // PENDING already gets Cancel Order as a primary bottom-bar button — only
+  // surface it in the overflow menu for later, still-cancellable states so
+  // the action isn't offered twice.
+  const showCancelInMenu = canCancelNow && status !== "PENDING";
+
   return (
     <>
-    <div className="max-w-3xl mx-auto space-y-4 print:hidden">
-      {showCreatedBanner && (
-        <div className="flex items-center justify-between gap-3 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-emerald-800 print:hidden dark:border-emerald-900/50 dark:bg-emerald-900/20 dark:text-emerald-400">
-          <div className="flex items-center gap-2">
-            <PartyPopper className="size-5 shrink-0" />
-            <p className="text-sm font-medium">Order created — here&apos;s the order to review, print, or share.</p>
+      <div className="-m-4 bg-background print:hidden md:-m-6">
+        <div className="sticky top-0 z-20 border-b bg-background">
+          <div className="mx-auto flex h-14 max-w-[620px] items-center justify-between px-3 sm:px-4">
+            <div className="flex min-w-0 items-center gap-2">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="shrink-0"
+                render={<Link href="/admin/orders" />}
+                nativeButton={false}
+                aria-label="Back to Orders"
+              >
+                <ArrowLeft className="size-5" />
+              </Button>
+              <h1 className="truncate text-base font-semibold">Order Details</h1>
+            </div>
+
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                className={cn(buttonVariants({ variant: "ghost", size: "icon" }), "h-9 w-9 shrink-0")}
+                aria-label="More actions"
+              >
+                <MoreHorizontal className="size-5" />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-48">
+                <DropdownMenuItem disabled={printingBill} onClick={handlePrintBill}>
+                  {printingBill ? <Loader2 className="size-4 animate-spin" /> : <Printer className="size-4" />} Print Receipt
+                </DropdownMenuItem>
+                <DropdownMenuItem disabled={billActions.downloadingPdf} onClick={billActions.downloadPdf}>
+                  <Download className="size-4" /> Download PDF
+                </DropdownMenuItem>
+                {shop.enableOrderBarcodeLabels && (
+                  <DropdownMenuItem render={<a href={`/admin/orders/${order.id}/barcodes`} target="_blank" rel="noopener noreferrer" />}>
+                    <Barcode className="size-4" /> Print Barcode
+                  </DropdownMenuItem>
+                )}
+                {showCancelInMenu && (
+                  <DropdownMenuItem variant="destructive" onClick={() => setCancelOpen(true)}>
+                    <Ban className="size-4" /> Cancel Order
+                  </DropdownMenuItem>
+                )}
+                <DropdownMenuItem variant="destructive" disabled={deletingOrder} onClick={() => setShowDeleteConfirm(true)}>
+                  <Trash2 className="size-4" /> Delete Order
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
-          <button
-            onClick={() => setShowCreatedBanner(false)}
-            aria-label="Dismiss"
-            className="shrink-0 text-emerald-700 hover:text-emerald-900 dark:text-emerald-400 dark:hover:text-emerald-300"
-          >
-            <X className="size-4" />
-          </button>
-        </div>
-      )}
-
-      {/* Back + page title + more-actions menu — screen chrome, hidden on print */}
-      <div className="flex items-center justify-between gap-3 print:hidden">
-        <div className="flex min-w-0 items-center gap-3">
-          <Button variant="ghost" size="icon" className="shrink-0" render={<Link href="/admin/orders" />} nativeButton={false} aria-label="Back to Orders">
-            <ArrowLeft className="size-4" />
-          </Button>
-          <h1 className="truncate text-base font-semibold">Order Details</h1>
         </div>
 
-        <DropdownMenu>
-          <DropdownMenuTrigger className={cn(buttonVariants({ variant: "outline", size: "icon" }), "h-9 w-9 shrink-0")} aria-label="More actions">
-            <MoreHorizontal className="size-4" />
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-48">
-            <DropdownMenuItem disabled={printingBill} onClick={handlePrintBill}>
-              {printingBill ? <Loader2 className="size-4 animate-spin" /> : <Printer className="size-4" />} Print Receipt
-            </DropdownMenuItem>
-            <DropdownMenuItem disabled={billActions.downloadingPdf} onClick={billActions.downloadPdf}>
-              <Download className="size-4" /> Download PDF
-            </DropdownMenuItem>
-            {shop.enableOrderBarcodeLabels && (
-              <DropdownMenuItem render={<a href={`/admin/orders/${order.id}/barcodes`} target="_blank" rel="noopener noreferrer" />}>
-                <Barcode className="size-4" /> Print Barcode
-              </DropdownMenuItem>
-            )}
-            <DropdownMenuItem variant="destructive" disabled={deletingOrder} onClick={() => setShowDeleteConfirm(true)}>
-              <Trash2 className="size-4" /> Delete Order
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </div>
-
-      {/* Order identification */}
-      <div>
-        <div className="flex items-center gap-2 flex-wrap">
-          <h2 className="text-xl font-bold font-mono">{order.billNumber}</h2>
-          {order.tokenNumber ? <span className="text-sm font-medium text-muted-foreground">Token #{order.tokenNumber}</span> : null}
-          <span className={cn("inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium", STATUS_BADGE_CLASS[status])}>
-            {STATUS_LABELS[status]}
-          </span>
-        </div>
-        <p className="text-sm text-muted-foreground">{orderDateLabel}</p>
-        <p className="text-sm text-muted-foreground">{orderDayTimeLabel}</p>
-      </div>
-
-      {status === "CANCELLED" && order.cancelReason && (
-        <div className="rounded-xl border border-red-200 bg-red-50 dark:border-red-900/50 dark:bg-red-900/20 px-4 py-3 text-sm">
-          <p className="font-medium text-red-700 dark:text-red-400">Cancelled</p>
-          <p className="text-red-600/80 dark:text-red-400/80 text-xs mt-0.5">{order.cancelReason}</p>
-          {order.cancelledAt && <p className="text-red-600/60 dark:text-red-400/60 text-xs">{new Date(order.cancelledAt).toLocaleString()}</p>}
-        </div>
-      )}
-
-      {/* Customer Details */}
-      <div className="rounded-xl border bg-card overflow-hidden">
-        <div className="px-4 py-2.5 bg-muted/30 border-b flex items-center gap-1.5">
-          <User className="size-3.5 text-muted-foreground" />
-          <p className="font-semibold text-xs uppercase tracking-wide text-muted-foreground">Customer Details</p>
-        </div>
-        <div className="px-4 py-3 space-y-1.5 text-sm">
-          <div className="flex justify-between">
-            <span className="text-muted-foreground">Name</span>
-            <span className="font-medium">{order.customerName || "Walk-in Customer"}</span>
-          </div>
-          {order.customerPhone && (
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Phone</span>
-              <span className="font-medium">{order.customerPhone}</span>
+        <div className="mx-auto max-w-[620px] space-y-3 px-3 pt-3 pb-4 sm:px-4 sm:pt-4">
+          {showCreatedBanner && (
+            <div className="flex items-center justify-between gap-3 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-emerald-800 dark:border-emerald-900/50 dark:bg-emerald-900/20 dark:text-emerald-400">
+              <div className="flex items-center gap-2">
+                <PartyPopper className="size-5 shrink-0" />
+                <p className="text-sm font-medium">Order created — here&apos;s the order to review, print, or share.</p>
+              </div>
+              <button onClick={() => setShowCreatedBanner(false)} aria-label="Dismiss" className="shrink-0 text-emerald-700 hover:text-emerald-900 dark:text-emerald-400 dark:hover:text-emerald-300">
+                <X className="size-4" />
+              </button>
             </div>
           )}
-          <div className="flex justify-between">
-            <span className="text-muted-foreground">Order Type</span>
-            <span className="font-medium">{orderType}</span>
-          </div>
-        </div>
-      </div>
 
-      {/* Payment Details */}
-      <div className="rounded-xl border bg-card overflow-hidden">
-        <div className="px-4 py-2.5 bg-muted/30 border-b flex items-center gap-1.5">
-          <CreditCard className="size-3.5 text-muted-foreground" />
-          <p className="font-semibold text-xs uppercase tracking-wide text-muted-foreground">Payment Details</p>
-        </div>
-        <div className="px-4 py-3 space-y-1.5 text-sm">
-          <div className="flex justify-between items-center">
-            <span className="text-muted-foreground">Status</span>
-            <span className={cn("inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium", PAYMENT_BADGE_CLASS[paymentStatus])}>
-              {PAYMENT_LABELS[paymentStatus]}
+          <div className="flex flex-wrap items-center gap-2 px-1">
+            <span className="font-mono text-sm font-semibold">{order.billNumber}</span>
+            {order.tokenNumber ? (
+              <span className="text-xs font-medium text-muted-foreground">Token #{order.tokenNumber}</span>
+            ) : null}
+            <span className={cn("inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium", STATUS_BADGE_CLASS[status])}>
+              {STATUS_LABELS[status]}
             </span>
           </div>
-          <div className="flex justify-between">
-            <span className="text-muted-foreground">Method</span>
-            <span className="font-medium">{paymentMethodLabel(order.paymentMethod)}</span>
+          <div className="-mt-1 px-1">
+            <p className="text-sm text-muted-foreground">{orderDateLabel}</p>
+            <p className="text-sm text-muted-foreground">{orderDayTimeLabel}</p>
           </div>
-          <div className="flex justify-between">
-            <span className="text-muted-foreground">Transaction Ref</span>
-            <span className="font-medium font-mono text-xs">{order.transactionReference || "N/A"}</span>
-          </div>
-          {(paymentStatus === "PENDING" || paymentStatus === "PARTIALLY_PAID") && (
-            <div className="border-t pt-1.5 mt-1.5 space-y-1.5">
-              {paymentStatus === "PARTIALLY_PAID" && (
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Paid Amount</span>
-                  <span className="font-medium">{formatCurrency(order.paidAmount ?? 0, currency)}</span>
-                </div>
-              )}
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">{paymentStatus === "PARTIALLY_PAID" ? "Remaining" : "Amount Due"}</span>
-                <span className="font-semibold text-amber-600 dark:text-amber-400">
-                  {formatCurrency(amountDue, currency)}
-                </span>
-              </div>
+
+          {status === "CANCELLED" && order.cancelReason && (
+            <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm dark:border-red-900/50 dark:bg-red-900/20">
+              <p className="font-medium text-red-700 dark:text-red-400">Cancelled</p>
+              <p className="mt-0.5 text-xs text-red-600/80 dark:text-red-400/80">{order.cancelReason}</p>
+              {order.cancelledAt && <p className="text-xs text-red-600/60 dark:text-red-400/60">{new Date(order.cancelledAt).toLocaleString()}</p>}
             </div>
           )}
-        </div>
-      </div>
 
-      {/* Delivery / Table */}
-      <div className="rounded-xl border bg-card overflow-hidden">
-        <div className="px-4 py-2.5 bg-muted/30 border-b flex items-center gap-1.5">
-          {orderType === "Delivery" ? <Truck className="size-3.5 text-muted-foreground" /> : <Hash className="size-3.5 text-muted-foreground" />}
-          <p className="font-semibold text-xs uppercase tracking-wide text-muted-foreground">
-            {orderType === "Delivery" ? "Delivery Address" : orderType === "Dine-in" ? "Table" : "Fulfillment"}
+          <CustomerDetailsCard
+            customerName={order.customerName}
+            customerPhone={order.customerPhone}
+            orderType={orderType}
+            tableNumber={order.tableNumber}
+            deliveryAddress={order.deliveryAddress}
+          />
+
+          <PaymentDetailsCard
+            paymentStatus={paymentStatus}
+            paymentMethod={order.paymentMethod ?? null}
+            paidAmount={order.paidAmount ?? null}
+            amountDue={amountDue}
+            currency={currency}
+          />
+
+          {order.tableSessionId && <OrderRoundsSection tableSessionId={order.tableSessionId} currency={currency} />}
+
+          <OrderItemsSummary
+            items={order.items}
+            subtotal={order.subtotal}
+            taxTotal={order.taxTotal}
+            taxBreakdown={(order.taxBreakdown as { id: string; name: string; amount: number }[]) ?? []}
+            discountType={order.discountType}
+            discountValue={order.discountValue}
+            discountedTotal={order.discountedTotal}
+            discountReason={order.discountReason}
+            currency={currency}
+          />
+
+          <PaymentMethodsCard
+            isPaid={paymentStatus === "PAID"}
+            paidAmount={order.paidAmount ?? orderTotal}
+            paymentMethod={order.paymentMethod ?? null}
+            transactionReference={order.transactionReference}
+            currency={currency}
+            upiId={shop.upiId}
+            businessName={shop.businessName}
+            bankAccountNumber={shop.bankAccountNumber}
+            bankName={shop.bankName}
+            bankIfsc={shop.bankIfsc}
+            acceptCash={shop.acceptCash}
+            paymentQrImageUrl={shop.paymentQrImageUrl}
+            paymentQr={paymentQr}
+            amountDue={amountDue}
+            payUri={payUri}
+            canSendWhatsApp={!!(order.customerPhone && shop.upiId && payUri)}
+            onSendWhatsApp={sendPaymentQrOnWhatsApp}
+          />
+
+          <p className="pb-1 text-center text-xs text-muted-foreground">
+            Order ID: {order.id}
           </p>
         </div>
-        <div className="px-4 py-3 text-sm">
-          {orderType === "Delivery" ? (
-            <p className="flex items-start gap-2">
-              <MapPin className="size-3.5 text-muted-foreground shrink-0 mt-0.5" />
-              <span>{order.deliveryAddress}</span>
-            </p>
-          ) : orderType === "Dine-in" ? (
-            <p className="font-medium">Table {order.tableNumber}</p>
-          ) : (
-            <p className="flex items-center gap-2 text-muted-foreground">
-              <ShoppingBag className="size-3.5" /> Takeaway
-            </p>
-          )}
+
+        <div className="mx-auto max-w-[620px] px-3 sm:px-4">
+          <OrderActionBar
+            status={status}
+            paymentStatus={paymentStatus}
+            nextStatus={nextStatus}
+            busy={actionLoading}
+            printing={printingBill}
+            onCancel={() => setCancelOpen(true)}
+            onConfirm={() => nextStatus && advanceStatus(nextStatus)}
+            onAdvance={advanceStatus}
+            onPayment={() => setPaymentOpen(true)}
+            onPrint={handlePrintBill}
+            onShareReceipt={shareReceiptOnWhatsApp}
+          />
         </div>
-      </div>
-
-      <OrderItemsSummary
-        items={order.items}
-        subtotal={order.subtotal}
-        taxTotal={order.taxTotal}
-        taxBreakdown={(order.taxBreakdown as { id: string; name: string; amount: number }[]) ?? []}
-        discountType={order.discountType}
-        discountValue={order.discountValue}
-        discountedTotal={order.discountedTotal}
-        discountReason={order.discountReason}
-        currency={currency}
-      />
-
-      {paymentStatus === "PAID" ? (
-        <div className="rounded-xl border border-emerald-200 bg-emerald-50 overflow-hidden dark:border-emerald-900/50 dark:bg-emerald-900/20">
-          <div className="px-4 py-3 flex items-center gap-2">
-            <CheckCircle2 className="size-5 shrink-0 text-emerald-600 dark:text-emerald-400" />
-            <p className="font-semibold text-sm text-emerald-800 dark:text-emerald-400">Payment Received</p>
-          </div>
-          <div className="px-4 pb-3 space-y-1 text-sm">
-            <div className="flex justify-between">
-              <span className="text-emerald-700/70 dark:text-emerald-400/70">Amount</span>
-              <span className="font-medium text-emerald-800 dark:text-emerald-400">{formatCurrency(order.paidAmount ?? orderTotal, currency)}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-emerald-700/70 dark:text-emerald-400/70">Method</span>
-              <span className="font-medium text-emerald-800 dark:text-emerald-400">{paymentMethodLabel(order.paymentMethod)}</span>
-            </div>
-            {order.transactionReference && (
-              <div className="flex justify-between">
-                <span className="text-emerald-700/70 dark:text-emerald-400/70">Transaction Ref</span>
-                <span className="font-medium font-mono text-xs text-emerald-800 dark:text-emerald-400">{order.transactionReference}</span>
-              </div>
-            )}
-          </div>
-        </div>
-      ) : (shop.upiId || shop.bankAccountNumber || shop.acceptCash || shop.paymentQrImageUrl) && (
-        <div className="rounded-xl border bg-card overflow-hidden">
-          <div className="px-4 py-2.5 bg-muted/30 border-b">
-            <p className="font-semibold text-xs uppercase tracking-wide text-muted-foreground">Payment Methods</p>
-          </div>
-          <div className="px-4 py-3 space-y-2 text-sm">
-            {shop.upiId && (
-              <div className="flex items-center gap-2">
-                <span className="text-muted-foreground">UPI ID</span>
-                <span className="font-medium">{shop.upiId}</span>
-              </div>
-            )}
-            {shop.bankAccountNumber && (
-              <div className="rounded-lg bg-muted/40 px-3 py-2 text-xs space-y-0.5">
-                <p className="font-medium text-foreground">Bank Transfer</p>
-                {shop.bankName && <p className="text-muted-foreground">{shop.bankName}</p>}
-                <p className="text-muted-foreground">A/C: {shop.bankAccountNumber}</p>
-                {shop.bankIfsc && <p className="text-muted-foreground">IFSC: {shop.bankIfsc}</p>}
-              </div>
-            )}
-            {shop.acceptCash && (
-              <div className="flex items-center gap-2 text-muted-foreground">
-                <span className="size-2 rounded-full bg-emerald-500 inline-block shrink-0" />
-                <span>Cash accepted</span>
-              </div>
-            )}
-            {paymentQr ? (
-              <div className="flex items-center gap-3 rounded-lg bg-muted/40 px-3 py-2">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={paymentQr} alt="Scan to pay" width={64} height={64} className="rounded-md border bg-white object-contain p-1" />
-                <p className="text-xs text-muted-foreground">
-                  Scan to pay <span className="font-semibold text-foreground">{formatCurrency(amountDue, currency)}</span> via {shop.businessName}
-                </p>
-              </div>
-            ) : (
-              shop.paymentQrImageUrl && (
-                <div className="flex items-center gap-3 rounded-lg bg-muted/40 px-3 py-2">
-                  <Image src={shop.paymentQrImageUrl} alt="Scan to pay" width={64} height={64} unoptimized className="rounded-md border bg-white object-contain p-1" />
-                  <p className="text-xs text-muted-foreground">Scan to pay via {shop.businessName}</p>
-                </div>
-              )
-            )}
-            {payUri && (
-              <Button variant="outline" className="w-full gap-1.5" render={<a href={payUri} />} nativeButton={false}>
-                <CreditCard className="size-3.5" /> Pay via UPI
-              </Button>
-            )}
-            {order.customerPhone && shop.upiId && (
-              <Button
-                className="w-full gap-1.5 bg-[#25d366] hover:bg-[#1ebc57] text-white print:hidden"
-                onClick={sendPaymentQrOnWhatsApp}
-              >
-                <MessageCircle className="size-4" /> Send Payment QR & Link
-              </Button>
-            )}
-          </div>
-        </div>
-      )}
-
-      <Badge variant="secondary" className="text-xs print:hidden">
-        Order ID: {order.id}
-      </Badge>
-
-      {/* Action area */}
-      <div
-        className="sticky bottom-0 -mx-4 sm:mx-0 border-t sm:border sm:rounded-xl bg-background sm:bg-card px-4 pt-3 flex flex-wrap items-center gap-2 print:hidden"
-        style={{ paddingBottom: "calc(0.75rem + env(safe-area-inset-bottom))" }}
-      >
-        {actions.map((action) => {
-          if (action === "confirm") {
-            return (
-              <Button key={action} className="flex-1 min-w-28 gap-1.5" disabled={actionLoading} onClick={() => runStatusAction(action)}>
-                {actionLoading && <Loader2 className="size-3.5 animate-spin" />}
-                {actionLabel(action)}
-              </Button>
-            );
-          }
-          if (action === "payment") {
-            return (
-              <Button
-                key={action}
-                className="flex-1 min-w-24 gap-1.5 bg-amber-500 hover:bg-amber-600 text-white"
-                disabled={actionLoading}
-                onClick={() => setPaymentOpen(true)}
-              >
-                <CreditCard className="size-3.5" /> {actionLabel(action)}
-              </Button>
-            );
-          }
-          if (action === "share_bill") {
-            return (
-              <Button key={action} variant="outline" className="flex-1 min-w-24 gap-1.5" onClick={billActions.share}>
-                <Share2 className="size-3.5" /> {actionLabel(action)}
-              </Button>
-            );
-          }
-          return (
-            <Button
-              key={action}
-              variant={ACTION_COLOR_CLASS[action] ? undefined : "secondary"}
-              className={cn("flex-1 min-w-28 gap-1.5", ACTION_COLOR_CLASS[action])}
-              disabled={actionLoading}
-              onClick={() => runStatusAction(action)}
-            >
-              {actionLoading && <Loader2 className="size-3.5 animate-spin" />}
-              {actionLabel(action)}
-            </Button>
-          );
-        })}
-        {paymentStatus === "PAID" && order.customerPhone && (
-          <Button
-            className="flex-1 min-w-24 gap-1.5 bg-[#25d366] hover:bg-[#1ebc57] text-white"
-            onClick={shareReceiptOnWhatsApp}
-          >
-            <MessageCircle className="size-4" /> Share Receipt
-          </Button>
-        )}
-        {canCancelNow && (
-          <Button variant="ghost" size="sm" className="w-full text-destructive hover:bg-destructive/10 hover:text-destructive" onClick={() => setCancelOpen(true)}>
-            Cancel Order
-          </Button>
-        )}
       </div>
 
       <OrderCancelDialog order={order} open={cancelOpen} onOpenChange={setCancelOpen} onCancelled={applyUpdate} />
@@ -618,8 +429,8 @@ export function OrderDetailPage({
         destructive
         onConfirm={handleDeleteOrder}
       />
-    </div>
-    <PrintOnlyBill format={shop.printFormat} order={toBillOrderData(order)} shop={shop} />
+
+      <PrintOnlyBill format={shop.printFormat} order={toBillOrderData(order)} shop={shop} />
     </>
   );
 }
