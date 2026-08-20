@@ -238,29 +238,27 @@ function PaymentOptions({
 
   return (
     <div className="space-y-3">
-      <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground text-center">Choose how to pay</p>
-
-      {/* Option 1 — Scan QR (restaurant's uploaded QR or auto-generated UPI QR) */}
+      {/* Scan QR (restaurant's uploaded QR or auto-generated UPI QR) */}
       {hasQr && (
         <div className="rounded-xl border bg-card overflow-hidden">
-          <div className="px-4 py-2.5 bg-muted/30 border-b flex items-center gap-1.5">
+          <div className="px-4 py-2.5 bg-muted/30 border-b flex items-center justify-center gap-1.5">
             <QrCodeIcon className="size-3.5 text-muted-foreground" />
-            <p className="font-semibold text-xs uppercase tracking-wide text-muted-foreground">Scan QR to Pay</p>
+            <p className="font-semibold text-xs uppercase tracking-wide text-muted-foreground">Scan to Pay via UPI</p>
           </div>
-          <div className="px-4 py-4 flex flex-col items-center gap-3">
+          <div className="px-4 py-5 flex flex-col items-center gap-3">
             <div className="rounded-2xl border-2 border-border bg-white p-3 shadow-sm">
               {shop.paymentQrImageUrl ? (
                 <Image
                   src={shop.paymentQrImageUrl}
                   alt="Scan to pay"
-                  width={210}
-                  height={210}
+                  width={220}
+                  height={220}
                   unoptimized
                   className="object-contain"
                 />
               ) : upiQrDataUrl ? (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img src={upiQrDataUrl} alt="UPI payment QR code" width={210} height={210} />
+                <img src={upiQrDataUrl} alt="UPI payment QR code" width={220} height={220} />
               ) : null}
             </div>
             <div className="text-center space-y-1">
@@ -298,45 +296,29 @@ function PaymentOptions({
         </div>
       )}
 
-      {/* Option 2 — Pay via UPI App deep link */}
-      {hasUpi && (
-        <button
-          type="button"
-          onClick={onPayViaUpi}
-          className="flex w-full items-center gap-3 rounded-xl border bg-card px-4 py-3.5 text-left transition-colors hover:bg-muted/30 active:scale-[0.99]"
-        >
-          <div className="flex size-10 shrink-0 items-center justify-center rounded-full bg-violet-100 dark:bg-violet-900/30">
-            <QrCodeIcon className="size-5 text-violet-600 dark:text-violet-400" />
-          </div>
-          <div className="flex-1 min-w-0">
-            <p className="font-semibold text-sm">Pay via UPI App</p>
-            <p className="text-xs text-muted-foreground">Opens Google Pay, PhonePe, Paytm &amp; more</p>
-          </div>
-          <div className="text-right shrink-0">
-            <p className="font-bold text-sm">{formatCurrency(grandTotal, shop.currency)}</p>
-          </div>
-        </button>
-      )}
-
-      {/* Option 3 — Pay in Cash */}
-      {hasCash && (
-        <button
-          type="button"
-          onClick={onPayCash}
-          className="flex w-full items-center gap-3 rounded-xl border bg-card px-4 py-3.5 text-left transition-colors hover:bg-muted/30 active:scale-[0.99]"
-        >
-          <div className="flex size-10 shrink-0 items-center justify-center rounded-full bg-orange-100 dark:bg-orange-900/30">
-            <Banknote className="size-5 text-orange-600 dark:text-orange-400" />
-          </div>
-          <div className="flex-1 min-w-0">
-            <p className="font-semibold text-sm">Pay in Cash</p>
-            <p className="text-xs text-muted-foreground">Pay the bill at the counter or to the waiter</p>
-          </div>
-          <div className="text-right shrink-0">
-            <p className="font-bold text-sm">{formatCurrency(grandTotal, shop.currency)}</p>
-          </div>
-        </button>
-      )}
+      {/* Large primary payment actions — Cash first, then UPI app deep link */}
+      <div className="space-y-2.5">
+        {hasCash && (
+          <button
+            type="button"
+            onClick={onPayCash}
+            className="flex h-14 w-full items-center justify-center gap-2 rounded-xl bg-[#FFA000] text-[15px] font-bold text-white transition-colors hover:bg-[#e69200] active:scale-[0.99]"
+          >
+            <Banknote className="size-[18px]" />
+            Cash Payment ({formatCurrency(grandTotal, shop.currency)})
+          </button>
+        )}
+        {hasUpi && (
+          <button
+            type="button"
+            onClick={onPayViaUpi}
+            className="flex h-14 w-full items-center justify-center gap-2 rounded-xl bg-[#00A86B] text-[15px] font-bold text-white transition-colors hover:bg-[#00925d] active:scale-[0.99]"
+          >
+            <QrCodeIcon className="size-[18px]" />
+            Pay {formatCurrency(grandTotal, shop.currency)} via GPay / UPI
+          </button>
+        )}
+      </div>
 
       {/* Bank transfer (supplementary info) */}
       {hasBank && (
