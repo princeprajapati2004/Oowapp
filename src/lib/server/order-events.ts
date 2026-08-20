@@ -73,7 +73,40 @@ export type AdminOrderEventOrder = OrderEventOrder & {
   ownerNote: string | null;
   staffId: string | null;
   statusEvents: (PublicStatusEvent & { changedBy: string | null })[];
+  paymentRecords: PaymentRecordPayload[];
 };
+
+export type PaymentRecordPayload = {
+  id: string;
+  amount: number;
+  method: string;
+  transactionReference: string | null;
+  note: string | null;
+  recordedBy: string | null;
+  createdAt: string;
+};
+
+type RawPaymentRecordForEvent = {
+  id: string;
+  amount: unknown;
+  method: string;
+  transactionReference: string | null;
+  note: string | null;
+  recordedBy: string | null;
+  createdAt: unknown;
+};
+
+export function toPaymentRecordPayload(record: RawPaymentRecordForEvent): PaymentRecordPayload {
+  return {
+    id: record.id,
+    amount: Number(record.amount),
+    method: record.method,
+    transactionReference: record.transactionReference,
+    note: record.note,
+    recordedBy: record.recordedBy,
+    createdAt: (record.createdAt as Date).toISOString(),
+  };
+}
 
 export type TableSessionEventPayload = {
   id: string;
@@ -266,6 +299,7 @@ type RawOrderForAdminEvent = RawOrderForEvent & {
   ownerNote: string | null;
   staffId: string | null;
   statusEvents?: { status: string; changedAt: unknown; changedBy: string | null }[];
+  paymentRecords?: RawPaymentRecordForEvent[];
 };
 
 // Admin-only superset — includes internal fields (owner notes, cancellation
@@ -292,6 +326,7 @@ export function toAdminOrderEvent(order: RawOrderForAdminEvent): AdminOrderEvent
       changedAt: (e.changedAt as Date).toISOString(),
       changedBy: e.changedBy,
     })),
+    paymentRecords: (order.paymentRecords ?? []).map(toPaymentRecordPayload),
   };
 }
 

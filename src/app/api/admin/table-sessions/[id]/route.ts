@@ -93,6 +93,7 @@ export async function GET(
           orderBy: { createdAt: "asc" },
           include: { items: true },
         },
+        paymentRecords: { orderBy: { createdAt: "asc" } },
       },
     });
     if (!tableSession) throw new NotFoundError("Table session not found");
@@ -105,6 +106,11 @@ export async function GET(
       billRequestedAt: tableSession.billRequestedAt?.toISOString() ?? null,
       paidAt: tableSession.paidAt?.toISOString() ?? null,
       paidAmount: tableSession.paidAmount != null ? Number(tableSession.paidAmount) : null,
+      paymentRecords: tableSession.paymentRecords.map((r) => ({
+        ...r,
+        amount: Number(r.amount),
+        createdAt: r.createdAt.toISOString(),
+      })),
       orders: tableSession.orders.map((o) => ({
         ...o,
         subtotal: Number(o.subtotal),
@@ -306,6 +312,18 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         where: { id },
         data: { paidAmount: newPaidTotal, paymentMethod: input.paymentMethod, paymentNote: input.paymentNote ?? null },
       });
+      if (amountNow > 0.005) {
+        await db.paymentRecord.create({
+          data: {
+            shopId: actor.shopId,
+            tableSessionId: id,
+            amount: amountNow,
+            method: input.paymentMethod,
+            note: input.paymentNote ?? null,
+            recordedBy: actor.actorId,
+          },
+        });
+      }
       publishOrderEvent(actor.shopId, { type: "session.updated", session: toTableSessionEvent(updated) });
       createNotification(actor.shopId, {
         type: "PAYMENT_RECEIVED",
@@ -330,7 +348,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       });
     }
 
-    return closeTable(id, input.paymentMethod, input.paymentNote, actor, newPaidTotal, request);
+    return closeTable(id, input.paymentMethod, input.paymentNote, actor, newPaidTotal, request, amountNow);
   } catch (error) {
     return handleApiError(error);
   }
@@ -346,7 +364,10 @@ async function closeTable(
   paymentNote: string | undefined,
   actor: ShopActor,
   finalPaidAmount: number | null,
-  request: Request
+  request: Request,
+  // Real new money collected as part of THIS close — omitted/0 for VOID and
+  // release_table, which settle the table without collecting anything.
+  amountCollectedNow = 0
 ) {
   const [updatedSession, completedOrders] = await db.$transaction(async (tx) => {
     const updated = await tx.tableSession.update({
@@ -360,6 +381,19 @@ async function closeTable(
         paidAmount: finalPaidAmount,
       },
     });
+
+    if (amountCollectedNow > 0.005) {
+      await tx.paymentRecord.create({
+        data: {
+          shopId: actor.shopId,
+          tableSessionId: id,
+          amount: amountCollectedNow,
+          method: paymentMethod,
+          note: paymentNote ?? null,
+          recordedBy: actor.actorId,
+        },
+      });
+    }
 
     const openOrders = await tx.order.findMany({
       where: { tableSessionId: id, status: { in: [...OPEN_TICKET_STATUSES] } },

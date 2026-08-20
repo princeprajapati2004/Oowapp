@@ -21,7 +21,11 @@ export default async function OrderDetailRoute({
 
   const order = await db.order.findFirst({
     where: { id, shopId: session.shopId },
-    include: { items: true, statusEvents: { orderBy: { changedAt: "asc" } } },
+    include: {
+      items: true,
+      statusEvents: { orderBy: { changedAt: "asc" } },
+      paymentRecords: { orderBy: { createdAt: "asc" } },
+    },
   });
   if (!order) notFound();
 

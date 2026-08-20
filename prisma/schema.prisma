@@ -405,6 +405,7 @@ model Shop {
   products           Product[]
   taxes              Tax[]
   orders             Order[]
+  paymentRecords     PaymentRecord[]
   customers          Customer[]
   tableSessions      TableSession[]
   tableStates        TableState[]
@@ -657,6 +658,7 @@ model Order {
 
   items         OrderItem[]
   statusEvents  OrderStatusEvent[]
+  paymentRecords PaymentRecord[]
 
   @@unique([shopId, clientRequestId])
   @@unique([shopId, billNumber])
@@ -702,10 +704,42 @@ model TableSession {
 
   orders         Order[]
   kitchenTickets KitchenTicket[]
+  paymentRecords PaymentRecord[]
 
   @@index([shopId])
   @@index([shopId, tableNumber])
   @@map("table_sessions")
+}
+
+// Append-only log of individual payment transactions — one row per amount
+// actually collected and confirmed by the owner/staff (never for a customer
+// claim, which is only a pending assertion). Order.paidAmount / TableSession
+// .paidAmount stay the cumulative source of truth for status logic; this
+// exists purely so "how was the final payment completed" can be shown (e.g.
+// a bill settled across three separate cash + UPI collections). Exactly one
+// of orderId/tableSessionId is set, matching whichever mark_paid path wrote
+// the transaction.
+model PaymentRecord {
+  id                   String   @id @default(cuid())
+  shopId               String
+  shop                 Shop     @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  orderId              String?
+  order                Order?   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  tableSessionId       String?
+  tableSession         TableSession? @relation(fields: [tableSessionId], references: [id], onDelete: Cascade)
+  amount               Decimal  @db.Decimal(10, 2)
+  method               String
+  transactionReference String?
+  note                 String?
+  // adminId/staffId of whoever recorded it — same actor-id convention as
+  // OrderStatusEvent.changedBy.
+  recordedBy           String?
+  createdAt            DateTime @default(now())
+
+  @@index([shopId])
+  @@index([orderId])
+  @@index([tableSessionId])
+  @@map("payment_records")
 }
 
 // A manual staff override for a table with no active session — Reserved

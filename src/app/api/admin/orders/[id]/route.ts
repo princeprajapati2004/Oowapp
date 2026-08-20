@@ -111,7 +111,11 @@ export async function GET(
 
     const order = await db.order.findFirst({
       where: { id, shopId: actor.shopId },
-      include: { items: true, statusEvents: { orderBy: { changedAt: "asc" } } },
+      include: {
+        items: true,
+        statusEvents: { orderBy: { changedAt: "asc" } },
+        paymentRecords: { orderBy: { createdAt: "asc" } },
+      },
     });
     if (!order) throw new NotFoundError("Order not found");
 
@@ -137,6 +141,15 @@ export async function PATCH(
     let data: Record<string, unknown>;
     let statusEventStatus: string | null = null;
     let auditEntry: { action: "ORDER_MARKED_PAID" | "ORDER_CANCELLED"; metadata: Record<string, unknown> } | null = null;
+    let newPaymentRecord: {
+      shopId: string;
+      orderId: string;
+      amount: number;
+      method: string;
+      transactionReference: string | null;
+      note: string | null;
+      recordedBy: string;
+    } | null = null;
 
     if ("action" in body) {
       const parsed = updateOrderSchema.parse(body);
@@ -218,6 +231,7 @@ export async function PATCH(
       } else if (parsed.action === "mark_paid") {
         const finalTotal = Number(existing.discountedTotal ?? existing.grandTotal);
         const paidAmount = parsed.paidAmount ?? finalTotal;
+        const previouslyPaid = Number(existing.paidAmount ?? 0);
         data = {
           paymentMethod: parsed.paymentMethod,
           paymentStatus: paidAmount + 0.005 >= finalTotal ? "PAID" : "PARTIALLY_PAID",
@@ -231,6 +245,22 @@ export async function PATCH(
           paymentClaimMethod: null,
           paymentClaimAt: null,
         };
+        // The amount actually collected THIS transaction — paidAmount is the
+        // new cumulative total, not a delta — logged as its own history row
+        // only when it represents real new money (not just correcting the
+        // method/reference on an unchanged amount).
+        const collectedNow = paidAmount - previouslyPaid;
+        if (collectedNow > 0.005) {
+          newPaymentRecord = {
+            shopId: actor.shopId,
+            orderId: id,
+            amount: collectedNow,
+            method: parsed.paymentMethod,
+            transactionReference: parsed.transactionReference || null,
+            note: parsed.paymentNote || null,
+            recordedBy: actor.actorId,
+          };
+        }
         auditEntry = {
           action: "ORDER_MARKED_PAID",
           metadata: { paymentMethod: parsed.paymentMethod, paidAmount, paymentStatus: data.paymentStatus },
@@ -265,6 +295,14 @@ export async function PATCH(
     // route already relied on before this change.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const updated = await (db.order as any).update({ where: { id }, data, include: { items: true } });
+
+    if (newPaymentRecord) {
+      await db.paymentRecord.create({ data: newPaymentRecord });
+    }
+    const paymentRecords = await db.paymentRecord.findMany({
+      where: { orderId: id },
+      orderBy: { createdAt: "asc" },
+    });
 
     if (statusEventStatus) {
       await db.orderStatusEvent.create({
@@ -313,7 +351,7 @@ export async function PATCH(
       });
     }
 
-    return NextResponse.json(toAdminOrderEvent({ ...updated, statusEvents }));
+    return NextResponse.json(toAdminOrderEvent({ ...updated, statusEvents, paymentRecords }));
   } catch (error) {
     return handleApiError(error);
   }

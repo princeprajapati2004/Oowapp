@@ -54,6 +54,7 @@ import { OrderPaymentModal } from "./order-payment-modal";
 import { CustomerDetailsCard } from "./customer-details-card";
 import { PaymentDetailsCard } from "./payment-details-card";
 import { PaymentMethodsCard } from "./payment-methods-card";
+import { PaymentHistorySection } from "./payment-history-section";
 import { PaymentClaimBanner } from "./payment-claim-banner";
 import { OrderActionBar } from "./order-action-bar";
 import { OrderRoundsSection } from "./order-rounds-section";
@@ -440,6 +441,8 @@ export function OrderDetailPage({
             amountDue={amountDue}
             currency={currency}
           />
+
+          <PaymentHistorySection records={order.paymentRecords} currency={currency} />
 
           {order.tableSessionId && <OrderRoundsSection tableSessionId={order.tableSessionId} currency={currency} />}
 

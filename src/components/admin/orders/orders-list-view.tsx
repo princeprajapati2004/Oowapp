@@ -112,6 +112,7 @@ export function OrdersListView({
           ownerNote: null,
           staffId: null,
           statusEvents: [],
+          paymentRecords: [],
         },
         ...prev,
       ]));
