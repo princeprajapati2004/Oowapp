@@ -12,7 +12,11 @@ import { BarcodeSvg } from "@/components/shared/barcode-svg";
 type BarcodeItem = {
   id: string;
   name: string;
-  quantity: number;
+  // Which physical label copy this card is, and how many were generated for
+  // this item — e.g. "Label 3 of 100". Every copy shares the same barcode
+  // value, since they're N printed stickers for the same product/unit.
+  labelIndex: number;
+  labelCount: number;
   photoUrl: string | null;
   code: string;
 };
@@ -30,17 +34,21 @@ export function BarcodeCreator({ businessName }: { businessName: string }) {
 
   function handleAdd() {
     if (!name.trim()) return;
+    // Quantity is how many physical barcode labels to print for this item —
+    // generate that many separate cards (same code/name/photo on each), not
+    // one card with "Qty N" printed as text.
     const qty = Math.max(1, Number(quantity) || 1);
-    setItems((prev) => [
-      ...prev,
-      {
-        id: crypto.randomUUID(),
-        name: name.trim(),
-        quantity: qty,
-        photoUrl,
-        code: code.trim() || generateCode(),
-      },
-    ]);
+    const itemName = name.trim();
+    const itemCode = code.trim() || generateCode();
+    const newLabels: BarcodeItem[] = Array.from({ length: qty }, (_, i) => ({
+      id: crypto.randomUUID(),
+      name: itemName,
+      labelIndex: i + 1,
+      labelCount: qty,
+      photoUrl,
+      code: itemCode,
+    }));
+    setItems((prev) => [...prev, ...newLabels]);
     setName("");
     setQuantity("1");
     setPhotoUrl(null);
@@ -66,7 +74,7 @@ export function BarcodeCreator({ businessName }: { businessName: string }) {
             <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Chicken Biryani" />
           </div>
           <div className="space-y-1.5">
-            <Label className="text-xs">Quantity</Label>
+            <Label className="text-xs">How many labels to print</Label>
             <Input type="number" min={1} value={quantity} onChange={(e) => setQuantity(e.target.value)} />
           </div>
         </div>
@@ -79,7 +87,8 @@ export function BarcodeCreator({ businessName }: { businessName: string }) {
           <ImageUploader value={photoUrl} onChange={setPhotoUrl} shape="square" label="Item photo" />
         </div>
         <Button onClick={handleAdd} disabled={!name.trim()} className="gap-1.5">
-          <Plus className="size-4" /> Add item
+          <Plus className="size-4" />
+          {Math.max(1, Number(quantity) || 1) > 1 ? `Generate ${Math.max(1, Number(quantity) || 1)} Barcodes` : "Add item"}
         </Button>
       </div>
 
@@ -123,7 +132,8 @@ export function BarcodeCreator({ businessName }: { businessName: string }) {
                 <BarcodeSvg value={item.code} />
                 <p className="text-sm font-medium leading-tight">{item.name}</p>
                 <p className="text-xs text-muted-foreground">
-                  Qty {item.quantity} · {item.code}
+                  {item.labelCount > 1 ? `Label ${item.labelIndex} of ${item.labelCount} · ` : ""}
+                  {item.code}
                 </p>
               </div>
             ))}
