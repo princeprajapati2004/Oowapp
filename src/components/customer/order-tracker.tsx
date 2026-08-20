@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import { toast } from "sonner";
+import QRCode from "qrcode";
 import {
   Clock,
   CircleCheck,
@@ -20,10 +21,12 @@ import {
   Download,
   Share2,
   Truck,
+  Loader2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { QtyStepper } from "@/components/shared/qty-stepper";
 import { ConfirmDialog } from "@/components/shared/confirm-dialog";
+import { PaymentOptions } from "@/components/customer/payment-options";
 import { formatCurrency } from "@/lib/utils/currency";
 import { generateInvoicePdf, type InvoicePdfItem } from "@/lib/utils/invoice-pdf";
 import { mergeLineItems } from "@/lib/services/billing";
@@ -46,6 +49,11 @@ type Shop = {
   bankName?: string | null;
   bankIfsc?: string | null;
   paymentQrImageUrl?: string | null;
+  paymentDisplayName?: string | null;
+  googlePayUpi?: string | null;
+  phonePeUpi?: string | null;
+  paytmUpi?: string | null;
+  bhimUpi?: string | null;
 };
 
 const BASE_STEPS = [
@@ -100,7 +108,13 @@ export function OrderTracker({
   const [displayItems, setDisplayItems] = useState(initialOrder.items);
   const [cancelOpen, setCancelOpen] = useState(false);
   const [cancelling, setCancelling] = useState(false);
-  const [confirming, setConfirming] = useState(false);
+  // No payment-gateway integration behind any of this — same pattern as the
+  // table-session Final Bill page (current-order-page.tsx): local UI states
+  // while the customer waits for staff to verify and record the payment from
+  // the owner side (PATCH /api/admin/orders/[id] {action:"mark_paid"}). There
+  // is no customer self-confirm step, matching the existing architecture.
+  const [paymentIntent, setPaymentIntent] = useState<"idle" | "cash_pending" | "upi_confirm" | "upi_pending">("idle");
+  const [upiQrDataUrl, setUpiQrDataUrl] = useState<string | null>(null);
   const [session, setSession] = useState(initialSession ?? null);
   const [sessionBill, setSessionBill] = useState(initialSessionBill ?? null);
   const [sessionItems, setSessionItems] = useState(initialSessionItems ?? null);
@@ -189,20 +203,26 @@ export function OrderTracker({
     debounceTimerRef.current = setTimeout(() => flushRef.current(), QUANTITY_DEBOUNCE_MS);
   }
 
-  async function handleConfirmOrder() {
-    setConfirming(true);
-    try {
-      const res = await api.patch<{ ok: boolean; order: OrderEventOrder }>(`/api/orders/${order.id}`, {
-        action: "confirm",
-      });
-      setOrder(res.order);
-      setDisplayItems(res.order.items);
-      toast.success("Order confirmed");
-    } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "Couldn't confirm the order");
-    } finally {
-      setConfirming(false);
-    }
+  function handleCashPayment() {
+    setPaymentIntent("cash_pending");
+    toast.success("Waiting for approval. Staff will collect payment shortly.");
+  }
+
+  function handlePayViaUpi() {
+    if (!shop.upiId) return;
+    const payeeName = shop.paymentDisplayName || shop.businessName;
+    const upiUrl = `upi://pay?pa=${encodeURIComponent(shop.upiId)}&pn=${encodeURIComponent(payeeName)}&am=${remainingAmount.toFixed(2)}&cu=INR&tn=${encodeURIComponent(order.billNumber)}`;
+    window.open(upiUrl, "_self");
+    setPaymentIntent("upi_confirm");
+  }
+
+  function handleConfirmUpiPaid() {
+    setPaymentIntent("upi_pending");
+  }
+
+  function handleUpiPaymentFailed() {
+    setPaymentIntent("idle");
+    toast.error("Payment Failed or Cancelled.");
   }
 
   async function handleCancelOrder() {
@@ -298,6 +318,11 @@ export function OrderTracker({
   // still-live status stepper, rather than replacing it.
   const isConfirmedOrLater = !isCancelled && order.status !== "PENDING";
   const isPaid = session ? session.status === "PAID" : (order.paymentStatus ?? "PENDING") === "PAID" || order.status === "COMPLETED";
+  // Table orders settle through the session's Final Bill flow (running total
+  // across every round, via "Request bill" below) — per-round paidAmount
+  // isn't the authoritative figure there, so the pay-now amount/actions only
+  // apply to standalone (non-table) orders.
+  const remainingAmount = Math.max(0, finalTotal - (order.paidAmount ?? 0));
 
   // For a table session, the invoice covers every accumulated round (sessionItems/sessionBill);
   // for a one-off order it's just this order's own items and totals. Referenced by
@@ -320,6 +345,27 @@ export function OrderTracker({
         ? "Pending"
         : "—"
     : null;
+
+  useEffect(() => {
+    // Only generate a UPI QR for standalone orders with a remaining balance —
+    // table orders pay through the session Final Bill flow instead, and
+    // there's nothing to show once fully paid.
+    const shouldGenerate = !isTableOrder && !!shop.upiId && !shop.paymentQrImageUrl && remainingAmount > 0;
+    const payeeName = shop.paymentDisplayName || shop.businessName;
+    const upiUrl = `upi://pay?pa=${encodeURIComponent(shop.upiId ?? "")}&pn=${encodeURIComponent(payeeName)}&am=${remainingAmount.toFixed(2)}&cu=INR&tn=${encodeURIComponent(order.billNumber)}`;
+    let cancelled = false;
+    const generate = shouldGenerate ? QRCode.toDataURL(upiUrl, { width: 220, margin: 1 }) : Promise.resolve(null);
+    generate
+      .then((url) => {
+        if (!cancelled) setUpiQrDataUrl(url);
+      })
+      .catch(() => {
+        if (!cancelled) setUpiQrDataUrl(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isTableOrder, shop.upiId, shop.paymentQrImageUrl, shop.paymentDisplayName, shop.businessName, remainingAmount, order.billNumber]);
 
   return (
     <div className="min-h-screen bg-muted/20 px-4 py-8 print:bg-white print:py-0">
@@ -545,6 +591,24 @@ export function OrderTracker({
                 {isPaid ? "Paid" : order.paymentStatus === "PARTIALLY_PAID" ? "Partially Paid" : "Unpaid"}
               </span>
             </div>
+            {!isTableOrder && (
+              <div className="px-5 py-3 border-t space-y-1.5 text-sm">
+                <div className="flex justify-between text-muted-foreground">
+                  <span>Total</span>
+                  <span className="font-medium text-foreground">{formatCurrency(finalTotal, shop.currency)}</span>
+                </div>
+                <div className="flex justify-between text-muted-foreground">
+                  <span>Paid</span>
+                  <span className="font-medium text-foreground">{formatCurrency(order.paidAmount ?? 0, shop.currency)}</span>
+                </div>
+                <div className="flex justify-between font-semibold">
+                  <span>Remaining</span>
+                  <span className={remainingAmount > 0 ? "text-amber-600 dark:text-amber-400" : "text-emerald-600 dark:text-emerald-400"}>
+                    {formatCurrency(remainingAmount, shop.currency)}
+                  </span>
+                </div>
+              </div>
+            )}
             {ownerApprovalStatus && (
               <div className="px-5 py-3 border-t flex items-center justify-between text-sm">
                 <span className="text-muted-foreground">Owner approval status</span>
@@ -588,25 +652,57 @@ export function OrderTracker({
           </div>
         )}
 
-        {isEditable && (
+        {/* Payment — customer-initiated, order workflow status stays owner-only.
+            Table orders pay through the "Request bill" flow below instead. */}
+        {!isTableOrder && isConfirmedOrLater && remainingAmount > 0 && (
+          <div className="print:hidden">
+            {paymentIntent === "cash_pending" ? (
+              <div className="rounded-xl border border-amber-300 bg-amber-50 dark:bg-amber-900/20 dark:border-amber-800 px-4 py-4 flex flex-col items-center gap-2 text-center">
+                <Loader2 className="size-5 animate-spin text-amber-600 dark:text-amber-400" />
+                <p className="text-sm font-medium text-amber-800 dark:text-amber-400">Waiting for staff approval.</p>
+                <p className="text-xs text-amber-700/80 dark:text-amber-400/80">
+                  Let the staff know you&apos;re paying by cash — they&apos;ll confirm it here.
+                </p>
+              </div>
+            ) : paymentIntent === "upi_confirm" ? (
+              <div className="rounded-xl border bg-card px-4 py-4 flex flex-col items-center gap-3 text-center">
+                <p className="text-sm font-medium">Have you completed the payment?</p>
+                <div className="flex w-full gap-2">
+                  <Button className="h-10 flex-1 bg-emerald-600 text-white hover:bg-emerald-700" onClick={handleConfirmUpiPaid}>
+                    I&apos;ve Paid
+                  </Button>
+                  <Button variant="outline" className="h-10 flex-1" onClick={handleUpiPaymentFailed}>
+                    Failed / Cancelled
+                  </Button>
+                </div>
+              </div>
+            ) : paymentIntent === "upi_pending" ? (
+              <div className="rounded-xl border border-amber-300 bg-amber-50 dark:bg-amber-900/20 dark:border-amber-800 px-4 py-4 flex flex-col items-center gap-2 text-center">
+                <Loader2 className="size-5 animate-spin text-amber-600 dark:text-amber-400" />
+                <p className="text-sm font-medium text-amber-800 dark:text-amber-400">Payment Pending</p>
+                <p className="text-xs text-amber-700/80 dark:text-amber-400/80">Waiting for the store to confirm your payment.</p>
+              </div>
+            ) : (
+              <PaymentOptions
+                shop={shop}
+                grandTotal={remainingAmount}
+                upiQrDataUrl={upiQrDataUrl}
+                onPayViaUpi={handlePayViaUpi}
+                onPayCash={handleCashPayment}
+              />
+            )}
+          </div>
+        )}
+
+        {isEditable && !isTableOrder && (
           <div className="flex gap-2 print:hidden">
-            {order.status === "PENDING" && (
-              <Button className="h-10 flex-1 gap-1.5" disabled={confirming} onClick={handleConfirmOrder}>
-                <CircleCheck className="size-4" /> {confirming ? "Confirming…" : "Confirm order"}
-              </Button>
-            )}
-            {/* Self-cancelling a submitted table round would defeat "items can
-                never be removed" — staff can still correct it via the admin
-                order actions if needed. */}
-            {!isTableOrder && (
-              <Button
-                variant="outline"
-                className="h-10 flex-1 gap-1.5 text-destructive border-destructive/30 hover:bg-destructive/10 hover:text-destructive"
-                onClick={() => setCancelOpen(true)}
-              >
-                <Ban className="size-4" /> Cancel order
-              </Button>
-            )}
+            <Button
+              variant="outline"
+              className="h-10 flex-1 gap-1.5 text-destructive border-destructive/30 hover:bg-destructive/10 hover:text-destructive"
+              onClick={() => setCancelOpen(true)}
+            >
+              <Ban className="size-4" /> Cancel order
+            </Button>
           </div>
         )}
 

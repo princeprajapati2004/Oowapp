@@ -35,6 +35,12 @@ export type OrderEventOrder = {
   // which relies on the schema default instead. Runtime value is always present.
   paymentMethod?: string | null;
   paymentStatus?: string;
+  // How much of this order has been collected so far — the customer's own
+  // money, safe to expose (unlike the admin-only fields below: who confirmed
+  // it, internal notes, cancellation trail). Needed so the customer's own
+  // Payment Details view can show Paid/Remaining from the same backend
+  // record the owner sees, rather than guessing from paymentStatus alone.
+  paidAmount: number | null;
   source?: string;
   discountType: string | null;
   discountValue: number | null;
@@ -53,7 +59,6 @@ export type OrderEventOrder = {
 // trail, transaction reference, who confirmed payment/changed status).
 export type AdminOrderEventOrder = OrderEventOrder & {
   tokenNumber: number | null;
-  paidAmount: number | null;
   transactionReference: string | null;
   paymentConfirmedBy: string | null;
   paymentConfirmedAt: string | null;
@@ -173,6 +178,7 @@ type RawOrderForEvent = {
   status: string;
   paymentMethod?: string | null;
   paymentStatus?: string;
+  paidAmount: unknown;
   source?: string;
   discountType: string | null;
   discountValue: unknown;
@@ -213,6 +219,7 @@ export function toOrderEvent(order: RawOrderForEvent): OrderEventOrder {
     status: order.status,
     paymentMethod: order.paymentMethod ?? null,
     paymentStatus: order.paymentStatus ?? "PENDING",
+    paidAmount: order.paidAmount == null ? null : Number(order.paidAmount),
     source: order.source ?? "qr",
     discountType: order.discountType,
     discountValue: order.discountValue == null ? null : Number(order.discountValue),
@@ -239,7 +246,6 @@ export function toOrderEvent(order: RawOrderForEvent): OrderEventOrder {
 
 type RawOrderForAdminEvent = RawOrderForEvent & {
   tokenNumber: number | null;
-  paidAmount: unknown;
   transactionReference: string | null;
   paymentConfirmedBy: string | null;
   paymentConfirmedAt: unknown;
@@ -262,7 +268,6 @@ export function toAdminOrderEvent(order: RawOrderForAdminEvent): AdminOrderEvent
   return {
     ...base,
     tokenNumber: order.tokenNumber,
-    paidAmount: order.paidAmount == null ? null : Number(order.paidAmount),
     transactionReference: order.transactionReference,
     paymentConfirmedBy: order.paymentConfirmedBy,
     paymentConfirmedAt: order.paymentConfirmedAt ? (order.paymentConfirmedAt as Date).toISOString() : null,

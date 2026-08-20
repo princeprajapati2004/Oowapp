@@ -14,7 +14,7 @@ import type { Prisma } from "@/generated/prisma/client";
 // unguessable cuid as their access token — unchanged. Orders placed by a
 // logged-in customer account, though, must only be viewable/actionable by
 // that same account: without this, any caller who learned the id could
-// GET/cancel/confirm/edit another customer's order (see research notes).
+// GET/cancel/edit another customer's order (see research notes).
 async function assertOwnsOrderIfLinked(order: { shopId: string; customerId: string | null }) {
   if (!order.customerId) return;
   const session = await getCustomerSession();
@@ -27,7 +27,6 @@ async function assertOwnsOrderIfLinked(order: { shopId: string; customerId: stri
 // disruptive — only orders still awaiting confirmation/prep can be self-edited.
 const EDITABLE_STATUSES = ["PENDING", "CONFIRMED"];
 
-const confirmSchema = z.object({ action: z.literal("confirm") });
 const cancelSchema = z.object({ action: z.literal("cancel") });
 const updateItemsSchema = z.object({
   action: z.literal("update_items"),
@@ -42,7 +41,7 @@ const updateItemsSchema = z.object({
     )
     .min(1),
 });
-const patchSchema = z.discriminatedUnion("action", [confirmSchema, cancelSchema, updateItemsSchema]);
+const patchSchema = z.discriminatedUnion("action", [cancelSchema, updateItemsSchema]);
 
 // Public lookup by id — the unguessable cuid is the access token, same model
 // as the tracking page and the SSE stream. Used by the device-local order
@@ -91,27 +90,6 @@ export async function PATCH(
         { error: "This order is already being prepared and can no longer be changed." },
         { status: 409 }
       );
-    }
-
-    if (input.action === "confirm") {
-      if (order.status !== "PENDING") {
-        return NextResponse.json({ error: "This order has already been confirmed." }, { status: 409 });
-      }
-
-      const updated = await db.order.update({
-        where: { id },
-        data: { status: "CONFIRMED" },
-        include: { items: true },
-      });
-
-      sendOrderStatusNotification(order.shopId, {
-        billNumber: order.billNumber,
-        status: "CONFIRMED",
-        orderId: id,
-      }).catch(() => {});
-
-      publishOrderEvent(order.shopId, { type: "order.updated", order: toOrderEvent(updated) });
-      return NextResponse.json({ ok: true, order: toOrderEvent(updated) });
     }
 
     if (input.action === "cancel") {
