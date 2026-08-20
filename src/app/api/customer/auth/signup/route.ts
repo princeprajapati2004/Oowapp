@@ -10,6 +10,7 @@ import {
   CUSTOMER_SESSION_COOKIE,
   CUSTOMER_SESSION_DURATION_SECONDS,
 } from "@/lib/customer-auth";
+import { linkGuestOrdersToCustomer } from "@/lib/link-guest-orders";
 
 export async function POST(request: Request) {
   try {
@@ -41,6 +42,8 @@ export async function POST(request: Request) {
     const customer = await db.customer.create({
       data: { shopId: shop.id, name: input.name, phone: input.phone, passwordHash },
     });
+
+    await linkGuestOrdersToCustomer(shop.id, customer.id, input.phone);
 
     const token = await signCustomerSession({ customerId: customer.id, shopId: shop.id });
     const cookieStore = await cookies();

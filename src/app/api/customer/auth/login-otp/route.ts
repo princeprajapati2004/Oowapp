@@ -12,6 +12,7 @@ import {
   CUSTOMER_SESSION_COOKIE,
   CUSTOMER_SESSION_DURATION_SECONDS,
 } from "@/lib/customer-auth";
+import { linkGuestOrdersToCustomer } from "@/lib/link-guest-orders";
 
 const schema = z.object({
   shopSlug: z.string(),
@@ -72,6 +73,8 @@ export async function POST(request: Request) {
     } else if (customer.firebaseUid !== firebaseUid) {
       customer = await db.customer.update({ where: { id: customer.id }, data: { firebaseUid } });
     }
+
+    await linkGuestOrdersToCustomer(shop.id, customer.id, phone);
 
     const token = await signCustomerSession({ customerId: customer.id, shopId: shop.id });
     const cookieStore = await cookies();
