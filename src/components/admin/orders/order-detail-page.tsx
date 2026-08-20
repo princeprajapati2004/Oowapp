@@ -473,12 +473,12 @@ export function OrderDetailPage({
             paymentQrImageUrl={shop.paymentQrImageUrl}
             paymentQr={paymentQr}
             amountDue={amountDue}
-            payUri={payUri}
             // Always shown while unpaid — sendPaymentQrOnWhatsApp() itself
             // validates phone/UPI/link and surfaces a specific error for
             // whichever is missing, instead of silently hiding the button.
             canSendWhatsApp={true}
             onSendWhatsApp={sendPaymentQrOnWhatsApp}
+            onConfirmPayment={() => setPaymentOpen(true)}
           />
 
           <p className="pb-1 text-center text-xs text-muted-foreground">

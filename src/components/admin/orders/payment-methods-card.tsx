@@ -1,6 +1,5 @@
 import Image from "next/image";
 import { CheckCircle2, CreditCard, MessageCircle } from "lucide-react";
-import { Button } from "@/components/ui/button";
 import { formatCurrency } from "@/lib/utils/currency";
 import { paymentMethodLabel } from "@/lib/order-status";
 
@@ -26,9 +25,9 @@ export function PaymentMethodsCard({
   paymentQrImageUrl,
   paymentQr,
   amountDue,
-  payUri,
   canSendWhatsApp,
   onSendWhatsApp,
+  onConfirmPayment,
 }: {
   isPaid: boolean;
   paidAmount: number;
@@ -44,9 +43,12 @@ export function PaymentMethodsCard({
   paymentQrImageUrl: string | null;
   paymentQr: string | null;
   amountDue: number;
-  payUri: string | null;
   canSendWhatsApp: boolean;
   onSendWhatsApp: () => void;
+  // Owner-side action — records the payment via the existing payment modal.
+  // Optional so this card can still be reused in a context with no owner
+  // actions available.
+  onConfirmPayment?: () => void;
 }) {
   if (isPaid) {
     return (
@@ -110,10 +112,14 @@ export function PaymentMethodsCard({
           </div>
         )}
 
-        {payUri && (
-          <Button variant="outline" className="w-full gap-1.5" render={<a href={payUri} />} nativeButton={false}>
-            <CreditCard className="size-3.5" /> Pay via UPI
-          </Button>
+        {onConfirmPayment && (
+          <button
+            type="button"
+            onClick={onConfirmPayment}
+            className="flex h-11 w-full items-center justify-center gap-1.5 rounded-xl bg-[#FFA000] text-sm font-bold text-white hover:bg-[#e69200]"
+          >
+            <CreditCard className="size-3.5" /> Add/Confirm Payment
+          </button>
         )}
 
         {canSendWhatsApp && (
