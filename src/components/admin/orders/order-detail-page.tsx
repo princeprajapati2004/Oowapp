@@ -238,20 +238,50 @@ export function OrderDetailPage({
   // Sends the shop's real UPI id + a working upi://pay deep link (same
   // builder the owner payment modal's own QR already uses) to the
   // customer's phone — never a fabricated amount/UPI id/payment link.
+  // Every failure mode is surfaced explicitly rather than failing silently.
   function sendPaymentQrOnWhatsApp() {
-    if (!order.customerPhone || !payUri || !shop.upiId) return;
+    if (!order.customerPhone) {
+      toast.error("Customer phone number is not available.");
+      return;
+    }
+    if (!shop.upiId) {
+      toast.error("Payment details are not configured for this restaurant.");
+      return;
+    }
+    if (!payUri) {
+      toast.error("Unable to generate payment link. Please try again.");
+      return;
+    }
     const message = [
-      `*Payment Request — ${shop.businessName}*`,
+      `Hello ${order.customerName || "Customer"},`,
       "",
-      `Order: ${order.billNumber}`,
-      `Amount Due: ${formatCurrency(amountDue, currency)}`,
+      "Payment request for your restaurant order.",
       "",
-      `UPI ID: ${shop.upiId}`,
-      `Tap to pay: ${payUri}`,
+      `Order ID: ${order.id}`,
       "",
-      "Thank you!",
+      "Restaurant:",
+      shop.businessName,
+      "",
+      `Order Total: ${formatCurrency(orderTotal, currency)}`,
+      "",
+      `Paid: ${formatCurrency(order.paidAmount ?? 0, currency)}`,
+      "",
+      `Remaining: ${formatCurrency(amountDue, currency)}`,
+      "",
+      "UPI ID:",
+      shop.upiId,
+      "",
+      "Payment Link:",
+      payUri,
+      "",
+      "Please complete the payment using the QR code/payment link.",
+      "",
+      "Thank you.",
     ].join("\n");
-    window.open(buildWhatsAppUrl(order.customerPhone, message), "_blank");
+    const win = window.open(buildWhatsAppUrl(order.customerPhone, message), "_blank");
+    if (!win) {
+      toast.error("WhatsApp could not be opened. Please check WhatsApp installation or try again.");
+    }
   }
 
   function shareReceiptOnWhatsApp() {
@@ -441,7 +471,10 @@ export function OrderDetailPage({
             paymentQr={paymentQr}
             amountDue={amountDue}
             payUri={payUri}
-            canSendWhatsApp={!!(order.customerPhone && shop.upiId && payUri)}
+            // Always shown while unpaid — sendPaymentQrOnWhatsApp() itself
+            // validates phone/UPI/link and surfaces a specific error for
+            // whichever is missing, instead of silently hiding the button.
+            canSendWhatsApp={true}
             onSendWhatsApp={sendPaymentQrOnWhatsApp}
           />
 
