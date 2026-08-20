@@ -26,6 +26,7 @@
     "class-variance-authority": "^0.7.1",
     "cloudinary": "^2.10.0",
     "clsx": "^2.1.1",
+    "firebase": "^12.18.0",
     "framer-motion": "^13.0.0",
     "jose": "^6.2.3",
     "jsbarcode": "^3.12.3",

@@ -1,13 +1,41 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { RecaptchaVerifier, signInWithPhoneNumber, type ConfirmationResult } from "firebase/auth";
 import { CheckCircle2, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { FormRow } from "@/components/shared/form-row";
 import { api, ApiError } from "@/lib/api-client";
+import { isFirebasePhoneAuthConfigured, getFirebaseAuth } from "@/lib/firebase-client";
 
 type Stage = "enter" | "sent";
+
+// Indian-first normalization matching this app's existing phone convention
+// (UPI/WhatsApp code elsewhere assumes a 91 country code) — Firebase requires
+// full E.164 ("+91XXXXXXXXXX"), unlike the DB-OTP flow's bare-digit format.
+function toE164(raw: string): string {
+  const trimmed = raw.trim();
+  if (trimmed.startsWith("+")) return `+${trimmed.slice(1).replace(/\D/g, "")}`;
+  const digits = trimmed.replace(/\D/g, "");
+  if (digits.length === 10) return `+91${digits}`;
+  return `+${digits}`;
+}
+
+const FIREBASE_ERROR_MESSAGES: Record<string, string> = {
+  "auth/invalid-phone-number": "That phone number doesn't look valid — include the country code.",
+  "auth/too-many-requests": "Too many attempts from this device — please try again later.",
+  "auth/captcha-check-failed": "Verification check failed — please try again.",
+  "auth/quota-exceeded": "SMS limit reached for this restaurant right now — please try again later.",
+  "auth/code-expired": "That code expired — request a new one.",
+  "auth/invalid-verification-code": "Incorrect code — please check and try again.",
+};
+
+function firebaseErrorMessage(err: unknown): string | null {
+  const code = (err as { code?: string } | null)?.code;
+  if (typeof code === "string" && code in FIREBASE_ERROR_MESSAGES) return FIREBASE_ERROR_MESSAGES[code];
+  return null;
+}
 
 export function PhoneVerification({
   shopSlug,
@@ -31,6 +59,10 @@ export function PhoneVerification({
   const [otpError, setOtpError] = useState<string | null>(null);
   const [cooldown, setCooldown] = useState(0);
   const verifiedForPhone = useRef<string | null>(verified ? phone : null);
+  const recaptchaContainerRef = useRef<HTMLDivElement | null>(null);
+  const recaptchaVerifierRef = useRef<RecaptchaVerifier | null>(null);
+  const confirmationResultRef = useRef<ConfirmationResult | null>(null);
+  const useFirebase = isFirebasePhoneAuthConfigured();
 
   // A verified phone stops being "verified" the moment the customer edits it
   // to a different number — each number needs its own OTP round.
@@ -48,19 +80,46 @@ export function PhoneVerification({
     return () => clearInterval(id);
   }, [cooldown]);
 
+  // Tear down the reCAPTCHA widget on unmount so it doesn't leak between
+  // mounts (e.g. navigating away mid-verification).
+  useEffect(() => {
+    return () => {
+      recaptchaVerifierRef.current?.clear();
+      recaptchaVerifierRef.current = null;
+    };
+  }, []);
+
   async function sendCode() {
     setOtpError(null);
     setSending(true);
     try {
-      const res = await api.post<{ ok: boolean; expiresInSeconds: number; resendCooldownSeconds: number }>(
-        "/api/customer/otp/send",
-        { shopSlug, phone }
-      );
-      setStage("sent");
-      setCooldown(res.resendCooldownSeconds);
-      setCode("");
+      if (useFirebase) {
+        const auth = getFirebaseAuth();
+        if (!recaptchaVerifierRef.current) {
+          recaptchaVerifierRef.current = new RecaptchaVerifier(auth, recaptchaContainerRef.current!, { size: "invisible" });
+        }
+        const result = await signInWithPhoneNumber(auth, toE164(phone), recaptchaVerifierRef.current);
+        confirmationResultRef.current = result;
+        setStage("sent");
+        setCooldown(30);
+        setCode("");
+      } else {
+        const res = await api.post<{ ok: boolean; expiresInSeconds: number; resendCooldownSeconds: number }>(
+          "/api/customer/otp/send",
+          { shopSlug, phone }
+        );
+        setStage("sent");
+        setCooldown(res.resendCooldownSeconds);
+        setCode("");
+      }
     } catch (err) {
-      setOtpError(err instanceof ApiError ? err.message : "Couldn't send code — try again.");
+      setOtpError(firebaseErrorMessage(err) ?? (err instanceof ApiError ? err.message : "Couldn't send code — try again."));
+      if (useFirebase) {
+        // A failed send may leave the reCAPTCHA widget in a stale/used
+        // state — clear it so the next attempt gets a fresh challenge.
+        recaptchaVerifierRef.current?.clear();
+        recaptchaVerifierRef.current = null;
+      }
     } finally {
       setSending(false);
     }
@@ -70,11 +129,21 @@ export function PhoneVerification({
     setOtpError(null);
     setVerifying(true);
     try {
-      await api.post("/api/customer/otp/verify", { shopSlug, phone, code });
+      if (useFirebase) {
+        if (!confirmationResultRef.current) throw new Error("Please request a new code.");
+        const credential = await confirmationResultRef.current.confirm(code);
+        const idToken = await credential.user.getIdToken();
+        // One-shot phone verification, not a parallel login — sign out of
+        // Firebase immediately so only this app's own session cookie persists.
+        await getFirebaseAuth().signOut();
+        await api.post("/api/customer/otp/verify-firebase", { shopSlug, idToken });
+      } else {
+        await api.post("/api/customer/otp/verify", { shopSlug, phone, code });
+      }
       verifiedForPhone.current = phone;
       onVerifiedChange(true);
     } catch (err) {
-      setOtpError(err instanceof ApiError ? err.message : "Verification failed — try again.");
+      setOtpError(firebaseErrorMessage(err) ?? (err instanceof ApiError ? err.message : "Verification failed — try again."));
     } finally {
       setVerifying(false);
     }
@@ -105,6 +174,8 @@ export function PhoneVerification({
 
   return (
     <div className="space-y-2">
+      {/* Invisible reCAPTCHA anchor for Firebase Phone Auth — no visible UI, just needs to exist in the DOM. */}
+      {useFirebase && <div ref={recaptchaContainerRef} />}
       <FormRow
         label="Phone number"
         htmlFor="customerPhone"
