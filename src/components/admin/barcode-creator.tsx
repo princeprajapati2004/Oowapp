@@ -2,12 +2,22 @@
 
 import { useState } from "react";
 import Image from "next/image";
+import { toast } from "sonner";
 import { Printer, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ImageUploader } from "@/components/shared/image-uploader";
 import { BarcodeSvg } from "@/components/shared/barcode-svg";
+
+// A typo (e.g. "1000" meant to be "100") would otherwise try to render
+// that many SVG barcodes at once and can lock up the tab — cap it and
+// tell the owner to batch it instead of silently truncating or crashing.
+const MAX_LABELS_PER_BATCH = 500;
+// The print grid renders every accumulated label together regardless of how
+// many separate "Add item" batches built up the list — cap the running
+// total too, since several batches under the per-batch cap can still add up.
+const MAX_LABELS_TOTAL = 1000;
 
 type BarcodeItem = {
   id: string;
@@ -38,6 +48,14 @@ export function BarcodeCreator({ businessName }: { businessName: string }) {
     // generate that many separate cards (same code/name/photo on each), not
     // one card with "Qty N" printed as text.
     const qty = Math.max(1, Number(quantity) || 1);
+    if (qty > MAX_LABELS_PER_BATCH) {
+      toast.error(`Please generate at most ${MAX_LABELS_PER_BATCH} labels at a time — try a smaller batch.`);
+      return;
+    }
+    if (items.length + qty > MAX_LABELS_TOTAL) {
+      toast.error(`You already have ${items.length} labels ready — print or clear some before adding more (max ${MAX_LABELS_TOTAL} at once).`);
+      return;
+    }
     const itemName = name.trim();
     const itemCode = code.trim() || generateCode();
     const newLabels: BarcodeItem[] = Array.from({ length: qty }, (_, i) => ({
@@ -99,9 +117,14 @@ export function BarcodeCreator({ businessName }: { businessName: string }) {
             <p className="text-sm font-semibold">
               {items.length} label{items.length === 1 ? "" : "s"} ready
             </p>
-            <Button onClick={() => window.print()} className="gap-1.5">
-              <Printer className="size-4" /> Print
-            </Button>
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={() => setItems([])} className="gap-1.5 text-muted-foreground">
+                <Trash2 className="size-3.5" /> Clear all
+              </Button>
+              <Button onClick={() => window.print()} className="gap-1.5">
+                <Printer className="size-4" /> Print
+              </Button>
+            </div>
           </div>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 print:grid-cols-2 print:gap-2">
             {items.map((item) => (
