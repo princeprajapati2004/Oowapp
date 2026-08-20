@@ -437,6 +437,12 @@ model Customer {
   name         String
   phone        String
   passwordHash String
+  // Set once this account has logged in via Firebase Phone Auth OTP —
+  // Customer.id (not this) stays the actual identity everywhere (Order
+  // .customerId, sessions, ownership checks); this is only a link so a
+  // repeat OTP login finds the same account instead of creating a new
+  // one, and so a password-signup account can also log in via OTP later.
+  firebaseUid  String?  @unique
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 

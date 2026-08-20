@@ -1,17 +1,26 @@
 "use client";
 
+import { useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "sonner";
+import { RecaptchaVerifier, signInWithPhoneNumber, type ConfirmationResult } from "firebase/auth";
+import { Loader2 } from "lucide-react";
 import { customerLoginSchema, type CustomerLoginInput } from "@/lib/validation/customer-auth";
 import { api, ApiError } from "@/lib/api-client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { FieldGroup } from "@/components/ui/field";
 import { FormRow } from "@/components/shared/form-row";
+import { isFirebasePhoneAuthConfigured, getFirebaseAuth } from "@/lib/firebase-client";
+import { toE164, firebaseErrorMessage } from "@/lib/firebase-otp-helpers";
+import { cn } from "@/lib/utils";
+
+type LoginMethod = "password" | "otp";
+type OtpStage = "enter" | "sent";
 
 export function CustomerLoginForm({
   slug,
@@ -23,6 +32,8 @@ export function CustomerLoginForm({
   logoUrl: string | null;
 }) {
   const router = useRouter();
+  const useFirebase = isFirebasePhoneAuthConfigured();
+  const [method, setMethod] = useState<LoginMethod>("password");
   const {
     register,
     handleSubmit,
@@ -39,6 +50,11 @@ export function CustomerLoginForm({
     } catch (error) {
       toast.error(error instanceof ApiError ? error.message : "Login failed");
     }
+  }
+
+  function onOtpSuccess() {
+    router.push(`/order/${slug}`);
+    router.refresh();
   }
 
   return (
@@ -66,36 +82,65 @@ export function CustomerLoginForm({
             <p className="text-sm text-muted-foreground">Sign in to track and manage your orders.</p>
           </div>
 
-          <form onSubmit={handleSubmit(onSubmit)} className="space-y-3">
-            <FieldGroup>
-              <FormRow label="Phone number" htmlFor="phone" required error={errors.phone}>
-                <Input
-                  id="phone"
-                  inputMode="numeric"
-                  autoComplete="username"
-                  placeholder="91XXXXXXXXXX"
-                  {...register("phone")}
-                />
-              </FormRow>
-              <FormRow label="Password" htmlFor="password" required error={errors.password}>
-                <Input
-                  id="password"
-                  type="password"
-                  autoComplete="current-password"
-                  placeholder="••••••••"
-                  {...register("password")}
-                />
-              </FormRow>
-            </FieldGroup>
+          {useFirebase && (
+            <div className="grid grid-cols-2 gap-1 rounded-xl bg-muted p-1 text-sm">
+              <button
+                type="button"
+                onClick={() => setMethod("password")}
+                className={cn(
+                  "rounded-lg py-1.5 font-medium transition-colors",
+                  method === "password" ? "bg-background shadow-sm" : "text-muted-foreground hover:text-foreground"
+                )}
+              >
+                Password
+              </button>
+              <button
+                type="button"
+                onClick={() => setMethod("otp")}
+                className={cn(
+                  "rounded-lg py-1.5 font-medium transition-colors",
+                  method === "otp" ? "bg-background shadow-sm" : "text-muted-foreground hover:text-foreground"
+                )}
+              >
+                OTP
+              </button>
+            </div>
+          )}
 
-            <Button
-              type="submit"
-              className="h-10 w-full bg-primary text-primary-foreground hover:bg-primary/90 shadow-sm shadow-primary/20 transition-all"
-              disabled={isSubmitting}
-            >
-              {isSubmitting ? "Signing in…" : "Sign in"}
-            </Button>
-          </form>
+          {method === "password" ? (
+            <form onSubmit={handleSubmit(onSubmit)} className="space-y-3">
+              <FieldGroup>
+                <FormRow label="Phone number" htmlFor="phone" required error={errors.phone}>
+                  <Input
+                    id="phone"
+                    inputMode="numeric"
+                    autoComplete="username"
+                    placeholder="91XXXXXXXXXX"
+                    {...register("phone")}
+                  />
+                </FormRow>
+                <FormRow label="Password" htmlFor="password" required error={errors.password}>
+                  <Input
+                    id="password"
+                    type="password"
+                    autoComplete="current-password"
+                    placeholder="••••••••"
+                    {...register("password")}
+                  />
+                </FormRow>
+              </FieldGroup>
+
+              <Button
+                type="submit"
+                className="h-10 w-full bg-primary text-primary-foreground hover:bg-primary/90 shadow-sm shadow-primary/20 transition-all"
+                disabled={isSubmitting}
+              >
+                {isSubmitting ? "Signing in…" : "Sign in"}
+              </Button>
+            </form>
+          ) : (
+            <OtpLoginBlock slug={slug} onSuccess={onOtpSuccess} />
+          )}
 
           <p className="text-center text-sm text-muted-foreground">
             New here?{" "}
@@ -113,6 +158,141 @@ export function CustomerLoginForm({
           </p>
         </div>
       </div>
+    </div>
+  );
+}
+
+// Self-contained OTP login flow (send code → verify → POST the resulting
+// Firebase ID token to /api/customer/auth/login-otp). Mirrors the
+// checkout-gate PhoneVerification component's Firebase calls, but this one
+// finishes with a session login rather than a "verified" flag.
+function OtpLoginBlock({ slug, onSuccess }: { slug: string; onSuccess: () => void }) {
+  const [stage, setStage] = useState<OtpStage>("enter");
+  const [phone, setPhone] = useState("");
+  const [code, setCode] = useState("");
+  const [sending, setSending] = useState(false);
+  const [verifying, setVerifying] = useState(false);
+  const [otpError, setOtpError] = useState<string | null>(null);
+  const [cooldown, setCooldown] = useState(0);
+  const recaptchaContainerRef = useRef<HTMLDivElement | null>(null);
+  const recaptchaVerifierRef = useRef<RecaptchaVerifier | null>(null);
+  const confirmationResultRef = useRef<ConfirmationResult | null>(null);
+
+  useEffect(() => {
+    if (cooldown <= 0) return;
+    const id = setInterval(() => setCooldown((c) => Math.max(0, c - 1)), 1000);
+    return () => clearInterval(id);
+  }, [cooldown]);
+
+  useEffect(() => {
+    return () => {
+      recaptchaVerifierRef.current?.clear();
+      recaptchaVerifierRef.current = null;
+    };
+  }, []);
+
+  async function sendCode() {
+    setOtpError(null);
+    setSending(true);
+    try {
+      const auth = getFirebaseAuth();
+      if (!recaptchaVerifierRef.current) {
+        recaptchaVerifierRef.current = new RecaptchaVerifier(auth, recaptchaContainerRef.current!, { size: "invisible" });
+      }
+      const result = await signInWithPhoneNumber(auth, toE164(phone), recaptchaVerifierRef.current);
+      confirmationResultRef.current = result;
+      setStage("sent");
+      setCooldown(30);
+      setCode("");
+    } catch (err) {
+      setOtpError(firebaseErrorMessage(err) ?? "Couldn't send code — try again.");
+      recaptchaVerifierRef.current?.clear();
+      recaptchaVerifierRef.current = null;
+    } finally {
+      setSending(false);
+    }
+  }
+
+  async function verifyCode() {
+    setOtpError(null);
+    setVerifying(true);
+    try {
+      if (!confirmationResultRef.current) throw new Error("Please request a new code.");
+      const credential = await confirmationResultRef.current.confirm(code);
+      const idToken = await credential.user.getIdToken();
+      await getFirebaseAuth().signOut();
+      await api.post("/api/customer/auth/login-otp", { shopSlug: slug, idToken });
+      onSuccess();
+    } catch (err) {
+      setOtpError(firebaseErrorMessage(err) ?? (err instanceof ApiError ? err.message : "Verification failed — try again."));
+    } finally {
+      setVerifying(false);
+    }
+  }
+
+  return (
+    <div className="space-y-3">
+      <div ref={recaptchaContainerRef} />
+      <FormRow label="Phone number" htmlFor="otpPhone" required>
+        <div className="flex gap-2">
+          <Input
+            id="otpPhone"
+            inputMode="numeric"
+            placeholder="91XXXXXXXXXX"
+            value={phone}
+            onChange={(e) => setPhone(e.target.value)}
+            disabled={stage === "sent"}
+            className="flex-1"
+          />
+          <Button
+            type="button"
+            variant="outline"
+            className="shrink-0"
+            disabled={sending || phone.trim().length < 8 || (stage === "sent" && cooldown > 0)}
+            onClick={sendCode}
+          >
+            {sending ? (
+              <Loader2 className="size-4 animate-spin" />
+            ) : stage === "sent" ? (
+              cooldown > 0 ? `Resend (${cooldown}s)` : "Resend OTP"
+            ) : (
+              "Send OTP"
+            )}
+          </Button>
+        </div>
+      </FormRow>
+
+      {stage === "sent" && (
+        <div className="animate-in fade-in slide-in-from-top-1 duration-200 space-y-2 rounded-xl bg-muted/40 p-3">
+          <FormRow label="Enter 6-digit code" htmlFor="otpLoginCode">
+            <Input
+              id="otpLoginCode"
+              inputMode="numeric"
+              maxLength={6}
+              placeholder="000000"
+              value={code}
+              onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+              className="text-center font-mono text-lg tracking-[0.4em]"
+            />
+          </FormRow>
+          <Button
+            type="button"
+            className="h-10 w-full bg-primary text-primary-foreground hover:bg-primary/90 shadow-sm shadow-primary/20 transition-all"
+            disabled={verifying || code.length !== 6}
+            onClick={verifyCode}
+          >
+            {verifying ? (
+              <>
+                <Loader2 className="mr-1.5 size-4 animate-spin" /> Verifying…
+              </>
+            ) : (
+              "Verify & sign in"
+            )}
+          </Button>
+        </div>
+      )}
+
+      {otpError && <p className="text-sm text-destructive">{otpError}</p>}
     </div>
   );
 }

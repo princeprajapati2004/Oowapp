@@ -8,34 +8,9 @@ import { Input } from "@/components/ui/input";
 import { FormRow } from "@/components/shared/form-row";
 import { api, ApiError } from "@/lib/api-client";
 import { isFirebasePhoneAuthConfigured, getFirebaseAuth } from "@/lib/firebase-client";
+import { toE164, firebaseErrorMessage } from "@/lib/firebase-otp-helpers";
 
 type Stage = "enter" | "sent";
-
-// Indian-first normalization matching this app's existing phone convention
-// (UPI/WhatsApp code elsewhere assumes a 91 country code) — Firebase requires
-// full E.164 ("+91XXXXXXXXXX"), unlike the DB-OTP flow's bare-digit format.
-function toE164(raw: string): string {
-  const trimmed = raw.trim();
-  if (trimmed.startsWith("+")) return `+${trimmed.slice(1).replace(/\D/g, "")}`;
-  const digits = trimmed.replace(/\D/g, "");
-  if (digits.length === 10) return `+91${digits}`;
-  return `+${digits}`;
-}
-
-const FIREBASE_ERROR_MESSAGES: Record<string, string> = {
-  "auth/invalid-phone-number": "That phone number doesn't look valid — include the country code.",
-  "auth/too-many-requests": "Too many attempts from this device — please try again later.",
-  "auth/captcha-check-failed": "Verification check failed — please try again.",
-  "auth/quota-exceeded": "SMS limit reached for this restaurant right now — please try again later.",
-  "auth/code-expired": "That code expired — request a new one.",
-  "auth/invalid-verification-code": "Incorrect code — please check and try again.",
-};
-
-function firebaseErrorMessage(err: unknown): string | null {
-  const code = (err as { code?: string } | null)?.code;
-  if (typeof code === "string" && code in FIREBASE_ERROR_MESSAGES) return FIREBASE_ERROR_MESSAGES[code];
-  return null;
-}
 
 export function PhoneVerification({
   shopSlug,
