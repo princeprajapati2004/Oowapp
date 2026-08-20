@@ -239,10 +239,18 @@ export function CurrentOrderPage({
 
   const menuUrl = `/order/${shop.slug}${prefilledTable ? `?table=${encodeURIComponent(prefilledTable)}` : ""}`;
 
-  useTableSession(session, setSession, () => {
-    toast.success("Payment confirmed — thank you!");
-    cart.clear();
-  });
+  useTableSession(
+    session,
+    setSession,
+    () => {
+      toast.success("Payment confirmed — thank you!");
+      cart.clear();
+    },
+    () => {
+      setPaymentIntent("idle");
+      toast.error("The restaurant couldn't confirm your payment — please try again.");
+    }
+  );
 
   const schema = useMemo(
     () =>

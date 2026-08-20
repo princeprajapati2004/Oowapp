@@ -54,6 +54,7 @@ import { OrderPaymentModal } from "./order-payment-modal";
 import { CustomerDetailsCard } from "./customer-details-card";
 import { PaymentDetailsCard } from "./payment-details-card";
 import { PaymentMethodsCard } from "./payment-methods-card";
+import { PaymentClaimBanner } from "./payment-claim-banner";
 import { OrderActionBar } from "./order-action-bar";
 import { OrderRoundsSection } from "./order-rounds-section";
 
@@ -112,6 +113,7 @@ export function OrderDetailPage({
   // Confirm Order click — see create-order-page.tsx's handleSubmit.
   const [paymentOpen, setPaymentOpen] = useState(!!openPayment);
   const [paymentQr, setPaymentQr] = useState<string | null>(null);
+  const [claimActionLoading, setClaimActionLoading] = useState(false);
 
   const status = order.status as OrderStatus;
   const paymentStatus = (order.paymentStatus ?? "PENDING") as PaymentStatus;
@@ -194,6 +196,42 @@ export function OrderDetailPage({
       toast.error(err instanceof ApiError ? err.message : "Couldn't update the order");
     } finally {
       setActionLoading(false);
+    }
+  }
+
+  // One-click Approve: records the payment via the same mark_paid action the
+  // full payment modal uses, pre-filled from what the customer claimed —
+  // this is the real, authoritative payment record; the claim itself never
+  // marks the order paid on its own.
+  async function handleApprovePaymentClaim() {
+    setClaimActionLoading(true);
+    try {
+      const updated = await api.patch<AdminOrderEventOrder>(`/api/admin/orders/${order.id}`, {
+        action: "mark_paid",
+        paymentMethod: order.paymentClaimMethod ?? "CASH",
+        paidAmount: (order.paidAmount ?? 0) + amountDue,
+      });
+      applyUpdate(updated);
+      toast.success("Payment approved");
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Couldn't approve the payment");
+    } finally {
+      setClaimActionLoading(false);
+    }
+  }
+
+  async function handleRejectPaymentClaim() {
+    setClaimActionLoading(true);
+    try {
+      const updated = await api.patch<AdminOrderEventOrder>(`/api/admin/orders/${order.id}`, {
+        action: "reject_payment_claim",
+      });
+      applyUpdate(updated);
+      toast.success("Payment claim rejected");
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Couldn't reject the claim");
+    } finally {
+      setClaimActionLoading(false);
     }
   }
 
@@ -352,6 +390,18 @@ export function OrderDetailPage({
             tableNumber={order.tableNumber}
             deliveryAddress={order.deliveryAddress}
           />
+
+          {order.paymentClaimStatus === "PENDING" && (
+            <PaymentClaimBanner
+              method={order.paymentClaimMethod}
+              claimedAt={order.paymentClaimAt}
+              amount={amountDue}
+              currency={currency}
+              busy={claimActionLoading}
+              onApprove={handleApprovePaymentClaim}
+              onReject={handleRejectPaymentClaim}
+            />
+          )}
 
           <PaymentDetailsCard
             paymentStatus={paymentStatus}

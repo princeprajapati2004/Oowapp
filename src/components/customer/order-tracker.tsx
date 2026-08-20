@@ -108,12 +108,13 @@ export function OrderTracker({
   const [displayItems, setDisplayItems] = useState(initialOrder.items);
   const [cancelOpen, setCancelOpen] = useState(false);
   const [cancelling, setCancelling] = useState(false);
-  // No payment-gateway integration behind any of this — same pattern as the
-  // table-session Final Bill page (current-order-page.tsx): local UI states
-  // while the customer waits for staff to verify and record the payment from
-  // the owner side (PATCH /api/admin/orders/[id] {action:"mark_paid"}). There
-  // is no customer self-confirm step, matching the existing architecture.
-  const [paymentIntent, setPaymentIntent] = useState<"idle" | "cash_pending" | "upi_confirm" | "upi_pending">("idle");
+  // No payment-gateway integration behind any of this — the "waiting/rejected"
+  // states are local UI, but unlike the table-session Final Bill page, cash/
+  // UPI intent here IS persisted (order.paymentClaimStatus, via {action:
+  // "claim_payment"}) so the owner actually sees the claim and can approve
+  // (existing mark_paid, which clears the claim) or reject it — reflected
+  // back to this page over the same SSE subscription already in use below.
+  const [paymentIntent, setPaymentIntent] = useState<"idle" | "cash_pending" | "upi_confirm" | "upi_pending" | "rejected">("idle");
   const [upiQrDataUrl, setUpiQrDataUrl] = useState<string | null>(null);
   const [session, setSession] = useState(initialSession ?? null);
   const [sessionBill, setSessionBill] = useState(initialSessionBill ?? null);
@@ -203,9 +204,22 @@ export function OrderTracker({
     debounceTimerRef.current = setTimeout(() => flushRef.current(), QUANTITY_DEBOUNCE_MS);
   }
 
+  async function claimPayment(method: "CASH" | "UPI") {
+    try {
+      const res = await api.patch<{ ok: boolean; order: OrderEventOrder }>(`/api/orders/${order.id}`, {
+        action: "claim_payment",
+        method,
+      });
+      setOrder(res.order);
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Couldn't notify the restaurant — please tell staff directly.");
+    }
+  }
+
   function handleCashPayment() {
     setPaymentIntent("cash_pending");
     toast.success("Waiting for approval. Staff will collect payment shortly.");
+    claimPayment("CASH");
   }
 
   function handlePayViaUpi() {
@@ -218,11 +232,16 @@ export function OrderTracker({
 
   function handleConfirmUpiPaid() {
     setPaymentIntent("upi_pending");
+    claimPayment("UPI");
   }
 
   function handleUpiPaymentFailed() {
     setPaymentIntent("idle");
     toast.error("Payment Failed or Cancelled.");
+  }
+
+  function handleTryAgain() {
+    setPaymentIntent("idle");
   }
 
   async function handleCancelOrder() {
@@ -345,6 +364,33 @@ export function OrderTracker({
         ? "Pending"
         : "—"
     : null;
+
+  // Reacts to the owner's decision on this order's payment claim, delivered
+  // over the same SSE subscription (onUpdated) already wired above. Adjusted
+  // during render (React's own recommended pattern for this — see
+  // order-payment-modal.tsx's identical wasOpen/open comparison) rather than
+  // in an effect, so it takes effect the same render the prop changes lands.
+  const [lastClaimStatus, setLastClaimStatus] = useState(order.paymentClaimStatus);
+  if (order.paymentClaimStatus !== lastClaimStatus) {
+    setLastClaimStatus(order.paymentClaimStatus);
+    if (order.paymentClaimStatus === "REJECTED") {
+      setPaymentIntent("rejected");
+    } else if (order.paymentClaimStatus === null && (paymentIntent === "cash_pending" || paymentIntent === "upi_pending")) {
+      // Claim resolved (approved, possibly only partially) — drop back to
+      // idle so the freshly-updated Payment Details card and, if anything's
+      // still owed, a fresh Pay button show instead of a stale "waiting" state.
+      setPaymentIntent("idle");
+    }
+  }
+
+  const wasPaidRef = useRef(isPaid);
+  useEffect(() => {
+    if (isPaid && !wasPaidRef.current) {
+      toast.success("Payment confirmed — thank you!");
+      setPaymentIntent("idle");
+    }
+    wasPaidRef.current = isPaid;
+  }, [isPaid]);
 
   useEffect(() => {
     // Only generate a UPI QR for standalone orders with a remaining balance —
@@ -681,6 +727,19 @@ export function OrderTracker({
                 <Loader2 className="size-5 animate-spin text-amber-600 dark:text-amber-400" />
                 <p className="text-sm font-medium text-amber-800 dark:text-amber-400">Payment Pending</p>
                 <p className="text-xs text-amber-700/80 dark:text-amber-400/80">Waiting for the store to confirm your payment.</p>
+              </div>
+            ) : paymentIntent === "rejected" ? (
+              <div className="rounded-xl border border-red-300 bg-red-50 dark:bg-red-900/20 dark:border-red-800 px-4 py-4 flex flex-col items-center gap-3 text-center">
+                <CircleX className="size-6 text-red-600 dark:text-red-400" />
+                <div>
+                  <p className="text-sm font-medium text-red-700 dark:text-red-400">Payment Failed</p>
+                  <p className="text-xs text-red-600/80 dark:text-red-400/80 mt-0.5">
+                    The restaurant couldn&apos;t confirm your payment{order.paymentClaimMethod ? ` via ${order.paymentClaimMethod === "UPI" ? "UPI" : "Cash"}` : ""}. Please try again.
+                  </p>
+                </div>
+                <Button className="h-10 w-full" onClick={handleTryAgain}>
+                  Try Again
+                </Button>
               </div>
             ) : (
               <PaymentOptions

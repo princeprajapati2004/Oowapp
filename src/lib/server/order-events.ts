@@ -41,6 +41,11 @@ export type OrderEventOrder = {
   // Payment Details view can show Paid/Remaining from the same backend
   // record the owner sees, rather than guessing from paymentStatus alone.
   paidAmount: number | null;
+  // Customer's own "I've paid" claim — also safe to expose, since it's the
+  // customer's own action, not internal staff metadata.
+  paymentClaimStatus: string | null;
+  paymentClaimMethod: string | null;
+  paymentClaimAt: string | null;
   source?: string;
   discountType: string | null;
   discountValue: number | null;
@@ -179,6 +184,9 @@ type RawOrderForEvent = {
   paymentMethod?: string | null;
   paymentStatus?: string;
   paidAmount: unknown;
+  paymentClaimStatus: string | null;
+  paymentClaimMethod: string | null;
+  paymentClaimAt: unknown;
   source?: string;
   discountType: string | null;
   discountValue: unknown;
@@ -220,6 +228,9 @@ export function toOrderEvent(order: RawOrderForEvent): OrderEventOrder {
     paymentMethod: order.paymentMethod ?? null,
     paymentStatus: order.paymentStatus ?? "PENDING",
     paidAmount: order.paidAmount == null ? null : Number(order.paidAmount),
+    paymentClaimStatus: order.paymentClaimStatus,
+    paymentClaimMethod: order.paymentClaimMethod,
+    paymentClaimAt: order.paymentClaimAt ? (order.paymentClaimAt as Date).toISOString() : null,
     source: order.source ?? "qr",
     discountType: order.discountType,
     discountValue: order.discountValue == null ? null : Number(order.discountValue),

@@ -7,6 +7,7 @@ import { getCustomerSession } from "@/lib/customer-session";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { calculateBill } from "@/lib/services/billing";
 import { sendOrderStatusNotification } from "@/lib/services/push";
+import { createNotification } from "@/lib/services/notification";
 import { publishOrderEvent, toOrderEvent } from "@/lib/server/order-events";
 import type { Prisma } from "@/generated/prisma/client";
 
@@ -28,6 +29,14 @@ async function assertOwnsOrderIfLinked(order: { shopId: string; customerId: stri
 const EDITABLE_STATUSES = ["PENDING", "CONFIRMED"];
 
 const cancelSchema = z.object({ action: z.literal("cancel") });
+// Customer says "I've paid" (cash at counter or a UPI app) — records a claim
+// for the owner to approve/reject via the existing mark_paid / new
+// reject_payment_claim admin actions. Never marks the order paid by itself;
+// the owner's decision is always the authoritative step.
+const claimPaymentSchema = z.object({
+  action: z.literal("claim_payment"),
+  method: z.enum(["CASH", "UPI"]),
+});
 const updateItemsSchema = z.object({
   action: z.literal("update_items"),
   items: z
@@ -41,7 +50,7 @@ const updateItemsSchema = z.object({
     )
     .min(1),
 });
-const patchSchema = z.discriminatedUnion("action", [cancelSchema, updateItemsSchema]);
+const patchSchema = z.discriminatedUnion("action", [cancelSchema, claimPaymentSchema, updateItemsSchema]);
 
 // Public lookup by id — the unguessable cuid is the access token, same model
 // as the tracking page and the SSE stream. Used by the device-local order
@@ -84,6 +93,40 @@ export async function PATCH(
     });
     if (!order) throw new NotFoundError("Order not found");
     await assertOwnsOrderIfLinked(order);
+
+    // Payment claims aren't gated by EDITABLE_STATUSES — a customer can pay
+    // an order that's already being prepared, just not one that's cancelled,
+    // already fully paid, or a table-session order (those pay through the
+    // session-level Final Bill flow instead).
+    if (input.action === "claim_payment") {
+      if (order.status === "CANCELLED") {
+        return NextResponse.json({ error: "This order is cancelled." }, { status: 409 });
+      }
+      if (order.tableSessionId) {
+        return NextResponse.json({ error: "Table orders are paid through the table's Final Bill instead." }, { status: 400 });
+      }
+      const finalTotal = Number(order.discountedTotal ?? order.grandTotal);
+      const remaining = finalTotal - Number(order.paidAmount ?? 0);
+      if (remaining <= 0.005) {
+        return NextResponse.json({ error: "This order is already fully paid." }, { status: 409 });
+      }
+
+      const updated = await db.order.update({
+        where: { id },
+        data: { paymentClaimStatus: "PENDING", paymentClaimMethod: input.method, paymentClaimAt: new Date() },
+        include: { items: true },
+      });
+
+      createNotification(order.shopId, {
+        type: "PAYMENT_CLAIMED",
+        title: `Order #${order.billNumber} — payment claimed`,
+        body: `Customer says they paid ${remaining.toFixed(2)} via ${input.method === "UPI" ? "UPI" : "Cash"} — please verify.`,
+        link: `/admin/orders/${id}`,
+      }).catch(() => {});
+
+      publishOrderEvent(order.shopId, { type: "order.updated", order: toOrderEvent(updated) });
+      return NextResponse.json({ ok: true, order: toOrderEvent(updated) });
+    }
 
     if (!EDITABLE_STATUSES.includes(order.status)) {
       return NextResponse.json(

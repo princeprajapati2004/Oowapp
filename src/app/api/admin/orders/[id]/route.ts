@@ -28,6 +28,7 @@ type UpdateOrderAction =
   | "edit_items"
   | "mark_paid"
   | "mark_refunded"
+  | "reject_payment_claim"
   | "cancel"
   | "note";
 
@@ -38,7 +39,7 @@ type UpdateOrderAction =
 // outright (see the DELETE handler below, which is admin/MANAGER only).
 const STAFF_ALLOWED_ACTIONS: Record<StaffRole, Set<UpdateOrderAction>> = {
   KITCHEN: new Set(["status", "priority"]),
-  WAITER: new Set(["status", "priority", "edit_items", "cancel", "mark_paid", "note"]),
+  WAITER: new Set(["status", "priority", "edit_items", "cancel", "mark_paid", "reject_payment_claim", "note"]),
   MANAGER: new Set([
     "status",
     "priority",
@@ -46,6 +47,7 @@ const STAFF_ALLOWED_ACTIONS: Record<StaffRole, Set<UpdateOrderAction>> = {
     "cancel",
     "mark_paid",
     "mark_refunded",
+    "reject_payment_claim",
     "note",
     "discount",
     "remove_discount",
@@ -87,6 +89,7 @@ const updateOrderSchema = z.discriminatedUnion("action", [
     action: z.literal("mark_refunded"),
     note: z.string().trim().max(200).optional(),
   }),
+  z.object({ action: z.literal("reject_payment_claim") }),
   z.object({
     action: z.literal("cancel"),
     reason: z.enum([...CANCEL_REASONS]),
@@ -222,11 +225,21 @@ export async function PATCH(
           transactionReference: parsed.transactionReference || null,
           paymentConfirmedBy: actor.actorId,
           paymentConfirmedAt: new Date(),
+          // A real recorded payment resolves any pending customer claim,
+          // however it was triggered (quick-approve or the full modal).
+          paymentClaimStatus: null,
+          paymentClaimMethod: null,
+          paymentClaimAt: null,
         };
         auditEntry = {
           action: "ORDER_MARKED_PAID",
           metadata: { paymentMethod: parsed.paymentMethod, paidAmount, paymentStatus: data.paymentStatus },
         };
+      } else if (parsed.action === "reject_payment_claim") {
+        if (existing.paymentClaimStatus !== "PENDING") {
+          return NextResponse.json({ error: "There's no pending payment claim to reject." }, { status: 409 });
+        }
+        data = { paymentClaimStatus: "REJECTED" };
       } else {
         // priority
         data = { priorityFlag: parsed.priorityFlag };

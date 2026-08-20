@@ -16,7 +16,11 @@ import type { ActiveSession, SessionOrderSnapshot } from "@/lib/types/customer";
 export function useTableSession(
   session: ActiveSession,
   setSession: Dispatch<SetStateAction<ActiveSession>>,
-  onPaid?: () => void
+  onPaid?: () => void,
+  // Fires when the owner rejects the customer's payment claim (session moves
+  // AWAITING_PAYMENT -> ACTIVE again) — distinct from a session simply
+  // starting out ACTIVE, since that transition only ever means "rejected."
+  onPaymentRejected?: () => void
 ) {
   const sessionId = session?.id;
 
@@ -39,6 +43,9 @@ export function useTableSession(
 
   useOrderEvents(sessionId ? `/api/table-sessions/${sessionId}/stream` : "", {
     onSessionUpdated: (updated) => {
+      if (session?.status === "AWAITING_PAYMENT" && updated.status === "ACTIVE") {
+        onPaymentRejected?.();
+      }
       setSession((prev) =>
         prev
           ? { ...prev, status: updated.status, billRequestedAt: updated.billRequestedAt, paymentMethod: updated.paymentMethod }
