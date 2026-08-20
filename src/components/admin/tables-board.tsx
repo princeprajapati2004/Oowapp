@@ -399,6 +399,12 @@ function TableDetailDialog({
     setEditingOrder(null);
     setShowReleaseConfirm(false);
     setShowPayConfirm(false);
+    // Payment form fields are transaction-specific — carrying a note/method
+    // over into the next payment (another round on this table, or a
+    // completely different table opened next) would misattribute it.
+    setPayMethod("CASH");
+    setPayNote("");
+    setPayAmount("");
     setShowTransferDialog(false);
     setTransferTarget("");
     setShowMergeDialog(false);
