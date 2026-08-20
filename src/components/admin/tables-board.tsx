@@ -41,12 +41,14 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Textarea } from "@/components/ui/textarea";
 import { EmptyState } from "@/components/shared/empty-state";
 import { AddItemsPanel } from "@/components/admin/add-items-panel";
+import { PaymentHistorySection } from "@/components/admin/orders/payment-history-section";
 import { api, ApiError } from "@/lib/api-client";
 import { formatCurrency } from "@/lib/utils/currency";
 import { cn } from "@/lib/utils";
 import { useOrderEvents } from "@/lib/hooks/use-order-events";
 import type { Product, CartItem } from "@/lib/types/manual-order";
 import type { TableBoardEntry, TableManualState } from "@/lib/services/table-session";
+import type { PaymentRecordPayload } from "@/lib/server/order-events";
 
 type SessionLabel = "Preparing" | "Served" | "Awaiting payment" | "Paid";
 
@@ -80,6 +82,7 @@ type SessionDetail = {
   createdAt: string;
   billRequestedAt: string | null;
   orders: DetailOrder[];
+  paymentRecords: PaymentRecordPayload[];
 };
 
 const LABEL_BADGE: Record<SessionLabel, string> = {
@@ -1063,6 +1066,8 @@ function TableDetailDialog({
                   </div>
                 </div>
               )}
+
+              {detail && <PaymentHistorySection records={detail.paymentRecords} currency={currency} />}
 
               {/* Mark Paid */}
               {!isClosed && (
