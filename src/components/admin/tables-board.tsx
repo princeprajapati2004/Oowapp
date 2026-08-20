@@ -614,7 +614,16 @@ function TableDetailDialog({
           : `Table ${table.tableNumber} marked as paid`
       );
       setPayAmount("");
-      onChanged();
+      setShowPayConfirm(false);
+      if (res.partial) {
+        // Table's still open — refresh this dialog in place so the updated
+        // remaining balance and the new Payment History entry show up
+        // immediately, instead of slamming the dialog shut mid-collection.
+        await loadDetail(table.session.id);
+      } else {
+        // Fully settled — the table closed, nothing left to show here.
+        onChanged();
+      }
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : "Couldn't mark as paid");
     } finally {
