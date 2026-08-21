@@ -182,9 +182,14 @@ function OtpLoginBlock({ slug, onSuccess }: { slug: string; onSuccess: () => voi
   // Signed {reqId, phone, shopId} token from send-msg91 — the msg91
   // counterpart to confirmationResultRef, held between send and verify.
   const msg91TokenRef = useRef<string | null>(null);
-  // OtpLoginBlock only renders when at least one provider is configured
-  // (see useOtp above), so falling back to "msg91" here is safe.
-  const provider: OtpProvider = isFirebasePhoneAuthConfigured() ? "firebase" : "msg91";
+  // Providers to try, in order, on every send — see the matching comment in
+  // PhoneVerification.tsx. OtpLoginBlock only renders when at least one is
+  // configured (see useOtp above), so this is never empty.
+  const providerChain: OtpProvider[] = [];
+  if (isFirebasePhoneAuthConfigured()) providerChain.push("firebase");
+  if (isMsg91WidgetConfigured()) providerChain.push("msg91");
+  const [activeProviderIndex, setActiveProviderIndex] = useState(0);
+  const provider: OtpProvider = providerChain[activeProviderIndex] ?? providerChain[0];
 
   useEffect(() => {
     if (cooldown <= 0) return;
@@ -199,38 +204,49 @@ function OtpLoginBlock({ slug, onSuccess }: { slug: string; onSuccess: () => voi
     };
   }, []);
 
+  async function sendViaProvider(p: OtpProvider): Promise<void> {
+    if (p === "firebase") {
+      const auth = getFirebaseAuth();
+      if (!recaptchaVerifierRef.current) {
+        recaptchaVerifierRef.current = new RecaptchaVerifier(auth, recaptchaContainerRef.current!, { size: "invisible" });
+      }
+      const result = await signInWithPhoneNumber(auth, toE164(phone), recaptchaVerifierRef.current);
+      confirmationResultRef.current = result;
+      return;
+    }
+    const res = await api.post<{ ok: boolean; token: string }>("/api/customer/otp/send-msg91", {
+      shopSlug: slug,
+      phone,
+    });
+    msg91TokenRef.current = res.token;
+  }
+
   async function sendCode() {
     setOtpError(null);
     setSending(true);
-    try {
-      if (provider === "firebase") {
-        const auth = getFirebaseAuth();
-        if (!recaptchaVerifierRef.current) {
-          recaptchaVerifierRef.current = new RecaptchaVerifier(auth, recaptchaContainerRef.current!, { size: "invisible" });
+    let lastErr: unknown = null;
+    for (let i = 0; i < providerChain.length; i++) {
+      const candidate = providerChain[i];
+      try {
+        await sendViaProvider(candidate);
+        setActiveProviderIndex(i);
+        setStage("sent");
+        setCooldown(30);
+        setCode("");
+        setSending(false);
+        return;
+      } catch (err) {
+        lastErr = err;
+        if (candidate === "firebase") {
+          recaptchaVerifierRef.current?.clear();
+          recaptchaVerifierRef.current = null;
         }
-        const result = await signInWithPhoneNumber(auth, toE164(phone), recaptchaVerifierRef.current);
-        confirmationResultRef.current = result;
-      } else {
-        const res = await api.post<{ ok: boolean; token: string }>("/api/customer/otp/send-msg91", {
-          shopSlug: slug,
-          phone,
-        });
-        msg91TokenRef.current = res.token;
       }
-      setStage("sent");
-      setCooldown(30);
-      setCode("");
-    } catch (err) {
-      setOtpError(
-        firebaseErrorMessage(err) ?? (err instanceof ApiError ? err.message : "Couldn't send code — try again.")
-      );
-      if (provider === "firebase") {
-        recaptchaVerifierRef.current?.clear();
-        recaptchaVerifierRef.current = null;
-      }
-    } finally {
-      setSending(false);
     }
+    setOtpError(
+      firebaseErrorMessage(lastErr) ?? (lastErr instanceof ApiError ? lastErr.message : "Couldn't send code — try again.")
+    );
+    setSending(false);
   }
 
   async function verifyCode() {

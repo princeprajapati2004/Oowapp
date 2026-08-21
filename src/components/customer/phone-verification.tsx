@@ -42,13 +42,20 @@ export function PhoneVerification({
   // Signed {reqId, phone, shopId} token from send-msg91 — the msg91
   // counterpart to confirmationResultRef, held between send and verify.
   const msg91TokenRef = useRef<string | null>(null);
-  // Firebase first, then MSG91's Widget, then the DB-backed dev-log fallback
-  // — whichever is configured first wins; never more than one is active.
-  const provider: OtpProvider = isFirebasePhoneAuthConfigured()
-    ? "firebase"
-    : isMsg91WidgetConfigured()
-      ? "msg91"
-      : "db";
+  // Providers to try, in order, on every send: Firebase being *configured*
+  // (env vars present) doesn't guarantee it's actually functional (e.g. Phone
+  // Auth can be left disabled in the Firebase console while the env vars
+  // still look fine) — so sendCode() below walks this list and only shows an
+  // error once every entry has failed, rather than trusting the first one.
+  // The DB-backed dev-log fallback never delivers a real SMS, so it's only
+  // ever used when nothing else is configured at all — never as an
+  // automatic fallback from a failed Firebase/MSG91 attempt.
+  const providerChain: OtpProvider[] = [];
+  if (isFirebasePhoneAuthConfigured()) providerChain.push("firebase");
+  if (isMsg91WidgetConfigured()) providerChain.push("msg91");
+  if (providerChain.length === 0) providerChain.push("db");
+  const [activeProviderIndex, setActiveProviderIndex] = useState(0);
+  const provider: OtpProvider = providerChain[activeProviderIndex] ?? providerChain[0];
 
   // A verified phone stops being "verified" the moment the customer edits it
   // to a different number — each number needs its own OTP round.
@@ -75,51 +82,63 @@ export function PhoneVerification({
     };
   }, []);
 
+  async function sendViaProvider(p: OtpProvider): Promise<{ cooldownSeconds: number }> {
+    if (p === "firebase") {
+      const auth = getFirebaseAuth();
+      if (!recaptchaVerifierRef.current) {
+        recaptchaVerifierRef.current = new RecaptchaVerifier(auth, recaptchaContainerRef.current!, { size: "invisible" });
+      }
+      const result = await signInWithPhoneNumber(auth, toE164(phone), recaptchaVerifierRef.current);
+      confirmationResultRef.current = result;
+      return { cooldownSeconds: 30 };
+    }
+    if (p === "msg91") {
+      const res = await api.post<{ ok: boolean; token: string }>("/api/customer/otp/send-msg91", {
+        shopSlug,
+        phone,
+      });
+      msg91TokenRef.current = res.token;
+      return { cooldownSeconds: 30 };
+    }
+    const res = await api.post<{ ok: boolean; expiresInSeconds: number; resendCooldownSeconds: number }>(
+      "/api/customer/otp/send",
+      { shopSlug, phone }
+    );
+    return { cooldownSeconds: res.resendCooldownSeconds };
+  }
+
   async function sendCode() {
     setOtpError(null);
     setSending(true);
-    try {
-      if (provider === "firebase") {
-        const auth = getFirebaseAuth();
-        if (!recaptchaVerifierRef.current) {
-          recaptchaVerifierRef.current = new RecaptchaVerifier(auth, recaptchaContainerRef.current!, { size: "invisible" });
+    let lastErr: unknown = null;
+    // Always start from the top of the chain — a failed Firebase send here
+    // is a persistent config issue, not a transient one, but still the
+    // architecturally "correct" provider to prefer if it starts working.
+    for (let i = 0; i < providerChain.length; i++) {
+      const candidate = providerChain[i];
+      try {
+        const { cooldownSeconds } = await sendViaProvider(candidate);
+        setActiveProviderIndex(i);
+        setStage("sent");
+        setCooldown(cooldownSeconds);
+        setCode("");
+        setSending(false);
+        return;
+      } catch (err) {
+        lastErr = err;
+        if (candidate === "firebase") {
+          // A failed send may leave the reCAPTCHA widget in a stale/used
+          // state — clear it so a retry (this loop, or a later click) gets
+          // a fresh challenge.
+          recaptchaVerifierRef.current?.clear();
+          recaptchaVerifierRef.current = null;
         }
-        const result = await signInWithPhoneNumber(auth, toE164(phone), recaptchaVerifierRef.current);
-        confirmationResultRef.current = result;
-        setStage("sent");
-        setCooldown(30);
-        setCode("");
-      } else if (provider === "msg91") {
-        const res = await api.post<{ ok: boolean; token: string }>("/api/customer/otp/send-msg91", {
-          shopSlug,
-          phone,
-        });
-        msg91TokenRef.current = res.token;
-        setStage("sent");
-        setCooldown(30);
-        setCode("");
-      } else {
-        const res = await api.post<{ ok: boolean; expiresInSeconds: number; resendCooldownSeconds: number }>(
-          "/api/customer/otp/send",
-          { shopSlug, phone }
-        );
-        setStage("sent");
-        setCooldown(res.resendCooldownSeconds);
-        setCode("");
       }
-    } catch (err) {
-      setOtpError(
-        firebaseErrorMessage(err) ?? (err instanceof ApiError ? err.message : "Couldn't send code — try again.")
-      );
-      if (provider === "firebase") {
-        // A failed send may leave the reCAPTCHA widget in a stale/used
-        // state — clear it so the next attempt gets a fresh challenge.
-        recaptchaVerifierRef.current?.clear();
-        recaptchaVerifierRef.current = null;
-      }
-    } finally {
-      setSending(false);
     }
+    setOtpError(
+      firebaseErrorMessage(lastErr) ?? (lastErr instanceof ApiError ? lastErr.message : "Couldn't send code — try again.")
+    );
+    setSending(false);
   }
 
   async function verifyCode() {
@@ -176,8 +195,10 @@ export function PhoneVerification({
 
   return (
     <div className="space-y-2">
-      {/* Invisible reCAPTCHA anchor for Firebase Phone Auth — no visible UI, just needs to exist in the DOM. */}
-      {provider === "firebase" && <div ref={recaptchaContainerRef} />}
+      {/* Invisible reCAPTCHA anchor for Firebase Phone Auth — no visible UI, just needs
+          to stay mounted whenever Firebase is a candidate in the chain (not just when
+          it's the currently-active provider), since every send/resend retries it first. */}
+      {providerChain.includes("firebase") && <div ref={recaptchaContainerRef} />}
       <FormRow
         label="Phone number"
         htmlFor="customerPhone"
