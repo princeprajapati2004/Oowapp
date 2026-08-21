@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { FormRow } from "@/components/shared/form-row";
 import { api, ApiError } from "@/lib/api-client";
-import { isFirebasePhoneAuthConfigured, getFirebaseAuth } from "@/lib/firebase-client";
+import { getFirebaseAuth } from "@/lib/firebase-client";
 import { toE164, firebaseErrorMessage } from "@/lib/firebase-otp-helpers";
 import { isMsg91WidgetConfigured } from "@/lib/msg91-client";
 
@@ -42,16 +42,16 @@ export function PhoneVerification({
   // Signed {reqId, phone, shopId} token from send-msg91 — the msg91
   // counterpart to confirmationResultRef, held between send and verify.
   const msg91TokenRef = useRef<string | null>(null);
-  // Providers to try, in order, on every send: Firebase being *configured*
-  // (env vars present) doesn't guarantee it's actually functional (e.g. Phone
-  // Auth can be left disabled in the Firebase console while the env vars
-  // still look fine) — so sendCode() below walks this list and only shows an
-  // error once every entry has failed, rather than trusting the first one.
+  // MSG91-only by explicit decision — Firebase Phone Auth requires the
+  // provider to be enabled in the Firebase console (a setting nobody has
+  // access to fix here), so it's deliberately excluded from the chain
+  // rather than left as an unreliable first attempt. The "firebase" branches
+  // in sendViaProvider/verifyCode below are dead code while this is empty —
+  // left in place (not deleted) so Firebase can be re-enabled later just by
+  // adding "firebase" back to this list, without redoing the integration.
   // The DB-backed dev-log fallback never delivers a real SMS, so it's only
-  // ever used when nothing else is configured at all — never as an
-  // automatic fallback from a failed Firebase/MSG91 attempt.
+  // ever used when nothing else is configured at all.
   const providerChain: OtpProvider[] = [];
-  if (isFirebasePhoneAuthConfigured()) providerChain.push("firebase");
   if (isMsg91WidgetConfigured()) providerChain.push("msg91");
   if (providerChain.length === 0) providerChain.push("db");
   const [activeProviderIndex, setActiveProviderIndex] = useState(0);

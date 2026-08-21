@@ -15,7 +15,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { FieldGroup } from "@/components/ui/field";
 import { FormRow } from "@/components/shared/form-row";
-import { isFirebasePhoneAuthConfigured, getFirebaseAuth } from "@/lib/firebase-client";
+import { getFirebaseAuth } from "@/lib/firebase-client";
 import { toE164, firebaseErrorMessage } from "@/lib/firebase-otp-helpers";
 import { isMsg91WidgetConfigured } from "@/lib/msg91-client";
 import { cn } from "@/lib/utils";
@@ -34,7 +34,9 @@ export function CustomerLoginForm({
   logoUrl: string | null;
 }) {
   const router = useRouter();
-  const useOtp = isFirebasePhoneAuthConfigured() || isMsg91WidgetConfigured();
+  // MSG91-only by explicit decision — see the matching comment in
+  // PhoneVerification.tsx (OtpLoginBlock's providerChain below).
+  const useOtp = isMsg91WidgetConfigured();
   const [method, setMethod] = useState<LoginMethod>("password");
   const {
     register,
@@ -182,11 +184,10 @@ function OtpLoginBlock({ slug, onSuccess }: { slug: string; onSuccess: () => voi
   // Signed {reqId, phone, shopId} token from send-msg91 — the msg91
   // counterpart to confirmationResultRef, held between send and verify.
   const msg91TokenRef = useRef<string | null>(null);
-  // Providers to try, in order, on every send — see the matching comment in
-  // PhoneVerification.tsx. OtpLoginBlock only renders when at least one is
+  // MSG91-only by explicit decision — see the matching comment in
+  // PhoneVerification.tsx. OtpLoginBlock only renders when MSG91 is
   // configured (see useOtp above), so this is never empty.
   const providerChain: OtpProvider[] = [];
-  if (isFirebasePhoneAuthConfigured()) providerChain.push("firebase");
   if (isMsg91WidgetConfigured()) providerChain.push("msg91");
   const [activeProviderIndex, setActiveProviderIndex] = useState(0);
   const provider: OtpProvider = providerChain[activeProviderIndex] ?? providerChain[0];
