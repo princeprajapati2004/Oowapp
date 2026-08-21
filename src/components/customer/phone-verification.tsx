@@ -9,8 +9,10 @@ import { FormRow } from "@/components/shared/form-row";
 import { api, ApiError } from "@/lib/api-client";
 import { isFirebasePhoneAuthConfigured, getFirebaseAuth } from "@/lib/firebase-client";
 import { toE164, firebaseErrorMessage } from "@/lib/firebase-otp-helpers";
+import { isMsg91WidgetConfigured } from "@/lib/msg91-client";
 
 type Stage = "enter" | "sent";
+type OtpProvider = "firebase" | "msg91" | "db";
 
 export function PhoneVerification({
   shopSlug,
@@ -37,7 +39,16 @@ export function PhoneVerification({
   const recaptchaContainerRef = useRef<HTMLDivElement | null>(null);
   const recaptchaVerifierRef = useRef<RecaptchaVerifier | null>(null);
   const confirmationResultRef = useRef<ConfirmationResult | null>(null);
-  const useFirebase = isFirebasePhoneAuthConfigured();
+  // Signed {reqId, phone, shopId} token from send-msg91 — the msg91
+  // counterpart to confirmationResultRef, held between send and verify.
+  const msg91TokenRef = useRef<string | null>(null);
+  // Firebase first, then MSG91's Widget, then the DB-backed dev-log fallback
+  // — whichever is configured first wins; never more than one is active.
+  const provider: OtpProvider = isFirebasePhoneAuthConfigured()
+    ? "firebase"
+    : isMsg91WidgetConfigured()
+      ? "msg91"
+      : "db";
 
   // A verified phone stops being "verified" the moment the customer edits it
   // to a different number — each number needs its own OTP round.
@@ -68,13 +79,22 @@ export function PhoneVerification({
     setOtpError(null);
     setSending(true);
     try {
-      if (useFirebase) {
+      if (provider === "firebase") {
         const auth = getFirebaseAuth();
         if (!recaptchaVerifierRef.current) {
           recaptchaVerifierRef.current = new RecaptchaVerifier(auth, recaptchaContainerRef.current!, { size: "invisible" });
         }
         const result = await signInWithPhoneNumber(auth, toE164(phone), recaptchaVerifierRef.current);
         confirmationResultRef.current = result;
+        setStage("sent");
+        setCooldown(30);
+        setCode("");
+      } else if (provider === "msg91") {
+        const res = await api.post<{ ok: boolean; token: string }>("/api/customer/otp/send-msg91", {
+          shopSlug,
+          phone,
+        });
+        msg91TokenRef.current = res.token;
         setStage("sent");
         setCooldown(30);
         setCode("");
@@ -88,8 +108,10 @@ export function PhoneVerification({
         setCode("");
       }
     } catch (err) {
-      setOtpError(firebaseErrorMessage(err) ?? (err instanceof ApiError ? err.message : "Couldn't send code — try again."));
-      if (useFirebase) {
+      setOtpError(
+        firebaseErrorMessage(err) ?? (err instanceof ApiError ? err.message : "Couldn't send code — try again.")
+      );
+      if (provider === "firebase") {
         // A failed send may leave the reCAPTCHA widget in a stale/used
         // state — clear it so the next attempt gets a fresh challenge.
         recaptchaVerifierRef.current?.clear();
@@ -104,7 +126,7 @@ export function PhoneVerification({
     setOtpError(null);
     setVerifying(true);
     try {
-      if (useFirebase) {
+      if (provider === "firebase") {
         if (!confirmationResultRef.current) throw new Error("Please request a new code.");
         const credential = await confirmationResultRef.current.confirm(code);
         const idToken = await credential.user.getIdToken();
@@ -112,13 +134,18 @@ export function PhoneVerification({
         // Firebase immediately so only this app's own session cookie persists.
         await getFirebaseAuth().signOut();
         await api.post("/api/customer/otp/verify-firebase", { shopSlug, idToken });
+      } else if (provider === "msg91") {
+        if (!msg91TokenRef.current) throw new Error("Please request a new code.");
+        await api.post("/api/customer/otp/verify-msg91", { shopSlug, token: msg91TokenRef.current, otp: code });
       } else {
         await api.post("/api/customer/otp/verify", { shopSlug, phone, code });
       }
       verifiedForPhone.current = phone;
       onVerifiedChange(true);
     } catch (err) {
-      setOtpError(firebaseErrorMessage(err) ?? (err instanceof ApiError ? err.message : "Verification failed — try again."));
+      setOtpError(
+        firebaseErrorMessage(err) ?? (err instanceof ApiError ? err.message : "Verification failed — try again.")
+      );
     } finally {
       setVerifying(false);
     }
@@ -150,7 +177,7 @@ export function PhoneVerification({
   return (
     <div className="space-y-2">
       {/* Invisible reCAPTCHA anchor for Firebase Phone Auth — no visible UI, just needs to exist in the DOM. */}
-      {useFirebase && <div ref={recaptchaContainerRef} />}
+      {provider === "firebase" && <div ref={recaptchaContainerRef} />}
       <FormRow
         label="Phone number"
         htmlFor="customerPhone"
