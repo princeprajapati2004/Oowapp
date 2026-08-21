@@ -17,10 +17,9 @@ const schema = z.object({
   otp: z.string().trim().regex(/^\d{4,8}$/, "Enter the code"),
 });
 
-// Counterpart to /api/customer/otp/verify-firebase for shops using MSG91
-// instead — same end result (the PHONE_VERIFIED_COOKIE). `token` is the
-// signed {reqId, phone, shopId} minted by send-msg91/route.ts; the phone
-// this route trusts always comes from that token, never from client input.
+// Sets PHONE_VERIFIED_COOKIE after confirming the OTP with MSG91. `token`
+// is the signed {reqId, phone, shopId} minted by send-msg91/route.ts; the
+// phone this route trusts always comes from that token, never client input.
 export async function POST(request: Request) {
   try {
     const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "unknown";

@@ -31,10 +31,9 @@ function requireConfig(): { authKey: string; widgetId: string } {
   return { authKey, widgetId };
 }
 
-// MSG91 wants the mobile number as digits-only with country code, no "+" —
-// same Indian-first assumption as firebase-otp-helpers.toE164, just without
-// the leading plus (mirrors src/lib/msg91-client.ts's toMsg91Identifier,
-// duplicated here to keep this file free of "use client" import concerns).
+// MSG91 wants the mobile number as digits-only with country code, no "+"
+// (mirrors src/lib/msg91-client.ts's toMsg91Identifier, duplicated here to
+// keep this file free of "use client" import concerns).
 function toMsg91Identifier(raw: string): string {
   const digits = raw.trim().replace(/\D/g, "");
   if (digits.length === 10) return `91${digits}`;

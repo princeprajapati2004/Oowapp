@@ -21,13 +21,12 @@ const schema = z.object({
 });
 
 /**
- * Customer login via MSG91 OTP — counterpart to /api/customer/auth/login-otp
- * (Firebase) for shops where Firebase Phone Auth isn't configured. Same
- * Customer model, same CUSTOMER_SESSION_COOKIE, same (shopId, phone) identity
- * rule: accounts are found/created by the phone number carried in the signed
- * send-msg91 token (never client input), so a repeat OTP login always
- * resolves to the same account and an existing password-signup account can
- * also log in via OTP once its phone matches.
+ * Customer login via MSG91 OTP — counterpart to the password-based /login
+ * route, reusing the same Customer model and CUSTOMER_SESSION_COOKIE rather
+ * than a second identity system. Accounts are found/created by the phone
+ * number carried in the signed send-msg91 token (never client input), so a
+ * repeat OTP login always resolves to the same account and an existing
+ * password-signup account can also log in via OTP once its phone matches.
  */
 export async function POST(request: Request) {
   try {
