@@ -116,6 +116,3 @@ export async function verifyOtp(shopId: string, phone: string, code: string): Pr
 
   await db.phoneOtp.update({ where: { id: otp.id }, data: { verifiedAt: new Date() } });
 }
-
-  await db.phoneOtp.update({ where: { id: otp.id }, data: { verifiedAt: new Date() } });
-}
