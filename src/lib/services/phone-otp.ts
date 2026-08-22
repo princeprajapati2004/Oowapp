@@ -77,7 +77,7 @@ export async function secondsUntilNextSend(shopId: string, phone: string): Promi
 export async function startOtp(shopId: string, phone: string, shop: ShopInfo): Promise<void> {
   const expiresAt = new Date(Date.now() + OTP_EXPIRY_MINUTES * 60_000);
 
-  if (providerOwnsOtp()) {
+  if (await providerOwnsOtp()) {
     const reference = await sendProviderOtp(phone);
     await db.phoneOtp.create({
       data: { shopId, phone, codeHash: `${PROVIDER_REF_PREFIX}${reference}`, expiresAt },
@@ -113,6 +113,9 @@ export async function verifyOtp(shopId: string, phone: string, code: string): Pr
     });
     throw new OtpIncorrectError(Math.max(0, MAX_ATTEMPTS - updated.attempts));
   }
+
+  await db.phoneOtp.update({ where: { id: otp.id }, data: { verifiedAt: new Date() } });
+}
 
   await db.phoneOtp.update({ where: { id: otp.id }, data: { verifiedAt: new Date() } });
 }
