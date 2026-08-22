@@ -1,17 +1,20 @@
+import { getSmsConfig, describeMissing, type SmsConfig } from "@/lib/services/sms-config";
+
 /**
  * SMS / OTP provider adapter.
  *
- * Two modes, chosen with the SMS_PROVIDER env var:
+ * Settings come from Admin → SMS setup (stored in PlatformSettings), falling
+ * back to environment variables. See sms-config.ts.
  *
+ * Two modes:
  *   msg91-widget  MSG91 generates, sends AND verifies the code. No DLT template
- *                 of your own is needed. `sendProviderOtp()` returns a reqId
- *                 that must be handed back to `verifyProviderOtp()` later.
+ *                 of your own needed. sendProviderOtp() returns a reqId that
+ *                 must be handed back to verifyProviderOtp().
+ *   msg91-flow    We generate the code, MSG91 only delivers it using your own
+ *                 DLT-approved template. Verification stays local (bcrypt).
  *
- *   msg91-flow    We generate the code, MSG91 only delivers the SMS using your
- *                 own DLT-approved template. Verification stays local (bcrypt).
- *
- * Contract: nothing here returns "success" unless the provider actually
- * accepted the request. Silence is never treated as success.
+ * Contract: nothing here reports success unless the provider actually accepted
+ * the request. Silence is never treated as success.
  */
 
 type ShopInfo = { businessName: string };
@@ -23,31 +26,22 @@ const FLOW_URL = "https://control.msg91.com/api/v5/flow";
 
 type Msg91Response = { type?: string; message?: unknown };
 
-function currentProvider(): string {
-  const value = process.env.SMS_PROVIDER?.trim().toLowerCase();
-  if (!value) {
+async function requireConfig(): Promise<SmsConfig> {
+  const config = await getSmsConfig();
+  const missing = describeMissing(config);
+  if (missing.length > 0) {
     throw new Error(
-      "SMS_PROVIDER is not set — refusing to report success without sending an SMS. " +
-        "Set SMS_PROVIDER=msg91-widget (or msg91-flow)."
+      `SMS is not configured yet, so no code was sent. ${missing.join(" ")} ` +
+        "Fix this in Admin → SMS setup."
     );
   }
-  if (value !== "msg91-widget" && value !== "msg91-flow") {
-    throw new Error(
-      `Unsupported SMS_PROVIDER "${value}". Supported: msg91-widget, msg91-flow`
-    );
-  }
-  return value;
+  return config;
 }
 
 /** True when the provider owns the code, so verification must go back to it. */
-export function providerOwnsOtp(): boolean {
-  return currentProvider() === "msg91-widget";
-}
-
-function requireEnv(name: string): string {
-  const value = process.env[name]?.trim();
-  if (!value) throw new Error(`[sms] Missing required environment variable ${name}`);
-  return value;
+export async function providerOwnsOtp(): Promise<boolean> {
+  const config = await requireConfig();
+  return config.provider === "msg91-widget";
 }
 
 /**
@@ -66,9 +60,9 @@ export function toMsg91Mobile(raw: string): string {
 
 async function postToMsg91(
   url: string,
-  body: unknown
+  body: unknown,
+  authkey: string
 ): Promise<{ status: number; payload: Msg91Response; raw: string }> {
-  const authkey = requireEnv("MSG91_AUTH_KEY");
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
 
@@ -122,19 +116,18 @@ function succeeded(status: number, payload: Msg91Response): boolean {
 /*  msg91-widget: MSG91 owns the code                                          */
 /* -------------------------------------------------------------------------- */
 
-function widgetIdentifier(phone: string): string {
-  return process.env.MSG91_WIDGET_SKIP_COUNTRY_CODE === "1"
-    ? phone.replace(/\D/g, "").slice(-10)
-    : toMsg91Mobile(phone);
+function widgetIdentifier(phone: string, config: SmsConfig): string {
+  return config.skipCountryCode ? phone.replace(/\D/g, "").slice(-10) : toMsg91Mobile(phone);
 }
 
 /** Asks MSG91 to send a code. Returns the reqId needed to verify it later. */
 export async function sendProviderOtp(phone: string): Promise<string> {
-  const widgetId = requireEnv("MSG91_WIDGET_ID");
-  const { status, payload, raw } = await postToMsg91(WIDGET_SEND_URL, {
-    widgetId,
-    identifier: widgetIdentifier(phone),
-  });
+  const config = await requireConfig();
+  const { status, payload, raw } = await postToMsg91(
+    WIDGET_SEND_URL,
+    { widgetId: config.widgetId, identifier: widgetIdentifier(phone, config) },
+    config.authKey as string
+  );
 
   if (!succeeded(status, payload) || typeof payload.message !== "string") {
     console.error("[sms] MSG91 widget rejected sendOtp:", {
@@ -149,26 +142,26 @@ export async function sendProviderOtp(phone: string): Promise<string> {
 
 /**
  * Asks MSG91 whether `code` is correct for a previous send.
- * Returns false for a wrong/expired code; throws if the provider itself is
+ * Returns false for a wrong/expired code; throws when the provider itself is
  * misconfigured or unreachable, so an outage is never shown as "wrong code".
  */
 export async function verifyProviderOtp(reference: string, code: string): Promise<boolean> {
-  const widgetId = requireEnv("MSG91_WIDGET_ID");
-  const { status, payload, raw } = await postToMsg91(WIDGET_VERIFY_URL, {
-    widgetId,
-    reqId: reference,
-    otp: code,
-  });
+  const config = await requireConfig();
+  const { status, payload, raw } = await postToMsg91(
+    WIDGET_VERIFY_URL,
+    { widgetId: config.widgetId, reqId: reference, otp: code },
+    config.authKey as string
+  );
 
   if (succeeded(status, payload)) return true;
 
   const detail = describe(payload, raw);
-  const normalised = detail.toLowerCase();
+  const lower = detail.toLowerCase();
   const isWrongCode =
-    normalised.includes("otp") ||
-    normalised.includes("invalid") ||
-    normalised.includes("expire") ||
-    normalised.includes("mismatch");
+    lower.includes("otp") ||
+    lower.includes("invalid") ||
+    lower.includes("expire") ||
+    lower.includes("mismatch");
 
   console.warn("[sms] MSG91 widget verifyOtp rejected:", { status, detail });
   if (isWrongCode) return false;
@@ -180,33 +173,28 @@ export async function verifyProviderOtp(reference: string, code: string): Promis
 /*  msg91-flow: we own the code, MSG91 only delivers it                        */
 /* -------------------------------------------------------------------------- */
 
-export async function sendOtpSms(
-  phone: string,
-  code: string,
-  shop: ShopInfo
-): Promise<void> {
-  if (currentProvider() !== "msg91-flow") {
-    throw new Error("sendOtpSms() is only valid when SMS_PROVIDER=msg91-flow");
+export async function sendOtpSms(phone: string, code: string, shop: ShopInfo): Promise<void> {
+  const config = await requireConfig();
+  if (config.provider !== "msg91-flow") {
+    throw new Error("sendOtpSms() is only valid when the provider is msg91-flow");
   }
-
-  const templateId = requireEnv("MSG91_TEMPLATE_ID");
-
-  // These names must match the variables in your approved DLT template.
-  const otpVar = process.env.MSG91_OTP_VAR?.trim() || "OTP";
-  const brandVar = process.env.MSG91_BRAND_VAR?.trim();
 
   const recipient: Record<string, string> = {
     mobiles: toMsg91Mobile(phone),
-    [otpVar]: code,
+    [config.otpVar]: code,
   };
-  if (brandVar) recipient[brandVar] = shop.businessName;
+  if (config.brandVar) recipient[config.brandVar] = shop.businessName;
 
-  const { status, payload, raw } = await postToMsg91(FLOW_URL, {
-    template_id: templateId,
-    short_url: "0",
-    realTimeResponse: "1",
-    recipients: [recipient],
-  });
+  const { status, payload, raw } = await postToMsg91(
+    FLOW_URL,
+    {
+      template_id: config.templateId,
+      short_url: "0",
+      realTimeResponse: "1",
+      recipients: [recipient],
+    },
+    config.authKey as string
+  );
 
   if (!succeeded(status, payload)) {
     console.error("[sms] MSG91 flow rejected the OTP send:", {
@@ -215,4 +203,35 @@ export async function sendOtpSms(
     });
     throw new Error(`SMS provider rejected the request: ${describe(payload, raw) || status}`);
   }
+}
+
+/**
+ * Checks the saved credentials without messaging a real phone: MSG91 validates
+ * the auth key before it ever looks at the identifier, so a deliberately
+ * invalid one is enough to tell working credentials from broken ones.
+ */
+export async function testSmsCredentials(): Promise<{ ok: boolean; detail: string }> {
+  const config = await getSmsConfig();
+  const missing = describeMissing(config);
+  if (missing.length > 0) return { ok: false, detail: missing.join(" ") };
+
+  const { status, payload, raw } = await postToMsg91(
+    WIDGET_SEND_URL,
+    { widgetId: config.widgetId, identifier: "0" },
+    config.authKey as string
+  );
+
+  const detail = describe(payload, raw);
+  const lower = detail.toLowerCase();
+
+  if (lower.includes("authentication") || lower.includes("authkey")) {
+    return { ok: false, detail: `The auth key was rejected by MSG91 — ${detail}` };
+  }
+  if (lower.includes("widget")) {
+    return { ok: false, detail: `The auth key works, but the widget id was rejected — ${detail}` };
+  }
+  if (lower.includes("identifier") || lower.includes("mobile") || succeeded(status, payload)) {
+    return { ok: true, detail: "Credentials accepted by MSG91." };
+  }
+  return { ok: false, detail: `Unrecognised reply from MSG91 — ${detail}` };
 }
