@@ -6,7 +6,7 @@ import {
   clearSmsAuthKey,
   describeMissing,
 } from "@/lib/services/sms-config";
-import { testSmsCredentials } from "@/lib/services/sms-provider";
+import { sendProviderOtp, testSmsCredentials } from "@/lib/services/sms-provider";
 
 /**
  * Admin → SMS setup.
@@ -45,6 +45,32 @@ async function testAction(): Promise<void> {
   const result = await testSmsCredentials();
   const status = result.ok ? "test-ok" : "test-failed";
   redirect(`/admin/sms-setup?status=${status}&detail=${encodeURIComponent(result.detail)}`);
+}
+
+async function sendTestAction(formData: FormData): Promise<void> {
+  "use server";
+  await requireAdminSession();
+
+  const phone = String(formData.get("testPhone") ?? "").trim();
+  if (!phone) {
+    redirect(
+      `/admin/sms-setup?status=send-failed&detail=${encodeURIComponent("Enter a phone number first.")}`
+    );
+  }
+
+  // redirect() works by throwing, so it must stay outside the try block.
+  let outcome: { ok: boolean; detail: string };
+  try {
+    await sendProviderOtp(phone);
+    outcome = { ok: true, detail: `A code was sent to ${phone}. Check that handset.` };
+  } catch (error) {
+    outcome = { ok: false, detail: error instanceof Error ? error.message : String(error) };
+  }
+
+  redirect(
+    `/admin/sms-setup?status=${outcome.ok ? "send-ok" : "send-failed"}` +
+      `&detail=${encodeURIComponent(outcome.detail)}`
+  );
 }
 
 async function clearKeyAction(): Promise<void> {
@@ -144,6 +170,14 @@ export default async function SmsSetupPage({
       {status === "key-cleared" && <div style={banner("info")}>The stored auth key was removed.</div>}
       {status === "test-ok" && <div style={banner("ok")}>MSG91 accepted these credentials. {detail}</div>}
       {status === "test-failed" && <div style={banner("bad")}>{detail ?? "The test failed."}</div>}
+      {status === "send-ok" && <div style={banner("ok")}>{detail ?? "Test code sent."}</div>}
+      {status === "send-failed" && (
+        <div style={banner("bad")}>
+          <strong>The code could not be sent.</strong>
+          <br />
+          {detail ?? "No further detail was returned."}
+        </div>
+      )}
 
       {missing.length > 0 ? (
         <div style={banner("bad")}>
@@ -229,6 +263,24 @@ export default async function SmsSetupPage({
           </button>
         </form>
       </div>
+
+      <form action={sendTestAction} style={{ marginTop: "32px" }}>
+        <label style={label}>
+          Send a real test code
+          <input
+            type="tel"
+            name="testPhone"
+            placeholder="your own mobile number"
+            style={field}
+          />
+          <span style={hint}>
+            This sends an actual SMS. If it fails, the exact reason from MSG91 is shown above.
+          </span>
+        </label>
+        <button type="submit" style={button}>
+          Send test code
+        </button>
+      </form>
 
       <p style={{ fontSize: "13px", opacity: "0.7", marginTop: "28px" }}>
         “Test credentials” asks MSG91 to accept the key without messaging anyone. To check
