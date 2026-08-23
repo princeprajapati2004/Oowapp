@@ -3,6 +3,7 @@ import { z } from "zod";
 import { ForbiddenError } from "@/lib/session";
 import { requireShopActor, actorAuditFields, type ShopActor } from "@/lib/shop-actor";
 import { handleApiError, NotFoundError } from "@/lib/api-utils";
+import { processOrderPaidRewards, voidPendingCashbackRedemption } from "@/lib/services/rewards";
 import { writeAuditLog, extractRequestMeta } from "@/lib/services/audit-log";
 import { db } from "@/lib/db";
 import { calculateBill } from "@/lib/services/billing";
@@ -150,6 +151,8 @@ export async function PATCH(
       note: string | null;
       recordedBy: string;
     } | null = null;
+    let shouldVoidPendingCashback = false;
+    let shouldProcessPaidRewards = false;
 
     if ("action" in body) {
       const parsed = updateOrderSchema.parse(body);
@@ -184,6 +187,7 @@ export async function PATCH(
         };
         statusEventStatus = "CANCELLED";
         auditEntry = { action: "ORDER_CANCELLED", metadata: { reason: parsed.reason, note: parsed.note } };
+        shouldVoidPendingCashback = true;
       } else if (parsed.action === "mark_refunded") {
         if (existing.status !== "CANCELLED" || !["PAID", "PARTIALLY_PAID"].includes(existing.paymentStatus)) {
           return NextResponse.json(
@@ -257,6 +261,7 @@ export async function PATCH(
           paymentClaimMethod: null,
           paymentClaimAt: null,
         };
+        shouldProcessPaidRewards = data.paymentStatus === "PAID";
         // The amount actually collected THIS transaction — paidAmount is the
         // new cumulative total, not a delta — logged as its own history row
         // only when it represents real new money (not just correcting the
@@ -307,6 +312,13 @@ export async function PATCH(
     // route already relied on before this change.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const updated = await (db.order as any).update({ where: { id }, data, include: { items: true } });
+
+    if (shouldProcessPaidRewards) {
+      await db.$transaction((tx) => processOrderPaidRewards(tx, updated));
+    }
+    if (shouldVoidPendingCashback) {
+      await db.$transaction((tx) => voidPendingCashbackRedemption(tx, id));
+    }
 
     if (newPaymentRecord) {
       await db.paymentRecord.create({ data: newPaymentRecord });

@@ -11,6 +11,8 @@ import { readPhoneVerifiedCookie } from "@/lib/phone-verify-auth";
 import { resolveOrCreateSession, computeSessionBill } from "@/lib/services/table-session";
 import { resolveOrderItems } from "@/lib/services/order-items";
 import { computeCouponForOrder, claimCouponForOrder } from "@/lib/services/coupon";
+import { computeCashbackForOrder, claimCashbackForOrder } from "@/lib/services/cashback-campaign";
+import { processOrderPaidRewards } from "@/lib/services/rewards";
 import { debitWalletForRedemption } from "@/lib/services/wallet";
 import { nextBillNumber } from "@/lib/services/bill-number";
 import { createNotification } from "@/lib/services/notification";
@@ -39,6 +41,7 @@ const createOrderSchema = z.object({
   clientRequestId: z.string().min(10).max(100),
   couponCode: z.string().trim().min(1).optional(),
   walletAmountUsed: z.number().min(0).optional(),
+  cashbackCode: z.string().trim().min(1).optional(),
 });
 
 export async function POST(request: Request) {
@@ -154,6 +157,14 @@ export async function POST(request: Request) {
         ? Math.max(0, Math.round((bill.grandTotal - couponResult.discountAmount) * 100) / 100)
         : null;
 
+      // Cashback validated the same way — full price is still charged (no
+      // effect on discountedTotal); the reward only lands in the wallet once
+      // the order is actually paid (see claimCashbackForOrder below and
+      // rewards.ts#processOrderPaidRewards).
+      const cashbackResult = input.cashbackCode
+        ? await computeCashbackForOrder(tx, shop.id, input.cashbackCode, resolvedItems, customerId)
+        : null;
+
       // Wallet redemption — clamped to what's actually owed on THIS order
       // (not any wider table-session running total), and only ever for a
       // logged-in customer since a guest has no wallet to debit.
@@ -216,6 +227,13 @@ export async function POST(request: Request) {
                 paymentConfirmedAt: new Date(),
               }
             : {}),
+          ...(cashbackResult
+            ? {
+                cashbackCampaignId: cashbackResult.campaignId,
+                cashbackCode: cashbackResult.code,
+                cashbackAmount: cashbackResult.cashbackAmount,
+              }
+            : {}),
           items: {
             create: resolvedItems.map((item) => ({
               productId: item.productId,
@@ -233,6 +251,10 @@ export async function POST(request: Request) {
         await claimCouponForOrder(tx, shop.id, couponResult.couponId, customerId, created.id, couponResult.discountAmount);
       }
 
+      if (cashbackResult) {
+        await claimCashbackForOrder(tx, shop.id, cashbackResult.campaignId, customerId!, created.id, cashbackResult.cashbackAmount);
+      }
+
       if (walletAmountUsed > 0) {
         await debitWalletForRedemption(tx, { shopId: shop.id, customerId: customerId!, amount: walletAmountUsed, orderId: created.id });
         await tx.paymentRecord.create({
@@ -244,6 +266,14 @@ export async function POST(request: Request) {
             note: "Wallet credit redeemed at checkout",
           },
         });
+      }
+
+      // A wallet redemption above may have already fully paid this order at
+      // creation time — no later staff mark_paid/closeTable call will ever
+      // fire for an order that's born PAID, so any cashback just claimed
+      // needs crediting right now instead of waiting for that hook.
+      if (created.paymentStatus === "PAID") {
+        await processOrderPaidRewards(tx, created);
       }
 
       return { order: created, isDuplicate: false };

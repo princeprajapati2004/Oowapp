@@ -27,6 +27,7 @@ export function serializeOrder<
     discountedTotal: unknown;
     couponDiscountAmount?: unknown;
     walletAmountUsed?: unknown;
+    cashbackAmount?: unknown;
     createdAt: unknown;
     items: { price: unknown; lineTotal: unknown }[];
   },
@@ -36,7 +37,7 @@ export function serializeOrder<
   // intersection of old and new key types instead of replacing it, which lets
   // the original Decimal types leak back into the result — see
   // https://github.com/microsoft/TypeScript/issues/48486.
-  const { subtotal, taxTotal, grandTotal, discountValue, discountedTotal, couponDiscountAmount, walletAmountUsed, createdAt, items, ...rest } = order;
+  const { subtotal, taxTotal, grandTotal, discountValue, discountedTotal, couponDiscountAmount, walletAmountUsed, cashbackAmount, createdAt, items, ...rest } = order;
   return {
     ...rest,
     subtotal: Number(subtotal),
@@ -46,6 +47,7 @@ export function serializeOrder<
     discountedTotal: discountedTotal == null ? null : Number(discountedTotal),
     couponDiscountAmount: couponDiscountAmount == null ? null : Number(couponDiscountAmount),
     walletAmountUsed: walletAmountUsed == null ? null : Number(walletAmountUsed),
+    cashbackAmount: cashbackAmount == null ? null : Number(cashbackAmount),
     createdAt: (createdAt as Date).toISOString(),
     items: items.map((item) => {
       const { price, lineTotal, ...itemRest } = item;
@@ -63,6 +65,7 @@ export function serializeOrders<
     discountedTotal: unknown;
     couponDiscountAmount?: unknown;
     walletAmountUsed?: unknown;
+    cashbackAmount?: unknown;
     createdAt: unknown;
     items: { price: unknown; lineTotal: unknown }[];
   },
@@ -106,6 +109,44 @@ export function serializeCoupons<
   },
 >(coupons: T[]) {
   return coupons.map(serializeCoupon);
+}
+
+export function serializeCashbackCampaign<
+  T extends {
+    rewardValue: unknown;
+    maxCashbackAmount: unknown;
+    minOrderAmount: unknown;
+    createdAt: unknown;
+    updatedAt: unknown;
+    startsAt?: unknown;
+    expiresAt?: unknown;
+  },
+>(campaign: T) {
+  const { rewardValue, maxCashbackAmount, minOrderAmount, createdAt, updatedAt, startsAt, expiresAt, ...rest } = campaign;
+  return {
+    ...rest,
+    rewardValue: Number(rewardValue),
+    maxCashbackAmount: maxCashbackAmount == null ? null : Number(maxCashbackAmount),
+    minOrderAmount: minOrderAmount == null ? null : Number(minOrderAmount),
+    createdAt: (createdAt as Date).toISOString(),
+    updatedAt: (updatedAt as Date).toISOString(),
+    startsAt: startsAt == null ? null : (startsAt as Date).toISOString(),
+    expiresAt: expiresAt == null ? null : (expiresAt as Date).toISOString(),
+  };
+}
+
+export function serializeCashbackCampaigns<
+  T extends {
+    rewardValue: unknown;
+    maxCashbackAmount: unknown;
+    minOrderAmount: unknown;
+    createdAt: unknown;
+    updatedAt: unknown;
+    startsAt?: unknown;
+    expiresAt?: unknown;
+  },
+>(campaigns: T[]) {
+  return campaigns.map(serializeCashbackCampaign);
 }
 
 export function serializeWalletTransaction<

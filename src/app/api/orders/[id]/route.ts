@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { handleApiError, NotFoundError } from "@/lib/api-utils";
+import { voidPendingCashbackRedemption } from "@/lib/services/rewards";
 import { ForbiddenError } from "@/lib/session";
 import { getCustomerSession } from "@/lib/customer-session";
 import { checkRateLimit } from "@/lib/rate-limit";
@@ -141,6 +142,7 @@ export async function PATCH(
         data: { status: "CANCELLED" },
         include: { items: true },
       });
+      await db.$transaction((tx) => voidPendingCashbackRedemption(tx, id));
 
       sendOrderStatusNotification(order.shopId, {
         billNumber: order.billNumber,

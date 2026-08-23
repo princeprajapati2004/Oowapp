@@ -317,6 +317,15 @@ export function CurrentOrderPage({
   const [couponError, setCouponError] = useState<string | null>(null);
   const [useWalletCredit, setUseWalletCredit] = useState(false);
 
+  const [cashbackCode, setCashbackCode] = useState("");
+  const [appliedCashback, setAppliedCashback] = useState<{
+    code: string;
+    cashbackAmount: number;
+    description: string | null;
+  } | null>(null);
+  const [cashbackApplying, setCashbackApplying] = useState(false);
+  const [cashbackError, setCashbackError] = useState<string | null>(null);
+
   const bill = useMemo(
     () =>
       calculateBill(
@@ -400,6 +409,8 @@ export function CurrentOrderPage({
     setAppliedCoupon(null);
     setCouponError(null);
     setUseWalletCredit(false);
+    setAppliedCashback(null);
+    setCashbackError(null);
   }, [bill.subtotal]);
 
   async function applyCoupon() {
@@ -430,6 +441,36 @@ export function CurrentOrderPage({
     setAppliedCoupon(null);
     setCouponCode("");
     setCouponError(null);
+  }
+
+  async function applyCashback() {
+    if (!cashbackCode.trim()) return;
+    setCashbackError(null);
+    setCashbackApplying(true);
+    try {
+      const res = await api.post<{
+        ok: boolean;
+        code: string;
+        cashbackAmount: number;
+        description: string | null;
+      }>("/api/cashback/validate", {
+        shopSlug: shop.slug,
+        code: cashbackCode.trim(),
+        items: cart.items.map((i) => ({ productId: i.productId, quantity: i.quantity })),
+      });
+      setAppliedCashback({ code: res.code, cashbackAmount: res.cashbackAmount, description: res.description });
+      toast.success(`Cashback code ${res.code} applied`);
+    } catch (err) {
+      setCashbackError(err instanceof ApiError ? err.message : "Couldn't apply this code — try again.");
+    } finally {
+      setCashbackApplying(false);
+    }
+  }
+
+  function removeCashback() {
+    setAppliedCashback(null);
+    setCashbackCode("");
+    setCashbackError(null);
   }
 
   const invoicePaymentStatus: "Paid" | "Unpaid" = session?.status === "PAID" ? "Paid" : "Unpaid";
@@ -603,6 +644,7 @@ export function CurrentOrderPage({
           items: cart.items,
           couponCode: appliedCoupon?.code,
           walletAmountUsed: walletAmountToUse > 0 ? walletAmountToUse : undefined,
+          cashbackCode: appliedCashback?.code,
         });
         if (res.orderId && res.billNumber) {
           addStoredOrder(shop.slug, { orderId: res.orderId, billNumber: res.billNumber, placedAt: new Date().toISOString() });
@@ -618,6 +660,7 @@ export function CurrentOrderPage({
         cart.clear();
         removeCoupon();
         setUseWalletCredit(false);
+        removeCashback();
         setDirectOrderPlaced(true);
       } catch (err) {
         if (err instanceof ApiError && err.status === 409) {
@@ -701,6 +744,7 @@ export function CurrentOrderPage({
         items: cart.items,
         couponCode: !isIncremental ? appliedCoupon?.code : undefined,
         walletAmountUsed: walletAmountToUse > 0 ? walletAmountToUse : undefined,
+        cashbackCode: appliedCashback?.code,
       })
       .then((res) => {
         if (res.saved && res.orderId && res.billNumber) {
@@ -725,6 +769,7 @@ export function CurrentOrderPage({
         cart.clear();
         removeCoupon();
         setUseWalletCredit(false);
+        removeCashback();
       })
       .catch((err) => {
         if (err instanceof ApiError && err.status === 409) {
@@ -911,6 +956,12 @@ export function CurrentOrderPage({
                     {formatCurrency(Math.max(0, finalTotalAfterCoupon - walletAmountToUse), shop.currency)}
                   </span>
                 </div>
+                {appliedCashback && (
+                  <p className="text-xs text-emerald-600 dark:text-emerald-400 pt-1">
+                    You&apos;ll earn {formatCurrency(appliedCashback.cashbackAmount, shop.currency)} wallet cashback
+                    once this order is paid.
+                  </p>
+                )}
               </div>
 
               {!hasUnsentItems && alreadyOrderedItems.length > 0 && (
@@ -1012,6 +1063,46 @@ export function CurrentOrderPage({
                         {formatCurrency(customer!.walletBalance, shop.currency)} available
                       </span>
                     </label>
+                  )}
+                  {customer && (
+                    <FormRow label="Have a cashback code?" htmlFor="cashbackCode">
+                      {appliedCashback ? (
+                        <div className="flex items-center gap-2 rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-2.5 text-sm animate-in fade-in zoom-in-95 duration-200 dark:border-emerald-800 dark:bg-emerald-900/20">
+                          <CheckCircle2 className="size-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
+                          <span className="font-semibold">{appliedCashback.code}</span>
+                          <span className="text-xs text-emerald-700 dark:text-emerald-400">
+                            Earn {formatCurrency(appliedCashback.cashbackAmount, shop.currency)} cashback
+                          </span>
+                          <button
+                            type="button"
+                            className="ml-auto text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
+                            onClick={removeCashback}
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="flex gap-2">
+                          <Input
+                            id="cashbackCode"
+                            placeholder="Enter code"
+                            value={cashbackCode}
+                            onChange={(e) => setCashbackCode(e.target.value.toUpperCase())}
+                            className="flex-1"
+                          />
+                          <Button
+                            type="button"
+                            variant="outline"
+                            className="shrink-0"
+                            disabled={cashbackApplying || !cashbackCode.trim()}
+                            onClick={applyCashback}
+                          >
+                            {cashbackApplying ? <Loader2 className="size-4 animate-spin" /> : "Apply"}
+                          </Button>
+                        </div>
+                      )}
+                      {cashbackError && <p className="text-sm text-destructive mt-1.5">{cashbackError}</p>}
+                    </FormRow>
                   )}
                   {shop.enableTableNumber && prefilledTable && (
                     <FormRow label="Table" htmlFor="tableDisplay">

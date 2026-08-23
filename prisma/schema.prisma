@@ -411,6 +411,7 @@ model Shop {
   taxes              Tax[]
   coupons            Coupon[]
   walletTransactions WalletTransaction[]
+  cashbackCampaigns  CashbackCampaign[]
   orders             Order[]
   paymentRecords     PaymentRecord[]
   customers          Customer[]
@@ -457,9 +458,10 @@ model Customer {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  orders             Order[]
-  tableSessions      TableSession[]
-  walletTransactions WalletTransaction[]
+  orders               Order[]
+  tableSessions        TableSession[]
+  walletTransactions   WalletTransaction[]
+  cashbackRedemptions  CashbackRedemption[]
 
   @@unique([shopId, phone])
   @@index([shopId])
@@ -732,6 +734,68 @@ model WalletTransaction {
   @@map("wallet_transactions")
 }
 
+enum CashbackRedemptionStatus {
+  PENDING
+  CREDITED
+  VOIDED
+}
+
+// Admin-created code — unlike Coupon, the customer pays full price at
+// checkout; the reward is a wallet credit that only lands once the order is
+// actually paid (see CashbackRedemption + rewards.ts#processOrderPaidRewards).
+model CashbackCampaign {
+  id                String          @id @default(cuid())
+  shopId            String
+  shop              Shop            @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  code              String
+  description       String?
+  rewardType        RewardValueType @default(PERCENTAGE)
+  rewardValue       Decimal         @db.Decimal(10, 2)
+  maxCashbackAmount Decimal?        @db.Decimal(10, 2)
+  minOrderAmount    Decimal?        @db.Decimal(10, 2)
+  totalUsageLimit   Int?
+  perCustomerLimit  Int?
+  usageCount        Int             @default(0)
+  startsAt          DateTime?
+  expiresAt         DateTime?
+  isEnabled         Boolean         @default(true)
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  redemptions CashbackRedemption[]
+
+  @@unique([shopId, code])
+  @@index([shopId])
+  @@map("cashback_campaigns")
+}
+
+// One row per order a cashback campaign was applied to — starts PENDING at
+// checkout, flips to CREDITED once processOrderPaidRewards claims it (order
+// actually paid) or VOIDED if the order is cancelled first.
+model CashbackRedemption {
+  id             String                   @id @default(cuid())
+  shopId         String
+  campaignId     String
+  campaign       CashbackCampaign         @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  orderId        String                   @unique
+  order          Order                    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  customerId     String
+  customer       Customer                 @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  cashbackAmount Decimal                  @db.Decimal(10, 2)
+  status         CashbackRedemptionStatus @default(PENDING)
+  creditedAt     DateTime?
+  createdAt      DateTime                 @default(now())
+
+  // No @@unique([campaignId, customerId]) — same reasoning as
+  // CouponRedemption above: a campaign with no perCustomerLimit must stay
+  // reusable by the same customer. cashback-campaign.ts's count-based check
+  // is the sole enforcement.
+  @@index([shopId])
+  @@index([campaignId])
+  @@index([customerId])
+  @@map("cashback_redemptions")
+}
+
 model Order {
   id              String   @id @default(cuid())
   shopId          String
@@ -778,6 +842,12 @@ model Order {
   // paidAmount/paymentStatus below instead, same as any other payment method,
   // so every existing amount-due screen already accounts for it with no changes.
   walletAmountUsed     Decimal? @db.Decimal(10, 2)
+  // Cashback campaign applied at checkout — full price is still charged
+  // (unlike a coupon); this is frozen at creation time and only actually
+  // lands in the wallet once the order is paid (see CashbackRedemption).
+  cashbackCampaignId String?
+  cashbackCode       String?
+  cashbackAmount     Decimal? @db.Decimal(10, 2)
   // Table order lifecycle — set only when this order was placed against an
   // active table session (see TableSession); null for pickup/delivery/manual
   // orders, which are unaffected by session grouping or the "no decrease" rule.
@@ -826,6 +896,7 @@ model Order {
   paymentRecords PaymentRecord[]
   couponRedemption CouponRedemption?
   walletTransactions WalletTransaction[]
+  cashbackRedemption CashbackRedemption?
 
   @@unique([shopId, clientRequestId])
   @@unique([shopId, billNumber])

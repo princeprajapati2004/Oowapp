@@ -7,6 +7,7 @@ import { db } from "@/lib/db";
 import { createNotification } from "@/lib/services/notification";
 import { publishOrderEvent, toOrderEvent, toTableSessionEvent } from "@/lib/server/order-events";
 import { OPEN_STATUSES, computeSessionBill } from "@/lib/services/table-session";
+import { processOrderPaidRewards } from "@/lib/services/rewards";
 import { writeAuditLog, extractRequestMeta } from "@/lib/services/audit-log";
 import type { StaffRole } from "@/generated/prisma/client";
 
@@ -402,8 +403,8 @@ async function closeTable(
 
     const isVoid = paymentMethod === "VOID";
     const orders = await Promise.all(
-      openOrders.map((o) =>
-        tx.order.update({
+      openOrders.map(async (o) => {
+        const order = await tx.order.update({
           where: { id: o.id },
           data: {
             status: "COMPLETED",
@@ -413,8 +414,12 @@ async function closeTable(
             paymentConfirmedAt: isVoid ? null : new Date(),
           },
           include: { items: true },
-        })
-      )
+        });
+        // This is the primary path for QR/dine-in orders — easy to miss
+        // alongside the standalone mark_paid hook in admin/orders/[id].
+        if (!isVoid) await processOrderPaidRewards(tx, order);
+        return order;
+      })
     );
 
     return [updated, orders] as const;
