@@ -501,6 +501,7 @@ model Party {
   updatedAt      DateTime      @updatedAt
 
   payments PartyPayment[]
+  orders   Order[]
 
   @@unique([shopId, phone])
   // Safe on Postgres with an optional field: NULLs are distinct from each
@@ -868,6 +869,14 @@ model Order {
   // from guests (the common case) leave this null.
   customerId      String?
   customer        Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  // The owner-side khatabook contact this order belongs to (see Party) — set
+  // at order-creation time by find-or-create on (shopId, customerPhone).
+  // Distinct from customerId above: customer is a storefront login account,
+  // party is the CRM ledger entry every order (guest or logged-in) rolls up
+  // into. Nullable because a party can be deleted (SetNull) and because
+  // orders with no phone at all (rare) have nothing to link.
+  partyId         String?
+  party           Party?    @relation(fields: [partyId], references: [id], onDelete: SetNull)
   tableNumber     String?
   deliveryAddress String?
   notes           String?
@@ -960,6 +969,7 @@ model Order {
   @@unique([shopId, billNumber])
   @@index([shopId])
   @@index([customerId])
+  @@index([partyId])
   @@index([tableSessionId])
   @@index([shopId, customerPhone])
   @@map("orders")

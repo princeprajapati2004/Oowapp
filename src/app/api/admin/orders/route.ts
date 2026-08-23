@@ -12,6 +12,7 @@ import { createNotification } from "@/lib/services/notification";
 import { formatCurrency } from "@/lib/utils/currency";
 import { searchOrders, type OrderSourceFilter, type OrderTypeFilter } from "@/lib/services/order-search";
 import { writeAuditLog, extractRequestMeta } from "@/lib/services/audit-log";
+import { findOrCreatePartyForOrder } from "@/lib/services/party";
 import type { Prisma } from "@/generated/prisma/client";
 
 // GET — the owner order management list (brief §2/§12–§18): server-side
@@ -156,6 +157,11 @@ export async function POST(request: Request) {
 
       const billNumber = await nextBillNumber(tx, shop.id);
 
+      // Every order (guest or logged-in) rolls up into the owner's Parties
+      // khatabook — find-or-create by phone, same as the customer-facing
+      // order route (see findOrCreatePartyForOrder's own doc comment).
+      const partyId = await findOrCreatePartyForOrder(tx, shop.id, input.customerName, input.customerPhone);
+
       // Decrement stock for products that track it (stock === null means untracked)
       const itemsWithProduct = input.items.filter((i) => i.productId);
       if (itemsWithProduct.length > 0) {
@@ -175,6 +181,7 @@ export async function POST(request: Request) {
           shopId: shop.id,
           billNumber,
           tokenNumber,
+          partyId,
           customerName: input.customerName || null,
           customerPhone: input.customerPhone || null,
           tableNumber: input.tableNumber || null,

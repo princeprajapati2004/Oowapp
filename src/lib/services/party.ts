@@ -1,6 +1,9 @@
 import { db } from "@/lib/db";
 import { NotFoundError, ConflictError } from "@/lib/api-utils";
 import type { PartyInput, PartyPaymentInput } from "@/lib/validation/party";
+import type { Prisma } from "@/generated/prisma/client";
+
+type Tx = Prisma.TransactionClient;
 
 const UNPAID_METHODS = new Set<string | null>([null, "PENDING"]);
 
@@ -54,42 +57,32 @@ function computeOutstanding(
 }
 
 export async function listPartiesWithBalances(shopId: string) {
-  const parties = await db.party.findMany({ where: { shopId }, orderBy: { createdAt: "desc" } });
+  const parties = await db.party.findMany({
+    where: { shopId },
+    orderBy: { createdAt: "desc" },
+    include: {
+      // Real FK relation (Order.partyId) — see findOrCreatePartyForOrder.
+      // Every order that has a phone number gets linked here at creation
+      // time; historical orders were backfilled the same way, so this is
+      // now the authoritative source instead of a phone-string join.
+      orders: { select: { grandTotal: true, discountedTotal: true, paymentMethod: true } },
+      payments: true,
+    },
+  });
   if (parties.length === 0) return [];
 
-  const phones = [...new Set(parties.map((p) => p.phone))];
-  const partyIds = parties.map((p) => p.id);
-
-  const [orders, payments] = await Promise.all([
-    db.order.findMany({
-      where: { shopId, customerPhone: { in: phones } },
-      select: { customerPhone: true, grandTotal: true, discountedTotal: true, paymentMethod: true },
-    }),
-    db.partyPayment.findMany({ where: { shopId, partyId: { in: partyIds } } }),
-  ]);
-
-  const ordersByPhone = new Map<string, typeof orders>();
-  for (const order of orders) {
-    if (!order.customerPhone) continue;
-    const list = ordersByPhone.get(order.customerPhone) ?? [];
-    list.push(order);
-    ordersByPhone.set(order.customerPhone, list);
-  }
-  const paymentsByParty = new Map<string, typeof payments>();
-  for (const payment of payments) {
-    const list = paymentsByParty.get(payment.partyId) ?? [];
-    list.push(payment);
-    paymentsByParty.set(payment.partyId, list);
-  }
-
-  return parties.map((party) => {
-    const matchedOrders = ordersByPhone.get(party.phone) ?? [];
-    const unpaidOrderTotal = matchedOrders
+  return parties.map((partyWithRelations) => {
+    // Destructuring (not `{ ...party, key: newValue }`) is required here —
+    // spreading a naked Prisma result and overriding a key produces an
+    // intersection of old and new key types instead of replacing it, so the
+    // raw Decimal-bearing `orders`/`payments` arrays would otherwise leak
+    // into the returned shape as well as the derived summary fields.
+    const { orders, payments, ...party } = partyWithRelations;
+    const unpaidOrderTotal = orders
       .filter((o) => UNPAID_METHODS.has(o.paymentMethod))
       .reduce((sum, o) => sum + orderAmount(o), 0);
-    const partyPayments = paymentsByParty.get(party.id) ?? [];
-    const received = partyPayments.filter((p) => p.direction === "RECEIVED").reduce((s, p) => s + Number(p.amount), 0);
-    const paid = partyPayments.filter((p) => p.direction === "PAID").reduce((s, p) => s + Number(p.amount), 0);
+    const received = payments.filter((p) => p.direction === "RECEIVED").reduce((s, p) => s + Number(p.amount), 0);
+    const paid = payments.filter((p) => p.direction === "PAID").reduce((s, p) => s + Number(p.amount), 0);
 
     return {
       ...party,
@@ -97,23 +90,22 @@ export async function listPartiesWithBalances(shopId: string) {
       creditLimit: party.creditLimit !== null ? Number(party.creditLimit) : null,
       createdAt: party.createdAt.toISOString(),
       updatedAt: party.updatedAt.toISOString(),
-      orderCount: matchedOrders.length,
+      orderCount: orders.length,
       outstanding: computeOutstanding(party, unpaidOrderTotal, received, paid),
     };
   });
 }
 
 export async function getPartyStatement(shopId: string, id: string) {
-  const party = await assertOwnedParty(shopId, id);
-
-  const [orders, payments] = await Promise.all([
-    db.order.findMany({
-      where: { shopId, customerPhone: party.phone },
-      orderBy: { createdAt: "desc" },
-      include: { items: true },
-    }),
-    db.partyPayment.findMany({ where: { shopId, partyId: id }, orderBy: { createdAt: "desc" } }),
-  ]);
+  const partyWithRelations = await db.party.findFirst({
+    where: { id, shopId },
+    include: {
+      orders: { orderBy: { createdAt: "desc" }, include: { items: true } },
+      payments: { orderBy: { createdAt: "desc" } },
+    },
+  });
+  if (!partyWithRelations) throw new NotFoundError("Party not found");
+  const { orders, payments, ...party } = partyWithRelations;
 
   const unpaidOrderTotal = orders
     .filter((o) => UNPAID_METHODS.has(o.paymentMethod))
@@ -236,4 +228,56 @@ export async function createPartyPayment(
     },
   });
   return { ...payment, amount: Number(payment.amount) };
+}
+
+/**
+ * Find-or-create the Party this order belongs to — called inside the
+ * order-creation transaction (see POST /api/orders and POST
+ * /api/admin/orders) so every order, guest or logged-in, always resolves to
+ * a khatabook contact via a real FK (Order.partyId), never just a phone
+ * string. Returns null when there's no phone to match on (nothing to link —
+ * matches the app's existing "phone is the identity" convention elsewhere,
+ * e.g. Customer's own @@unique([shopId, phone])).
+ *
+ * A phone match against an existing Party updates that party's name to the
+ * latest one used at checkout (never its other CRM-curated fields like
+ * category/notes/businessName) — same "don't create a duplicate customer
+ * just because the typed name varies" rule Customer profile updates follow.
+ */
+export async function findOrCreatePartyForOrder(
+  tx: Tx,
+  shopId: string,
+  name: string | null | undefined,
+  phone: string | null | undefined
+): Promise<string | null> {
+  const normalizedPhone = phone?.trim();
+  if (!normalizedPhone) return null;
+  const trimmedName = name?.trim();
+
+  const existing = await tx.party.findUnique({
+    where: { shopId_phone: { shopId, phone: normalizedPhone } },
+  });
+  if (existing) {
+    if (trimmedName && trimmedName !== existing.name) {
+      await tx.party.update({ where: { id: existing.id }, data: { name: trimmedName } });
+    }
+    return existing.id;
+  }
+
+  // Two concurrent first-time orders from the same new phone number could
+  // both reach here before either commits — the @@unique([shopId, phone])
+  // constraint is the real backstop, so a losing create() just falls back to
+  // re-reading the row the winner created instead of erroring the order out.
+  try {
+    const created = await tx.party.create({
+      data: { shopId, type: "CUSTOMER", name: trimmedName || "Guest", phone: normalizedPhone },
+    });
+    return created.id;
+  } catch (error) {
+    if (error && typeof error === "object" && "code" in error && error.code === "P2002") {
+      const raceWinner = await tx.party.findUnique({ where: { shopId_phone: { shopId, phone: normalizedPhone } } });
+      return raceWinner?.id ?? null;
+    }
+    throw error;
+  }
 }

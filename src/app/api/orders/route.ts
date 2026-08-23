@@ -15,6 +15,7 @@ import { computeCashbackForOrder, claimCashbackForOrder } from "@/lib/services/c
 import { processOrderPaidRewards } from "@/lib/services/rewards";
 import { debitWalletForRedemption } from "@/lib/services/wallet";
 import { nextBillNumber } from "@/lib/services/bill-number";
+import { findOrCreatePartyForOrder } from "@/lib/services/party";
 import { createNotification } from "@/lib/services/notification";
 import { formatCurrency } from "@/lib/utils/currency";
 import type { Prisma } from "@/generated/prisma/client";
@@ -186,11 +187,17 @@ export async function POST(request: Request) {
         )
       );
 
+      // Every order (guest or logged-in) rolls up into the owner's Parties
+      // khatabook — find-or-create by phone, same as this app's existing
+      // "phone is the identity" convention (see the function's own doc comment).
+      const partyId = await findOrCreatePartyForOrder(tx, shop.id, input.customerName, input.customerPhone);
+
       const created = await tx.order.create({
         data: {
           shopId: shop.id,
           billNumber,
           customerId,
+          partyId,
           customerName: input.customerName || null,
           customerPhone: input.customerPhone || null,
           tableNumber: input.tableNumber || null,
