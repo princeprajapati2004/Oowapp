@@ -149,10 +149,13 @@ export async function getPublicShopBundle(slug: string) {
         where: { isVisible: true },
         orderBy: { sortOrder: "asc" },
       },
-      // isAvailable: true hides sold-out products from the customer menu entirely
+      // isAvailable: true hides sold-out products from the customer menu entirely.
+      // omit: costPrice/mrp are owner-only financial data (see Product model's
+      // doc comment) and must never reach the customer-facing bundle.
       products: {
         where: { isVisible: true, isAvailable: true },
         orderBy: { sortOrder: "asc" },
+        omit: { costPrice: true, mrp: true },
       },
       taxes: {
         where: { isEnabled: true },

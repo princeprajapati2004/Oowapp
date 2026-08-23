@@ -565,6 +565,12 @@ model Product {
   name        String
   description String?
   price       Decimal  @db.Decimal(10, 2)
+  // Owner-only cost/pricing fields — never sent to the customer-facing menu
+  // (see serializeMenuProduct vs serializeProduct in lib/serialize.ts).
+  // Nullable: existing products have neither set, and profit/margin display
+  // just hides itself rather than fabricating a value (see profit.ts).
+  costPrice   Decimal? @db.Decimal(10, 2)
+  mrp         Decimal? @db.Decimal(10, 2)
   imageUrl    String?
   unit        String?
   barcode     String?
@@ -1117,6 +1123,12 @@ model OrderItem {
   product   Product? @relation(fields: [productId], references: [id])
   name      String
   price     Decimal  @db.Decimal(10, 2)
+  // Frozen from Product.costPrice at order-creation time, same convention as
+  // `price` — so a later change to a product's cost never retroactively
+  // rewrites a historical order's profit (see lib/services/profit.ts). Null
+  // whenever the product had no cost price set at the time, or the item
+  // wasn't tied to a catalog product at all (manual admin-order line).
+  costPrice Decimal? @db.Decimal(10, 2)
   quantity  Int
   lineTotal Decimal  @db.Decimal(10, 2)
 

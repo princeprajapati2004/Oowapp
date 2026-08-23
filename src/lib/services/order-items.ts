@@ -6,6 +6,9 @@ export interface ResolvedOrderItem {
   price: number;
   quantity: number;
   categoryId: string;
+  // Frozen onto OrderItem.costPrice at order-creation time — see
+  // lib/services/profit.ts. Never surfaced in any customer-facing response.
+  costPrice: number | null;
 }
 
 /**
@@ -22,7 +25,7 @@ export async function resolveOrderItems(
   const productIds = [...new Set(items.map((i) => i.productId))];
   const products = await db.product.findMany({
     where: { id: { in: productIds }, shopId },
-    select: { id: true, name: true, price: true, categoryId: true },
+    select: { id: true, name: true, price: true, costPrice: true, categoryId: true },
   });
   const byId = new Map(products.map((p) => [p.id, p]));
 
@@ -36,6 +39,7 @@ export async function resolveOrderItems(
       price: Number(product.price),
       quantity: item.quantity,
       categoryId: product.categoryId,
+      costPrice: product.costPrice != null ? Number(product.costPrice) : null,
     });
   }
   return resolved;

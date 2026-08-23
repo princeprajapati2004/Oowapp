@@ -3,7 +3,7 @@ import { getAdminSession } from "@/lib/session";
 import { listProducts } from "@/lib/services/product";
 import { listCategories } from "@/lib/services/category";
 import { getShopById } from "@/lib/services/shop";
-import { serializeProducts } from "@/lib/serialize";
+import { serializeProductsWithCost } from "@/lib/serialize";
 import { ProductsManager } from "@/components/admin/products-manager";
 
 export default async function ProductsPage() {
@@ -18,7 +18,7 @@ export default async function ProductsPage() {
 
   return (
     <ProductsManager
-      initialProducts={serializeProducts(products)}
+      initialProducts={serializeProductsWithCost(products)}
       categories={categories}
       currency={shop.currency}
       businessType={shop.businessType}

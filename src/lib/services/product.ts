@@ -41,6 +41,8 @@ function toProductData(input: ProductInput) {
     name: input.name,
     description: input.description || null,
     price: input.price,
+    costPrice: input.costPrice ?? null,
+    mrp: input.mrp ?? null,
     categoryId: input.categoryId,
     imageUrl: input.imageUrl || null,
     unit: input.unit || null,

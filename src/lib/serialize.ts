@@ -10,6 +10,31 @@ export function serializeProducts<T extends { price: unknown }>(products: T[]) {
   return products.map(serializeProduct);
 }
 
+/**
+ * Owner-only variant that also coerces costPrice/mrp — kept deliberately
+ * separate from serializeProduct/serializeProducts above (which the
+ * customer-facing menu also uses) so there is no path by which adding a
+ * field here could ever leak into a customer-facing response. Only call
+ * this from admin-only pages/APIs.
+ */
+export function serializeProductWithCost<T extends { price: unknown; costPrice: unknown; mrp: unknown }>(
+  product: T
+) {
+  const { price, costPrice, mrp, ...rest } = product;
+  return {
+    ...rest,
+    price: Number(price),
+    costPrice: costPrice == null ? null : Number(costPrice),
+    mrp: mrp == null ? null : Number(mrp),
+  };
+}
+
+export function serializeProductsWithCost<T extends { price: unknown; costPrice: unknown; mrp: unknown }>(
+  products: T[]
+) {
+  return products.map(serializeProductWithCost);
+}
+
 export function serializeTax<T extends { value: unknown }>(tax: T) {
   return { ...tax, value: Number(tax.value) };
 }

@@ -43,17 +43,20 @@ import { BarcodeScanButton } from "@/components/admin/barcode-scan-button";
 import { api, ApiError } from "@/lib/api-client";
 import { isFoodBusiness, type BusinessType } from "@/lib/business-types";
 import { formatCurrency } from "@/lib/utils/currency";
+import { computeUnitProfit } from "@/lib/services/profit";
 import { cn } from "@/lib/utils";
 import type { Category } from "@/generated/prisma/client";
 import type { listProducts } from "@/lib/services/product";
-import type { serializeProducts } from "@/lib/serialize";
+import type { serializeProductsWithCost } from "@/lib/serialize";
 
-type ProductRow = ReturnType<typeof serializeProducts<Awaited<ReturnType<typeof listProducts>>[number]>>[number];
+type ProductRow = ReturnType<typeof serializeProductsWithCost<Awaited<ReturnType<typeof listProducts>>[number]>>[number];
 
 const EMPTY_FORM = {
   name: "",
   description: "",
   price: "",
+  costPrice: "",
+  mrp: "",
   categoryId: "",
   imageUrl: null as string | null,
   unit: "",
@@ -138,6 +141,8 @@ export function ProductsManager({
       name: product.name,
       description: product.description ?? "",
       price: String(product.price),
+      costPrice: product.costPrice != null ? String(product.costPrice) : "",
+      mrp: product.mrp != null ? String(product.mrp) : "",
       categoryId: product.categoryId,
       imageUrl: product.imageUrl,
       unit: product.unit ?? "",
@@ -158,11 +163,21 @@ export function ProductsManager({
     if (!form.categoryId) return toast.error("Select a category");
     const priceNum = Number(form.price);
     if (!Number.isFinite(priceNum) || priceNum <= 0) return toast.error("Enter a valid price");
+    const costPriceNum = form.costPrice.trim() === "" ? null : Number(form.costPrice);
+    if (costPriceNum !== null && (!Number.isFinite(costPriceNum) || costPriceNum < 0)) {
+      return toast.error("Enter a valid purchase price");
+    }
+    const mrpNum = form.mrp.trim() === "" ? null : Number(form.mrp);
+    if (mrpNum !== null && (!Number.isFinite(mrpNum) || mrpNum < 0)) {
+      return toast.error("Enter a valid MRP");
+    }
 
     const payload = {
       name: form.name,
       description: form.description,
       price: priceNum,
+      costPrice: costPriceNum,
+      mrp: mrpNum,
       categoryId: form.categoryId,
       imageUrl: form.imageUrl,
       unit: form.unit,
@@ -183,7 +198,12 @@ export function ProductsManager({
           `/api/admin/products/${editing.id}`,
           payload
         );
-        const serialized = { ...updated, price: Number(updated.price) } as ProductRow;
+        const serialized = {
+          ...updated,
+          price: Number(updated.price),
+          costPrice: updated.costPrice == null ? null : Number(updated.costPrice),
+          mrp: updated.mrp == null ? null : Number(updated.mrp),
+        } as ProductRow;
         setProducts((prev) => prev.map((p) => (p.id === serialized.id ? serialized : p)));
         toast.success("Product updated");
       } else {
@@ -191,7 +211,12 @@ export function ProductsManager({
           "/api/admin/products",
           payload
         );
-        const serialized = { ...created, price: Number(created.price) } as ProductRow;
+        const serialized = {
+          ...created,
+          price: Number(created.price),
+          costPrice: created.costPrice == null ? null : Number(created.costPrice),
+          mrp: created.mrp == null ? null : Number(created.mrp),
+        } as ProductRow;
         setProducts((prev) => [...prev, serialized]);
         toast.success("Product added");
       }
@@ -371,7 +396,17 @@ export function ProductsManager({
                   <div className={cn("flex-1 min-w-0", view === "grid" && "p-3 space-y-1.5")}>
                     <div className="flex items-start justify-between gap-2">
                       <p className="font-medium leading-tight text-sm truncate">{product.name}</p>
-                      <p className="shrink-0 font-semibold text-sm">{formatCurrency(product.price, currency)}</p>
+                      <div className="shrink-0 text-right">
+                        <p className="font-semibold text-sm">{formatCurrency(product.price, currency)}</p>
+                        {product.costPrice != null && (() => {
+                          const { profit, profitPercent } = computeUnitProfit(product.price, product.costPrice);
+                          return profit === null ? null : (
+                            <p className={cn("text-[11px]", profit >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-destructive")}>
+                              +{formatCurrency(profit, currency)} {profitPercent !== null && `(${profitPercent}%)`}
+                            </p>
+                          );
+                        })()}
+                      </div>
                     </div>
                     <div className="flex flex-wrap items-center gap-1">
                       <Badge variant="secondary" className="text-xs">{product.category.name}</Badge>
@@ -461,6 +496,59 @@ export function ProductsManager({
                 />
               </FormRow>
             </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <FormRow label="Purchase price" htmlFor="product-cost-price" description="Owner-only — never shown to customers">
+                <Input
+                  id="product-cost-price"
+                  type="number"
+                  min={0}
+                  step="0.01"
+                  value={form.costPrice}
+                  onChange={(e) => setForm((f) => ({ ...f, costPrice: e.target.value }))}
+                  placeholder="Optional"
+                />
+              </FormRow>
+              <FormRow label="MRP" htmlFor="product-mrp" description="Owner-only — never shown to customers">
+                <Input
+                  id="product-mrp"
+                  type="number"
+                  min={0}
+                  step="0.01"
+                  value={form.mrp}
+                  onChange={(e) => setForm((f) => ({ ...f, mrp: e.target.value }))}
+                  placeholder="Optional"
+                />
+              </FormRow>
+            </div>
+
+            {(() => {
+              const sellingNum = Number(form.price);
+              const costNum = form.costPrice.trim() === "" ? null : Number(form.costPrice);
+              const mrpNum = form.mrp.trim() === "" ? null : Number(form.mrp);
+              const validSelling = Number.isFinite(sellingNum) && sellingNum > 0;
+              const validCost = costNum !== null && Number.isFinite(costNum);
+              const { profit, profitPercent } = validSelling && validCost ? computeUnitProfit(sellingNum, costNum) : { profit: null, profitPercent: null };
+              const showsMrpWarning = validSelling && mrpNum !== null && Number.isFinite(mrpNum) && sellingNum > mrpNum;
+              if (profit === null && !showsMrpWarning) return null;
+              return (
+                <div className="rounded-xl border bg-muted/30 px-4 py-3 space-y-1 text-sm">
+                  {profit !== null && (
+                    <div className="flex items-center justify-between">
+                      <span className="text-muted-foreground">Profit per item</span>
+                      <span className={cn("font-semibold", profit >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-destructive")}>
+                        {formatCurrency(profit, currency)} {profitPercent !== null && `(${profitPercent}%)`}
+                      </span>
+                    </div>
+                  )}
+                  {showsMrpWarning && (
+                    <p className="text-amber-600 dark:text-amber-400 text-xs">
+                      Selling price is above MRP — this is allowed, just double-check it&apos;s intentional.
+                    </p>
+                  )}
+                </div>
+              );
+            })()}
 
             <FormRow label="Barcode" htmlFor="product-barcode" description="Scan or type — used to find this item while taking orders">
               <div className="flex gap-2">

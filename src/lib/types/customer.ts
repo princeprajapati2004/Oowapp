@@ -1,7 +1,11 @@
 import type { Product, Category, Tax, Shop } from "@/generated/prisma/client";
 import type { OrderMode } from "@/generated/prisma/client";
 
-export type CustomerProduct = Omit<Product, "price"> & { price: number };
+// costPrice/mrp are owner-only financial data (see Product model's doc
+// comment in schema.prisma) — omitted here too so nothing customer-facing
+// can even type-check a read of them, matching the omit on the DB query in
+// getPublicShopBundle.
+export type CustomerProduct = Omit<Product, "price" | "costPrice" | "mrp"> & { price: number };
 export type CustomerTax = Omit<Tax, "value"> & { value: number };
 export type CustomerCategory = Category;
 

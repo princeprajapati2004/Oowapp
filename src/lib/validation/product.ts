@@ -4,6 +4,12 @@ export const productSchema = z.object({
   name: z.string().trim().min(1, "Name is required").max(100, "Name is too long"),
   description: z.string().trim().max(500).optional().or(z.literal("")),
   price: z.coerce.number().positive("Price must be greater than 0"),
+  // Owner-only cost/pricing fields — optional and nullable so existing
+  // products with neither set keep working (see Product model's doc
+  // comment). Selling Price (price, above) exceeding MRP is allowed and
+  // only surfaced as a UI warning, never blocked here.
+  costPrice: z.coerce.number().nonnegative("Purchase price can't be negative").nullable().optional(),
+  mrp: z.coerce.number().nonnegative("MRP can't be negative").nullable().optional(),
   categoryId: z.string().min(1, "Select a category"),
   imageUrl: z.string().nullable().optional(),
   unit: z.string().trim().max(30).optional().or(z.literal("")),

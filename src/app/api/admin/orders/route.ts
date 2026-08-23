@@ -120,6 +120,21 @@ export async function POST(request: Request) {
       shop.taxes.map((t) => ({ ...t, value: Number(t.value) }))
     );
 
+    // Frozen onto each OrderItem.costPrice below — see profit.ts's doc
+    // comment on why this can't be looked up live from Product later.
+    // Free-text items (no productId, e.g. a one-off manual line) have none.
+    const productIdsWithCost = input.items.map((i) => i.productId).filter((id): id is string => !!id);
+    const costPriceById = new Map(
+      productIdsWithCost.length > 0
+        ? (
+            await db.product.findMany({
+              where: { id: { in: productIdsWithCost }, shopId: shop.id },
+              select: { id: true, costPrice: true },
+            })
+          ).map((p) => [p.id, p.costPrice != null ? Number(p.costPrice) : null])
+        : []
+    );
+
     // Per-shop-per-day sequential display number for admin-created orders
     // only (see prisma schema comment on Order.tokenNumber) — separate from
     // billNumber (now an atomic per-shop sequence, see nextBillNumber), this
@@ -203,6 +218,7 @@ export async function POST(request: Request) {
               productId: item.productId ?? null,
               name: item.name,
               price: item.price,
+              costPrice: item.productId ? (costPriceById.get(item.productId) ?? null) : null,
               quantity: item.quantity,
               lineTotal: item.price * item.quantity,
             })),

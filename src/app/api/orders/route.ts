@@ -246,6 +246,7 @@ export async function POST(request: Request) {
               productId: item.productId,
               name: item.name,
               price: item.price,
+              costPrice: item.costPrice,
               quantity: item.quantity,
               lineTotal: item.price * item.quantity,
             })),
