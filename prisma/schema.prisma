@@ -246,8 +246,10 @@ enum AuditAction {
   SUPER_ADMIN_LOGIN
   SUPER_ADMIN_LOGOUT
   EMAIL_VERIFIED
+  PHONE_VERIFIED
   PASSWORD_RESET_REQUESTED
   PASSWORD_RESET_COMPLETED
+  ONBOARDING_COMPLETED
   // Business lifecycle
   SHOP_UPDATED
   SHOP_SUSPENDED
@@ -283,10 +285,16 @@ model Admin {
   email          String   @unique
   passwordHash   String
   emailVerified  Boolean  @default(false)
+  // Verifies Shop.whatsappNumber (collected at signup) — kept on Admin, not
+  // Shop, to mirror emailVerified's placement as an owner-identity flag.
+  // Defaults true so already-existing admins are never retroactively gated;
+  // the signup route explicitly sets this false for genuinely new accounts.
+  phoneVerified  Boolean  @default(true)
   createdAt      DateTime @default(now())
   shop           Shop?
 
   emailVerifications EmailVerification[]
+  phoneVerifications PhoneVerification[]
 
   @@map("admins")
 }
@@ -304,6 +312,28 @@ model EmailVerification {
 
   @@index([adminId])
   @@map("email_verifications")
+}
+
+// Owner mobile-number verification during onboarding — mirrors EmailVerification's
+// shape/lifecycle, but for the Admin's phone (Shop.whatsappNumber) instead of
+// email. Reuses the same MSG91 adapter (src/lib/services/sms-provider.ts) the
+// customer-facing PhoneOtp flow already uses, so there is exactly one SMS/OTP
+// provider integration in the app, not two. Kept as its own model (rather than
+// reusing PhoneOtp) because PhoneOtp is shopId-scoped for customer verification,
+// while this verifies the owner before/independent of shop-level concerns.
+model PhoneVerification {
+  id         String    @id @default(cuid())
+  adminId    String
+  admin      Admin     @relation(fields: [adminId], references: [id], onDelete: Cascade)
+  phone      String
+  codeHash   String
+  attempts   Int       @default(0)
+  expiresAt  DateTime
+  verifiedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([adminId])
+  @@map("phone_verifications")
 }
 
 model Shop {
@@ -325,6 +355,15 @@ model Shop {
   city      String?
   state     String?
   country   String?
+  pincode   String?
+  timezone  String? @default("Asia/Kolkata")
+
+  // Registration onboarding — true for every shop that existed before this
+  // flow shipped (never retroactively gates them out of their own
+  // dashboard); createShopForAdmin explicitly sets this false for genuinely
+  // new signups, who are then routed through /admin/onboarding until they
+  // complete their mobile verification + business profile.
+  onboardingCompleted Boolean @default(true)
 
   // Platform lifecycle
   status          ShopStatus @default(ACTIVE)

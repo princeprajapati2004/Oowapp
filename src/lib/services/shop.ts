@@ -40,6 +40,11 @@ export async function createShopForAdmin(
       enableTableNumber: !deliveryFirst,
       requireTableNumber: !deliveryFirst,
       requireDeliveryAddress: deliveryFirst,
+      // New signups go through /admin/onboarding (mobile verification +
+      // business profile) — see (dashboard)/layout.tsx's redirect gate.
+      // Column defaults to true so shops that existed before this flow
+      // shipped are never retroactively gated out of their own dashboard.
+      onboardingCompleted: false,
     },
   });
 }
@@ -65,6 +70,13 @@ export type ShopSettingsInput = Partial<{
   address: string | null;
   gstNumber: string | null;
   currency: string;
+  ownerName: string | null;
+  city: string | null;
+  state: string | null;
+  country: string | null;
+  pincode: string | null;
+  timezone: string | null;
+  onboardingCompleted: boolean;
   upiId: string | null;
   acceptCash: boolean;
   bankAccountName: string | null;

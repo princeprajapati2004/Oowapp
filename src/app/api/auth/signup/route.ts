@@ -38,7 +38,7 @@ export async function POST(request: Request) {
     const passwordHash = await hashPassword(input.password);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const admin = await (db.admin as any).create({
-      data: { email: input.email, passwordHash, emailVerified: false },
+      data: { email: input.email, passwordHash, emailVerified: false, phoneVerified: false },
     });
     const shop = await createShopForAdmin(admin.id, input);
     await createInitialSubscription(shop.id);

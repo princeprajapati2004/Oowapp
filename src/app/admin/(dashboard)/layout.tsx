@@ -20,6 +20,13 @@ export default async function DashboardLayout({
     listNotifications(session.shopId),
   ]);
 
+  // New signups (createShopForAdmin sets this false) must finish mobile
+  // verification + business profile before reaching any dashboard page.
+  // Pre-existing shops default to true and are never gated retroactively.
+  if (!shop.onboardingCompleted) {
+    redirect("/admin/onboarding");
+  }
+
   const initialNotifications = notifications.map((n) => ({
     id: n.id,
     shopId: n.shopId,

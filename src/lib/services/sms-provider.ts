@@ -26,11 +26,22 @@ const FLOW_URL = "https://control.msg91.com/api/v5/flow";
 
 type Msg91Response = { type?: string; message?: unknown };
 
+// Distinct from a generic Error so its deliberately user-safe message reaches
+// the client instead of being masked as "Something went wrong" by
+// api-utils.ts's generic Error branch — covers config-missing, unreachable
+// provider, and rejected-request cases across both send and verify.
+export class OtpProviderError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "OtpProviderError";
+  }
+}
+
 async function requireConfig(): Promise<SmsConfig> {
   const config = await getSmsConfig();
   const missing = describeMissing(config);
   if (missing.length > 0) {
-    throw new Error(
+    throw new OtpProviderError(
       `SMS is not configured yet, so no code was sent. ${missing.join(" ")} ` +
         "Fix this in Admin → SMS setup."
     );
@@ -87,7 +98,7 @@ async function postToMsg91(
           ? error.message
           : String(error);
     console.error("[sms] MSG91 request failed:", { url, reason });
-    throw new Error(`Could not reach the SMS provider (${reason})`);
+    throw new OtpProviderError(`Could not reach the SMS provider (${reason})`);
   } finally {
     clearTimeout(timer);
   }
@@ -134,7 +145,7 @@ export async function sendProviderOtp(phone: string): Promise<string> {
       status,
       detail: describe(payload, raw),
     });
-    throw new Error(`SMS provider rejected the request: ${describe(payload, raw) || status}`);
+    throw new OtpProviderError(`SMS provider rejected the request: ${describe(payload, raw) || status}`);
   }
 
   return payload.message; // reqId
@@ -166,7 +177,7 @@ export async function verifyProviderOtp(reference: string, code: string): Promis
   console.warn("[sms] MSG91 widget verifyOtp rejected:", { status, detail });
   if (isWrongCode) return false;
 
-  throw new Error(`Could not verify the code with the SMS provider: ${detail || status}`);
+  throw new OtpProviderError(`Could not verify the code with the SMS provider: ${detail || status}`);
 }
 
 /* -------------------------------------------------------------------------- */
@@ -201,7 +212,7 @@ export async function sendOtpSms(phone: string, code: string, shop: ShopInfo): P
       status,
       detail: describe(payload, raw),
     });
-    throw new Error(`SMS provider rejected the request: ${describe(payload, raw) || status}`);
+    throw new OtpProviderError(`SMS provider rejected the request: ${describe(payload, raw) || status}`);
   }
 }
 
