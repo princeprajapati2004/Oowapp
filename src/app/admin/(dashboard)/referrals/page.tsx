@@ -30,6 +30,7 @@ export default async function ReferralsPage() {
         id: r.id,
         referrerName: r.referrerCustomer.name,
         referrerPhone: r.referrerCustomer.phone,
+        referrerCode: r.referrerCustomer.referralCode,
         referredName: r.referredCustomer.name,
         referredPhone: r.referredCustomer.phone,
         status: r.status,

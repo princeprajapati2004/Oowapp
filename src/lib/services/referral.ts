@@ -59,7 +59,7 @@ export async function listReferrals(shopId: string) {
   return db.referral.findMany({
     where: { shopId },
     include: {
-      referrerCustomer: { select: { name: true, phone: true } },
+      referrerCustomer: { select: { name: true, phone: true, referralCode: true } },
       referredCustomer: { select: { name: true, phone: true } },
     },
     orderBy: { createdAt: "desc" },

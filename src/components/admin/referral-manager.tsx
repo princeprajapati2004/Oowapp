@@ -30,6 +30,7 @@ type ReferralRow = {
   id: string;
   referrerName: string;
   referrerPhone: string;
+  referrerCode: string | null;
   referredName: string;
   referredPhone: string;
   status: "PENDING" | "REWARDED";
@@ -218,6 +219,7 @@ export function ReferralManager({
             <thead>
               <tr className="border-b bg-muted/30 text-left text-xs uppercase tracking-wide text-muted-foreground">
                 <th className="px-4 py-2.5 font-semibold">Referrer</th>
+                <th className="px-4 py-2.5 font-semibold">Code</th>
                 <th className="px-4 py-2.5 font-semibold">Referred</th>
                 <th className="px-4 py-2.5 font-semibold">Status</th>
                 <th className="px-4 py-2.5 font-semibold">Reward</th>
@@ -230,6 +232,9 @@ export function ReferralManager({
                   <td className="px-4 py-2.5">
                     <p className="font-medium">{r.referrerName}</p>
                     <p className="text-xs text-muted-foreground">{r.referrerPhone}</p>
+                  </td>
+                  <td className="px-4 py-2.5">
+                    <span className="font-mono text-xs">{r.referrerCode ?? "—"}</span>
                   </td>
                   <td className="px-4 py-2.5">
                     <p className="font-medium">{r.referredName}</p>
