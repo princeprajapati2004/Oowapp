@@ -4,12 +4,11 @@ import { handleApiError, NotFoundError } from "@/lib/api-utils";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { sendOtpSchema } from "@/lib/validation/phone-otp";
 import {
-  createOtp,
+  startOtp,
   secondsUntilNextSend,
   OTP_EXPIRY_MINUTES,
   RESEND_COOLDOWN_SECONDS,
 } from "@/lib/services/phone-otp";
-import { sendOtpSms } from "@/lib/services/sms-provider";
 
 export async function POST(request: Request) {
   try {
@@ -26,6 +25,7 @@ export async function POST(request: Request) {
       select: { id: true, businessName: true, requirePhone: true },
     });
     if (!shop) throw new NotFoundError("Shop not found");
+
     if (!shop.requirePhone) {
       return NextResponse.json(
         { error: "Phone verification isn't enabled for this shop" },
@@ -48,8 +48,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const code = await createOtp(shop.id, input.phone);
-    await sendOtpSms(input.phone, code, shop);
+    await startOtp(shop.id, input.phone, shop);
 
     return NextResponse.json({
       ok: true,
