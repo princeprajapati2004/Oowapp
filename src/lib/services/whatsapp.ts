@@ -11,6 +11,12 @@ export interface OrderMessageInput {
   items: CartItem[];
   bill: BillTotals;
   currency: string;
+  // Set when a coupon was applied — this is a client-side preview (from
+  // POST /api/coupons/validate), not the authoritative discount; the order
+  // actually saved via the parallel POST /api/orders call is what's
+  // authoritative if the two ever disagree (see the coupon validate route's
+  // doc comment on the accepted preview-vs-commit race).
+  discount?: { label: string; amount: number };
 }
 
 /** Exact "New Order" message format from the product spec — single source of truth for the WhatsApp order text. */
@@ -40,8 +46,14 @@ export function buildOrderMessage(input: OrderMessageInput) {
   for (const line of input.bill.taxLines) {
     lines.push(`${line.name}:`, formatCurrency(line.amount, input.currency));
   }
+  if (input.discount) {
+    lines.push(`${input.discount.label}:`, `-${formatCurrency(input.discount.amount, input.currency)}`);
+  }
   lines.push("");
-  lines.push("Grand Total:", formatCurrency(input.bill.grandTotal, input.currency));
+  const finalTotal = input.discount
+    ? Math.max(0, input.bill.grandTotal - input.discount.amount)
+    : input.bill.grandTotal;
+  lines.push("Grand Total:", formatCurrency(finalTotal, input.currency));
 
   if (input.notes) {
     lines.push("", "Notes:", input.notes);

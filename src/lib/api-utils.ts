@@ -17,6 +17,15 @@ export class ConflictError extends Error {
   }
 }
 
+// Distinct from a generic Error so its message reaches the client instead of
+// being masked as "Something went wrong" by the generic Error branch below.
+export class InvalidCouponError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "InvalidCouponError";
+  }
+}
+
 export function handleApiError(error: unknown) {
   if (error instanceof UnauthorizedError) {
     return NextResponse.json({ error: error.message }, { status: 401 });
@@ -32,6 +41,9 @@ export function handleApiError(error: unknown) {
   }
   if (error instanceof BillAlreadyRequestedError) {
     return NextResponse.json({ error: error.message }, { status: 409 });
+  }
+  if (error instanceof InvalidCouponError) {
+    return NextResponse.json({ error: error.message }, { status: 400 });
   }
   if (error instanceof ZodError) {
     return NextResponse.json(

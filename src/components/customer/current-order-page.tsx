@@ -81,6 +81,7 @@ type WhatsAppSnapshot = {
   grandTotal: number;
   taxLines: { id: string; name: string; amount: number }[];
   customerName?: string;
+  discount?: { code: string; amount: number };
 };
 
 function WhatsAppOrderSent({
@@ -155,9 +156,22 @@ function WhatsAppOrderSent({
               <span>{formatCurrency(line.amount, shop.currency)}</span>
             </div>
           ))}
+          {snapshot.discount && (
+            <div className="flex justify-between text-emerald-600 dark:text-emerald-400">
+              <span>Coupon — {snapshot.discount.code}</span>
+              <span>−{formatCurrency(snapshot.discount.amount, shop.currency)}</span>
+            </div>
+          )}
           <div className="flex justify-between border-t pt-2 mt-1 font-bold text-base">
             <span>Grand Total</span>
-            <span className="text-primary">{formatCurrency(snapshot.grandTotal, shop.currency)}</span>
+            <span className="text-primary">
+              {formatCurrency(
+                snapshot.discount
+                  ? Math.max(0, Math.round((snapshot.grandTotal - snapshot.discount.amount) * 100) / 100)
+                  : snapshot.grandTotal,
+                shop.currency
+              )}
+            </span>
           </div>
         </div>
       </div>
@@ -282,6 +296,15 @@ export function CurrentOrderPage({
     !!customer || (!!verifiedPhone && verifiedPhone === phoneValue)
   );
 
+  const [couponCode, setCouponCode] = useState("");
+  const [appliedCoupon, setAppliedCoupon] = useState<{
+    code: string;
+    discountAmount: number;
+    description: string | null;
+  } | null>(null);
+  const [couponApplying, setCouponApplying] = useState(false);
+  const [couponError, setCouponError] = useState<string | null>(null);
+
   const bill = useMemo(
     () =>
       calculateBill(
@@ -341,6 +364,51 @@ export function CurrentOrderPage({
     [alreadyOrderedItems, cart.items]
   );
   const finalInvoiceBill = useMemo(() => calculateBill(finalInvoiceItems, taxes), [finalInvoiceItems, taxes]);
+  const finalTotalAfterCoupon = appliedCoupon
+    ? Math.max(0, Math.round((finalInvoiceBill.grandTotal - appliedCoupon.discountAmount) * 100) / 100)
+    : finalInvoiceBill.grandTotal;
+
+  // A coupon's discount was computed against the cart contents at the moment
+  // it was applied — if the cart changes afterward, that number may no
+  // longer be right (a different subtotal, or category-restricted items
+  // removed). Clearing it forces a fresh "Apply" rather than showing a
+  // stale/wrong discount; the server recomputes from scratch regardless, but
+  // the displayed total should never lie.
+  useEffect(() => {
+    setAppliedCoupon(null);
+    setCouponError(null);
+  }, [bill.subtotal]);
+
+  async function applyCoupon() {
+    if (!couponCode.trim()) return;
+    setCouponError(null);
+    setCouponApplying(true);
+    try {
+      const res = await api.post<{
+        ok: boolean;
+        code: string;
+        discountAmount: number;
+        description: string | null;
+      }>("/api/coupons/validate", {
+        shopSlug: shop.slug,
+        code: couponCode.trim(),
+        items: cart.items.map((i) => ({ productId: i.productId, quantity: i.quantity })),
+      });
+      setAppliedCoupon({ code: res.code, discountAmount: res.discountAmount, description: res.description });
+      toast.success(`Coupon ${res.code} applied`);
+    } catch (err) {
+      setCouponError(err instanceof ApiError ? err.message : "Couldn't apply this coupon — try again.");
+    } finally {
+      setCouponApplying(false);
+    }
+  }
+
+  function removeCoupon() {
+    setAppliedCoupon(null);
+    setCouponCode("");
+    setCouponError(null);
+  }
+
   const invoicePaymentStatus: "Paid" | "Unpaid" = session?.status === "PAID" ? "Paid" : "Unpaid";
   const billStatusLabel =
     invoicePaymentStatus === "Paid"
@@ -510,6 +578,7 @@ export function CurrentOrderPage({
           deliveryAddress: resolvedValues.deliveryAddress,
           notes: resolvedValues.notes,
           items: cart.items,
+          couponCode: appliedCoupon?.code,
         });
         if (res.orderId && res.billNumber) {
           addStoredOrder(shop.slug, { orderId: res.orderId, billNumber: res.billNumber, placedAt: new Date().toISOString() });
@@ -523,6 +592,7 @@ export function CurrentOrderPage({
           }
         }
         cart.clear();
+        removeCoupon();
         setDirectOrderPlaced(true);
       } catch (err) {
         if (err instanceof ApiError && err.status === 409) {
@@ -552,6 +622,7 @@ export function CurrentOrderPage({
       grandTotal: bill.grandTotal,
       taxLines: bill.taxLines,
       customerName: resolvedValues.customerName || undefined,
+      discount: appliedCoupon ? { code: appliedCoupon.code, amount: appliedCoupon.discountAmount } : undefined,
     });
 
     const message =
@@ -574,6 +645,9 @@ export function CurrentOrderPage({
             items: cart.items,
             bill,
             currency: shop.currency,
+            discount: appliedCoupon
+              ? { label: `Coupon (${appliedCoupon.code})`, amount: appliedCoupon.discountAmount }
+              : undefined,
           });
     const url = buildWhatsAppUrl(shop.whatsappNumber, message);
 
@@ -598,6 +672,7 @@ export function CurrentOrderPage({
         deliveryAddress: resolvedValues.deliveryAddress,
         notes: resolvedValues.notes,
         items: cart.items,
+        couponCode: !isIncremental ? appliedCoupon?.code : undefined,
       })
       .then((res) => {
         if (res.saved && res.orderId && res.billNumber) {
@@ -620,6 +695,7 @@ export function CurrentOrderPage({
           }
         }
         cart.clear();
+        removeCoupon();
       })
       .catch((err) => {
         if (err instanceof ApiError && err.status === 409) {
@@ -788,9 +864,15 @@ export function CurrentOrderPage({
                     <span>{formatCurrency(line.amount, shop.currency)}</span>
                   </div>
                 ))}
+                {appliedCoupon && (
+                  <div className="flex justify-between text-emerald-600 dark:text-emerald-400">
+                    <span>Coupon — {appliedCoupon.code}</span>
+                    <span>−{formatCurrency(appliedCoupon.discountAmount, shop.currency)}</span>
+                  </div>
+                )}
                 <div className="flex justify-between border-t pt-2 mt-1 font-bold text-base">
                   <span>Grand Total</span>
-                  <span className="text-primary">{formatCurrency(finalInvoiceBill.grandTotal, shop.currency)}</span>
+                  <span className="text-primary">{formatCurrency(finalTotalAfterCoupon, shop.currency)}</span>
                 </div>
               </div>
 
@@ -849,6 +931,42 @@ export function CurrentOrderPage({
                       </FormRow>
                     )
                   )}
+                  <FormRow label="Have a coupon?" htmlFor="couponCode">
+                    {appliedCoupon ? (
+                      <div className="flex items-center gap-2 rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-2.5 text-sm animate-in fade-in zoom-in-95 duration-200 dark:border-emerald-800 dark:bg-emerald-900/20">
+                        <CheckCircle2 className="size-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
+                        <span className="font-semibold">{appliedCoupon.code}</span>
+                        <span className="text-xs text-emerald-700 dark:text-emerald-400">Applied</span>
+                        <button
+                          type="button"
+                          className="ml-auto text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
+                          onClick={removeCoupon}
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="flex gap-2">
+                        <Input
+                          id="couponCode"
+                          placeholder="Enter code"
+                          value={couponCode}
+                          onChange={(e) => setCouponCode(e.target.value.toUpperCase())}
+                          className="flex-1"
+                        />
+                        <Button
+                          type="button"
+                          variant="outline"
+                          className="shrink-0"
+                          disabled={couponApplying || !couponCode.trim()}
+                          onClick={applyCoupon}
+                        >
+                          {couponApplying ? <Loader2 className="size-4 animate-spin" /> : "Apply"}
+                        </Button>
+                      </div>
+                    )}
+                    {couponError && <p className="text-sm text-destructive mt-1.5">{couponError}</p>}
+                  </FormRow>
                   {shop.enableTableNumber && prefilledTable && (
                     <FormRow label="Table" htmlFor="tableDisplay">
                       <div className="relative">

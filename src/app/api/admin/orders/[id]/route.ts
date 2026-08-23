@@ -200,6 +200,12 @@ export async function PATCH(
       } else if (parsed.action === "note") {
         data = { ownerNote: parsed.ownerNote };
       } else if (parsed.action === "discount") {
+        if (existing.couponId) {
+          return NextResponse.json(
+            { error: "This order already has a coupon discount — it can't be combined with a manual one." },
+            { status: 409 }
+          );
+        }
         const subtotal = Number(existing.subtotal);
         const taxTotal = Number(existing.taxTotal);
         const base = subtotal + taxTotal;
@@ -222,6 +228,12 @@ export async function PATCH(
           discountedTotal: Math.max(0, base - discount),
         };
       } else if (parsed.action === "remove_discount") {
+        if (existing.couponId) {
+          return NextResponse.json(
+            { error: "Coupon discounts can't be removed here — cancel the order instead if needed." },
+            { status: 409 }
+          );
+        }
         data = {
           discountType: null,
           discountValue: null,

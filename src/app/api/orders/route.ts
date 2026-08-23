@@ -10,6 +10,7 @@ import { getCustomerSession } from "@/lib/customer-session";
 import { readPhoneVerifiedCookie } from "@/lib/phone-verify-auth";
 import { resolveOrCreateSession, computeSessionBill } from "@/lib/services/table-session";
 import { resolveOrderItems } from "@/lib/services/order-items";
+import { computeCouponForOrder, claimCouponForOrder } from "@/lib/services/coupon";
 import { nextBillNumber } from "@/lib/services/bill-number";
 import { createNotification } from "@/lib/services/notification";
 import { formatCurrency } from "@/lib/utils/currency";
@@ -35,6 +36,7 @@ const createOrderSchema = z.object({
   // submits (refresh, flaky network, a second WhatsApp send) so they resolve
   // to the same order instead of creating a duplicate.
   clientRequestId: z.string().min(10).max(100),
+  couponCode: z.string().trim().min(1).optional(),
 });
 
 export async function POST(request: Request) {
@@ -140,6 +142,16 @@ export async function POST(request: Request) {
       );
       const billNumber = await nextBillNumber(tx, shop.id);
 
+      // Coupon validated + its discount computed before the order exists (the
+      // atomic usage claim needs a real orderId, so it happens after
+      // tx.order.create below — see computeCouponForOrder's doc comment).
+      const couponResult = input.couponCode
+        ? await computeCouponForOrder(tx, shop.id, input.couponCode, resolvedItems, customerId)
+        : null;
+      const discountedTotal = couponResult
+        ? Math.max(0, Math.round((bill.grandTotal - couponResult.discountAmount) * 100) / 100)
+        : null;
+
       // Decrement stock for products that track it (fire-and-forget errors — order still succeeds)
       await Promise.all(
         resolvedItems.map((item) =>
@@ -166,6 +178,21 @@ export async function POST(request: Request) {
           taxTotal: bill.taxTotal,
           grandTotal: bill.grandTotal,
           taxBreakdown: bill.taxLines as unknown as Prisma.InputJsonValue,
+          ...(couponResult
+            ? {
+                couponId: couponResult.couponId,
+                couponCode: couponResult.code,
+                couponDiscountAmount: couponResult.discountAmount,
+                // Dual-write into the pre-existing staff-manual-discount
+                // columns too, so every screen already reading
+                // order.discountedTotal shows this with no changes — see the
+                // Coupon model's doc comment in schema.prisma.
+                discountType: "COUPON",
+                discountValue: couponResult.discountAmount,
+                discountReason: `Coupon: ${couponResult.code}`,
+                discountedTotal,
+              }
+            : {}),
           items: {
             create: resolvedItems.map((item) => ({
               productId: item.productId,
@@ -178,6 +205,10 @@ export async function POST(request: Request) {
         },
         include: { items: true },
       });
+
+      if (couponResult) {
+        await claimCouponForOrder(tx, shop.id, couponResult.couponId, customerId, created.id, couponResult.discountAmount);
+      }
 
       return { order: created, isDuplicate: false };
     });

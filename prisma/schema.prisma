@@ -409,6 +409,7 @@ model Shop {
   categories         Category[]
   products           Product[]
   taxes              Tax[]
+  coupons            Coupon[]
   orders             Order[]
   paymentRecords     PaymentRecord[]
   customers          Customer[]
@@ -531,6 +532,7 @@ model Category {
 
   products Product[]
   taxes    Tax[]
+  couponCategories CouponCategory[]
 
   @@index([shopId])
   @@map("categories")
@@ -562,6 +564,7 @@ model Product {
 
   orderItems OrderItem[]
   kotItems   KotItem[]
+  couponProducts CouponProduct[]
 
   @@index([shopId])
   @@index([categoryId])
@@ -594,6 +597,98 @@ model Tax {
   @@map("taxes")
 }
 
+enum RewardValueType {
+  PERCENTAGE
+  FIXED
+}
+
+// Admin-created customer-facing discount code, applied at checkout (distinct
+// from the pre-existing staff-only Order.discountType/discountValue manual
+// discount below, which is applied to an already-placed order by a MANAGER —
+// see the "discount"/"remove_discount" actions in
+// src/app/api/admin/orders/[id]/route.ts). A coupon dual-writes into those
+// same generic columns too (see the dedicated couponId/couponCode/
+// couponDiscountAmount fields on Order) so every existing screen that reads
+// order.discountedTotal shows a coupon discount with zero code changes.
+model Coupon {
+  id                String          @id @default(cuid())
+  shopId            String
+  shop              Shop            @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  code              String
+  description       String?
+  discountType      RewardValueType @default(PERCENTAGE)
+  discountValue     Decimal         @db.Decimal(10, 2)
+  maxDiscountAmount Decimal?        @db.Decimal(10, 2)
+  minOrderAmount    Decimal?        @db.Decimal(10, 2)
+  totalUsageLimit   Int?
+  perCustomerLimit  Int?
+  usageCount        Int             @default(0)
+  startsAt          DateTime?
+  expiresAt         DateTime?
+  isEnabled         Boolean         @default(true)
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  categories  CouponCategory[]
+  products    CouponProduct[]
+  redemptions CouponRedemption[]
+
+  // Codes only need to be unique within a shop — the customer-facing URL
+  // already scopes to a shop slug, same convention as Product.barcode above.
+  @@unique([shopId, code])
+  @@index([shopId])
+  @@map("coupons")
+}
+
+// Restricts a coupon to specific categories — if neither this nor
+// CouponProduct has any rows for a coupon, it applies to the whole cart.
+model CouponCategory {
+  id         String   @id @default(cuid())
+  couponId   String
+  coupon     Coupon   @relation(fields: [couponId], references: [id], onDelete: Cascade)
+  categoryId String
+  category   Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@unique([couponId, categoryId])
+  @@index([couponId])
+  @@map("coupon_categories")
+}
+
+model CouponProduct {
+  id        String  @id @default(cuid())
+  couponId  String
+  coupon    Coupon  @relation(fields: [couponId], references: [id], onDelete: Cascade)
+  productId String
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([couponId, productId])
+  @@index([couponId])
+  @@map("coupon_products")
+}
+
+// One row per order a coupon was actually redeemed on — the audit trail
+// behind Coupon.usageCount, and the enforcement mechanism for perCustomerLimit.
+model CouponRedemption {
+  id             String   @id @default(cuid())
+  shopId         String
+  couponId       String
+  coupon         Coupon   @relation(fields: [couponId], references: [id], onDelete: Cascade)
+  orderId        String   @unique
+  order          Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  customerId     String?
+  discountAmount Decimal  @db.Decimal(10, 2)
+  createdAt      DateTime @default(now())
+
+  // No @@unique([couponId, customerId]) here on purpose — a coupon with no
+  // perCustomerLimit is meant to be reusable by the same customer, so a blanket
+  // uniqueness constraint on this pair would silently cap every coupon at one
+  // use per known customer. The perCustomerLimit check in coupon.ts is the
+  // sole enforcement (see claimCouponForOrder's doc comment).
+  @@index([shopId])
+  @@index([couponId])
+  @@map("coupon_redemptions")
+}
+
 model Order {
   id              String   @id @default(cuid())
   shopId          String
@@ -619,11 +714,22 @@ model Order {
   paymentMethod   String?
   // "qr" = customer-scanned, "waiter" = placed by waiter staff
   source          String      @default("qr")
-  // Discount (Feature 3)
+  // Discount (Feature 3) — staff-applied manual discount on an existing
+  // order (see "discount"/"remove_discount" actions in
+  // src/app/api/admin/orders/[id]/route.ts). A coupon discount (below)
+  // dual-writes into these same four columns at order-creation time so
+  // every existing screen reading discountedTotal works unchanged.
   discountType    String?
   discountValue   Decimal?    @db.Decimal(10, 2)
   discountReason  String?
   discountedTotal Decimal?    @db.Decimal(10, 2)
+  // Coupon discount — dedicated audit columns, set only at order-creation
+  // time (never edited after). Kept separate from the generic discount
+  // columns above so a coupon-discounted order can be distinguished from a
+  // staff-manual-discounted one (see the Coupon model's doc comment).
+  couponId             String?
+  couponCode           String?
+  couponDiscountAmount Decimal? @db.Decimal(10, 2)
   // Table order lifecycle — set only when this order was placed against an
   // active table session (see TableSession); null for pickup/delivery/manual
   // orders, which are unaffected by session grouping or the "no decrease" rule.
@@ -670,6 +776,7 @@ model Order {
   items         OrderItem[]
   statusEvents  OrderStatusEvent[]
   paymentRecords PaymentRecord[]
+  couponRedemption CouponRedemption?
 
   @@unique([shopId, clientRequestId])
   @@unique([shopId, billNumber])

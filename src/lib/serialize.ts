@@ -25,6 +25,7 @@ export function serializeOrder<
     grandTotal: unknown;
     discountValue: unknown;
     discountedTotal: unknown;
+    couponDiscountAmount?: unknown;
     createdAt: unknown;
     items: { price: unknown; lineTotal: unknown }[];
   },
@@ -34,7 +35,7 @@ export function serializeOrder<
   // intersection of old and new key types instead of replacing it, which lets
   // the original Decimal types leak back into the result — see
   // https://github.com/microsoft/TypeScript/issues/48486.
-  const { subtotal, taxTotal, grandTotal, discountValue, discountedTotal, createdAt, items, ...rest } = order;
+  const { subtotal, taxTotal, grandTotal, discountValue, discountedTotal, couponDiscountAmount, createdAt, items, ...rest } = order;
   return {
     ...rest,
     subtotal: Number(subtotal),
@@ -42,6 +43,7 @@ export function serializeOrder<
     grandTotal: Number(grandTotal),
     discountValue: discountValue == null ? null : Number(discountValue),
     discountedTotal: discountedTotal == null ? null : Number(discountedTotal),
+    couponDiscountAmount: couponDiscountAmount == null ? null : Number(couponDiscountAmount),
     createdAt: (createdAt as Date).toISOString(),
     items: items.map((item) => {
       const { price, lineTotal, ...itemRest } = item;
@@ -57,9 +59,48 @@ export function serializeOrders<
     grandTotal: unknown;
     discountValue: unknown;
     discountedTotal: unknown;
+    couponDiscountAmount?: unknown;
     createdAt: unknown;
     items: { price: unknown; lineTotal: unknown }[];
   },
 >(orders: T[]) {
   return orders.map(serializeOrder);
+}
+
+export function serializeCoupon<
+  T extends {
+    discountValue: unknown;
+    maxDiscountAmount: unknown;
+    minOrderAmount: unknown;
+    createdAt: unknown;
+    updatedAt: unknown;
+    startsAt?: unknown;
+    expiresAt?: unknown;
+  },
+>(coupon: T) {
+  const { discountValue, maxDiscountAmount, minOrderAmount, createdAt, updatedAt, startsAt, expiresAt, ...rest } = coupon;
+  return {
+    ...rest,
+    discountValue: Number(discountValue),
+    maxDiscountAmount: maxDiscountAmount == null ? null : Number(maxDiscountAmount),
+    minOrderAmount: minOrderAmount == null ? null : Number(minOrderAmount),
+    createdAt: (createdAt as Date).toISOString(),
+    updatedAt: (updatedAt as Date).toISOString(),
+    startsAt: startsAt == null ? null : (startsAt as Date).toISOString(),
+    expiresAt: expiresAt == null ? null : (expiresAt as Date).toISOString(),
+  };
+}
+
+export function serializeCoupons<
+  T extends {
+    discountValue: unknown;
+    maxDiscountAmount: unknown;
+    minOrderAmount: unknown;
+    createdAt: unknown;
+    updatedAt: unknown;
+    startsAt?: unknown;
+    expiresAt?: unknown;
+  },
+>(coupons: T[]) {
+  return coupons.map(serializeCoupon);
 }
