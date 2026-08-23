@@ -6,11 +6,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { FormRow } from "@/components/shared/form-row";
 import { api, ApiError } from "@/lib/api-client";
-import { isMsg91WidgetConfigured } from "@/lib/msg91-client";
 
 type Stage = "enter" | "sent";
-type OtpProvider = "msg91" | "db";
 
+// Sends/verifies through this app's own OTP engine (src/lib/services/phone-otp.ts
+// + sms-provider.ts) — provider selection (MSG91 widget/flow, or none) happens
+// entirely server-side via Admin → SMS setup, so this component doesn't need to
+// know or care which one is active.
 export function PhoneVerification({
   shopSlug,
   phone,
@@ -33,14 +35,6 @@ export function PhoneVerification({
   const [otpError, setOtpError] = useState<string | null>(null);
   const [cooldown, setCooldown] = useState(0);
   const verifiedForPhone = useRef<string | null>(verified ? phone : null);
-  // Signed {reqId, phone, shopId} token from send-msg91, held between send and verify.
-  const msg91TokenRef = useRef<string | null>(null);
-  // MSG91 is the only real OTP provider (Firebase Phone Auth was removed —
-  // it required a Firebase-console setting nobody had access to, and MSG91
-  // has proven reliable). The DB-backed dev-log fallback only kicks in when
-  // MSG91 isn't configured at all; it never delivers a real SMS, so it's a
-  // local-dev convenience, not a substitute provider.
-  const provider: OtpProvider = isMsg91WidgetConfigured() ? "msg91" : "db";
 
   // A verified phone stops being "verified" the moment the customer edits it
   // to a different number — each number needs its own OTP round.
@@ -62,24 +56,13 @@ export function PhoneVerification({
     setOtpError(null);
     setSending(true);
     try {
-      if (provider === "msg91") {
-        const res = await api.post<{ ok: boolean; token: string }>("/api/customer/otp/send-msg91", {
-          shopSlug,
-          phone,
-        });
-        msg91TokenRef.current = res.token;
-        setStage("sent");
-        setCooldown(30);
-        setCode("");
-      } else {
-        const res = await api.post<{ ok: boolean; expiresInSeconds: number; resendCooldownSeconds: number }>(
-          "/api/customer/otp/send",
-          { shopSlug, phone }
-        );
-        setStage("sent");
-        setCooldown(res.resendCooldownSeconds);
-        setCode("");
-      }
+      const res = await api.post<{ ok: boolean; expiresInSeconds: number; resendCooldownSeconds: number }>(
+        "/api/customer/otp/send",
+        { shopSlug, phone }
+      );
+      setStage("sent");
+      setCooldown(res.resendCooldownSeconds);
+      setCode("");
     } catch (err) {
       setOtpError(err instanceof ApiError ? err.message : "Couldn't send code — try again.");
     } finally {
@@ -91,12 +74,7 @@ export function PhoneVerification({
     setOtpError(null);
     setVerifying(true);
     try {
-      if (provider === "msg91") {
-        if (!msg91TokenRef.current) throw new Error("Please request a new code.");
-        await api.post("/api/customer/otp/verify-msg91", { shopSlug, token: msg91TokenRef.current, otp: code });
-      } else {
-        await api.post("/api/customer/otp/verify", { shopSlug, phone, code });
-      }
+      await api.post("/api/customer/otp/verify", { shopSlug, phone, code });
       verifiedForPhone.current = phone;
       onVerifiedChange(true);
     } catch (err) {

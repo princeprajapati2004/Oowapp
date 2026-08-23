@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -14,7 +14,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { FieldGroup } from "@/components/ui/field";
 import { FormRow } from "@/components/shared/form-row";
-import { isMsg91WidgetConfigured } from "@/lib/msg91-client";
 import { cn } from "@/lib/utils";
 
 type LoginMethod = "password" | "otp";
@@ -24,14 +23,16 @@ export function CustomerLoginForm({
   slug,
   businessName,
   logoUrl,
+  otpAvailable,
 }: {
   slug: string;
   businessName: string;
   logoUrl: string | null;
+  // Computed server-side (SMS provider configured via Admin → SMS setup or
+  // env vars) — this component never needs to know which provider it is.
+  otpAvailable: boolean;
 }) {
   const router = useRouter();
-  // MSG91-only by explicit decision (Firebase Phone Auth was removed).
-  const useOtp = isMsg91WidgetConfigured();
   const [method, setMethod] = useState<LoginMethod>("password");
   const {
     register,
@@ -81,7 +82,7 @@ export function CustomerLoginForm({
             <p className="text-sm text-muted-foreground">Sign in to track and manage your orders.</p>
           </div>
 
-          {useOtp && (
+          {otpAvailable && (
             <div className="grid grid-cols-2 gap-1 rounded-xl bg-muted p-1 text-sm">
               <button
                 type="button"
@@ -161,10 +162,10 @@ export function CustomerLoginForm({
   );
 }
 
-// Self-contained OTP login flow (send code → verify → POST the resulting
-// MSG91 verification token to /api/customer/auth/login-otp-msg91). Mirrors
-// the checkout-gate PhoneVerification component's MSG91 calls, but this one
-// finishes with a session login rather than a "verified" flag.
+// Self-contained OTP login flow (send code → verify → session cookie), same
+// underlying engine as checkout's PhoneVerification (phone-otp.ts +
+// sms-provider.ts) but finishing with a session login rather than a
+// "verified" flag.
 function OtpLoginBlock({ slug, onSuccess }: { slug: string; onSuccess: () => void }) {
   const [stage, setStage] = useState<OtpStage>("enter");
   const [phone, setPhone] = useState("");
@@ -173,8 +174,6 @@ function OtpLoginBlock({ slug, onSuccess }: { slug: string; onSuccess: () => voi
   const [verifying, setVerifying] = useState(false);
   const [otpError, setOtpError] = useState<string | null>(null);
   const [cooldown, setCooldown] = useState(0);
-  // Signed {reqId, phone, shopId} token from send-msg91, held between send and verify.
-  const msg91TokenRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (cooldown <= 0) return;
@@ -186,13 +185,12 @@ function OtpLoginBlock({ slug, onSuccess }: { slug: string; onSuccess: () => voi
     setOtpError(null);
     setSending(true);
     try {
-      const res = await api.post<{ ok: boolean; token: string }>("/api/customer/otp/send-msg91", {
-        shopSlug: slug,
-        phone,
-      });
-      msg91TokenRef.current = res.token;
+      const res = await api.post<{ ok: boolean; resendCooldownSeconds: number }>(
+        "/api/customer/auth/send-login-otp",
+        { shopSlug: slug, phone }
+      );
       setStage("sent");
-      setCooldown(30);
+      setCooldown(res.resendCooldownSeconds);
       setCode("");
     } catch (err) {
       setOtpError(err instanceof ApiError ? err.message : "Couldn't send code — try again.");
@@ -205,12 +203,7 @@ function OtpLoginBlock({ slug, onSuccess }: { slug: string; onSuccess: () => voi
     setOtpError(null);
     setVerifying(true);
     try {
-      if (!msg91TokenRef.current) throw new Error("Please request a new code.");
-      await api.post("/api/customer/auth/login-otp-msg91", {
-        shopSlug: slug,
-        token: msg91TokenRef.current,
-        otp: code,
-      });
+      await api.post("/api/customer/auth/login-otp", { shopSlug: slug, phone, code });
       onSuccess();
     } catch (err) {
       setOtpError(err instanceof ApiError ? err.message : "Verification failed — try again.");
