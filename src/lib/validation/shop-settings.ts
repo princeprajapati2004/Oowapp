@@ -57,6 +57,7 @@ export type PaymentSettingsInput = z.infer<typeof paymentSettingsSchema>;
 export const orderSettingsSchema = z.object({
   requireCustomerName: z.boolean(),
   requirePhone: z.boolean(),
+  requirePhoneVerification: z.boolean(),
   enableTableNumber: z.boolean(),
   requireTableNumber: z.boolean(),
   requireDeliveryAddress: z.boolean(),

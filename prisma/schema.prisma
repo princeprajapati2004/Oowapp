@@ -356,6 +356,11 @@ model Shop {
   // Order settings
   requireCustomerName      Boolean @default(true)
   requirePhone             Boolean @default(false)
+  // Separate from requirePhone (which only controls whether the phone field
+  // is collected at all): whether that phone number must also be confirmed
+  // via OTP before the order can be placed. Off by default — collecting a
+  // phone number shouldn't force an OTP round unless the owner opts in.
+  requirePhoneVerification Boolean @default(false)
   enableTableNumber        Boolean @default(true)
   requireTableNumber       Boolean @default(true)
   requireDeliveryAddress   Boolean @default(false)

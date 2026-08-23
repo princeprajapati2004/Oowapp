@@ -478,7 +478,7 @@ export function CurrentOrderPage({
       toast.error("Bill already requested for this table — please check with staff before ordering more.");
       return;
     }
-    if (shop.requirePhone && !phoneVerified) {
+    if (shop.requirePhoneVerification && !phoneVerified) {
       toast.error("Please verify your phone number before continuing.");
       return;
     }
@@ -829,14 +829,25 @@ export function CurrentOrderPage({
                     </FormRow>
                   )}
                   {shop.requirePhone && (
-                    <PhoneVerification
-                      shopSlug={shop.slug}
-                      phone={phoneValue}
-                      onPhoneChange={(value) => setValue("customerPhone", value, { shouldValidate: true })}
-                      verified={phoneVerified}
-                      onVerifiedChange={setPhoneVerified}
-                      error={errors.customerPhone?.message}
-                    />
+                    shop.requirePhoneVerification ? (
+                      <PhoneVerification
+                        shopSlug={shop.slug}
+                        phone={phoneValue}
+                        onPhoneChange={(value) => setValue("customerPhone", value, { shouldValidate: true })}
+                        verified={phoneVerified}
+                        onVerifiedChange={setPhoneVerified}
+                        error={errors.customerPhone?.message}
+                      />
+                    ) : (
+                      <FormRow label="Phone number" htmlFor="customerPhone" required error={errors.customerPhone}>
+                        <Input
+                          id="customerPhone"
+                          inputMode="numeric"
+                          placeholder="Your phone number"
+                          {...register("customerPhone")}
+                        />
+                      </FormRow>
+                    )
                   )}
                   {shop.enableTableNumber && prefilledTable && (
                     <FormRow label="Table" htmlFor="tableDisplay">
