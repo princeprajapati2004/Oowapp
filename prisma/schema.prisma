@@ -502,6 +502,7 @@ model Party {
 
   payments PartyPayment[]
   orders   Order[]
+  expenses Expense[]
 
   @@unique([shopId, phone])
   // Safe on Postgres with an optional field: NULLs are distinct from each
@@ -1423,20 +1424,28 @@ model PushSubscription {
 // live; this row is what makes it durable across reloads. Writes are
 // Expense tracking — owner-only, not visible to staff
 model Expense {
-  id            String   @id @default(cuid())
-  shopId        String
-  shop          Shop     @relation(fields: [shopId], references: [id], onDelete: Cascade)
-  name          String
-  category      String
-  amount        Decimal  @db.Decimal(10, 2)
-  date          DateTime
-  paymentMethod String   // CASH | UPI | CARD | BANK
-  notes         String?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  id                   String   @id @default(cuid())
+  shopId               String
+  shop                 Shop     @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  name                 String
+  category             String
+  amount               Decimal  @db.Decimal(10, 2)
+  date                 DateTime
+  paymentMethod        String   // CASH | UPI | GPAY | PHONEPE | BANK_TRANSFER | DEBIT_CARD | CREDIT_CARD | CARD | BANK | CHEQUE | OTHER
+  // UPI/bank txn id, cheque number, etc. Optional — never required for CASH.
+  transactionReference String?
+  // Optional vendor/supplier link — reuses the existing Party model rather
+  // than a new one; nullable so expenses with no known vendor keep working.
+  partyId              String?
+  party                Party?   @relation(fields: [partyId], references: [id], onDelete: SetNull)
+  createdBy            String?
+  notes                String?
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
 
   @@index([shopId])
   @@index([shopId, date])
+  @@index([partyId])
   @@map("expenses")
 }
 

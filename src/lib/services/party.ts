@@ -96,6 +96,16 @@ export async function listPartiesWithBalances(shopId: string) {
   });
 }
 
+// Lightweight list for pickers (e.g. the Expense vendor selector) — no
+// balance computation, so it's cheap to call from any admin page.
+export async function listPartiesForPicker(shopId: string) {
+  return db.party.findMany({
+    where: { shopId },
+    select: { id: true, name: true, phone: true, type: true },
+    orderBy: { name: "asc" },
+  });
+}
+
 export async function getPartyStatement(shopId: string, id: string) {
   const partyWithRelations = await db.party.findFirst({
     where: { id, shopId },
