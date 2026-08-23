@@ -6,19 +6,11 @@ import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "sonner";
-import { signupSchema, type SignupInput } from "@/lib/validation/auth";
-import { BUSINESS_TYPES, BUSINESS_TYPE_LABELS } from "@/lib/business-types";
+import { registerStartSchema, type RegisterStartInput } from "@/lib/validation/auth";
 import { api, ApiError } from "@/lib/api-client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { FieldGroup } from "@/components/ui/field";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { FormRow } from "@/components/shared/form-row";
 import { InstallApp } from "@/components/shared/install-app";
 
@@ -27,22 +19,17 @@ export default function SignupPage() {
   const {
     register,
     handleSubmit,
-    setValue,
-    watch,
     formState: { errors, isSubmitting },
-  } = useForm<SignupInput>({
-    resolver: zodResolver(signupSchema),
-    defaultValues: { businessType: "RESTAURANT" },
+  } = useForm<RegisterStartInput>({
+    resolver: zodResolver(registerStartSchema),
   });
 
-  const businessType = watch("businessType");
-
-  async function onSubmit(values: SignupInput) {
+  async function onSubmit(values: RegisterStartInput) {
     try {
       await api.post<{ pendingVerification: boolean; email: string }>("/api/auth/signup", values);
       router.push(`/verify-email?email=${encodeURIComponent(values.email)}`);
     } catch (error) {
-      toast.error(error instanceof ApiError ? error.message : "Signup failed");
+      toast.error(error instanceof ApiError ? error.message : "Registration failed");
     }
   }
 
@@ -69,59 +56,24 @@ export default function SignupPage() {
           <div className="space-y-1">
             <h2 className="text-base font-semibold tracking-tight">Set up your shop</h2>
             <p className="text-sm text-muted-foreground">
-              Create your free ordering page in under a minute.
+              Enter your phone and email to get started — no password needed.
             </p>
           </div>
 
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-3">
             <FieldGroup>
-              <FormRow label="Business name" htmlFor="businessName" required error={errors.businessName}>
-                <Input
-                  id="businessName"
-                  placeholder="e.g. Heritage Kitchen"
-                  {...register("businessName")}
-                />
-              </FormRow>
-
-              <FormRow label="Business type" htmlFor="businessType" required>
-                <Select
-                  value={businessType}
-                  onValueChange={(v) => v && setValue("businessType", v as SignupInput["businessType"])}
-                >
-                  <SelectTrigger id="businessType" className="w-full">
-                    <SelectValue placeholder="Select a business type" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {BUSINESS_TYPES.map((type) => (
-                      <SelectItem key={type} value={type}>
-                        {BUSINESS_TYPE_LABELS[type]}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </FormRow>
-
               <FormRow
-                label="WhatsApp number"
-                htmlFor="whatsappNumber"
+                label="Phone number"
+                htmlFor="phone"
                 required
-                description="Include country code, e.g. 91XXXXXXXXXX — orders will be sent here."
-                error={errors.whatsappNumber}
+                description="Include country code, e.g. 91XXXXXXXXXX"
+                error={errors.phone}
               >
-                <Input
-                  id="whatsappNumber"
-                  inputMode="numeric"
-                  placeholder="91XXXXXXXXXX"
-                  {...register("whatsappNumber")}
-                />
+                <Input id="phone" inputMode="numeric" placeholder="91XXXXXXXXXX" {...register("phone")} />
               </FormRow>
 
               <FormRow label="Email" htmlFor="email" required error={errors.email}>
                 <Input id="email" type="email" placeholder="you@example.com" {...register("email")} />
-              </FormRow>
-
-              <FormRow label="Password" htmlFor="password" required error={errors.password}>
-                <Input id="password" type="password" placeholder="••••••••" {...register("password")} />
               </FormRow>
             </FieldGroup>
 
@@ -130,7 +82,7 @@ export default function SignupPage() {
               className="h-10 w-full bg-primary text-primary-foreground hover:bg-primary/90 shadow-sm shadow-primary/20 transition-all"
               disabled={isSubmitting}
             >
-              {isSubmitting ? "Creating your shop…" : "Create my shop"}
+              {isSubmitting ? "Sending code…" : "Continue"}
             </Button>
           </form>
 

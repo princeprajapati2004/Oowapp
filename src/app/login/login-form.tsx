@@ -1,51 +1,78 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "sonner";
-import { loginSchema, type LoginInput } from "@/lib/validation/auth";
 import { api, ApiError } from "@/lib/api-client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { FieldGroup } from "@/components/ui/field";
 import { FormRow } from "@/components/shared/form-row";
 import { InstallApp } from "@/components/shared/install-app";
 
+const RESEND_COOLDOWN = 30;
+
 export function LoginForm() {
   const router = useRouter();
-  const {
-    register,
-    handleSubmit,
-    formState: { errors, isSubmitting },
-  } = useForm<LoginInput>({ resolver: zodResolver(loginSchema) });
+  const [step, setStep] = useState<"email" | "otp">("email");
+  const [email, setEmail] = useState("");
+  const [otp, setOtp] = useState("");
+  const [sending, setSending] = useState(false);
+  const [verifying, setVerifying] = useState(false);
+  const [error, setError] = useState("");
+  const [cooldown, setCooldown] = useState(0);
 
-  async function onSubmit(values: LoginInput) {
+  useEffect(() => {
+    if (cooldown <= 0) return;
+    const t = setTimeout(() => setCooldown((c) => c - 1), 1000);
+    return () => clearTimeout(t);
+  }, [cooldown]);
+
+  async function sendOtp(e: React.FormEvent) {
+    e.preventDefault();
+    if (!email.trim()) return;
+    setSending(true);
+    setError("");
     try {
-      const res = await api.post<{ role: string; shopSlug?: string; pendingVerification?: boolean; email?: string }>(
-        "/api/auth/login",
-        values
-      );
-      if (res.role === "super_admin") {
-        router.push("/super-admin");
-      } else {
-        router.push("/admin");
-      }
+      await api.post("/api/auth/send-login-otp", { email: email.trim() });
+      setStep("otp");
+      setCooldown(RESEND_COOLDOWN);
+      toast.success("If that account exists, a code has been sent.");
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Could not send the code");
+    } finally {
+      setSending(false);
+    }
+  }
+
+  async function resend() {
+    if (cooldown > 0) return;
+    setSending(true);
+    try {
+      await api.post("/api/auth/send-login-otp", { email: email.trim() });
+      setCooldown(RESEND_COOLDOWN);
+      toast.success("Code resent");
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Could not resend the code");
+    } finally {
+      setSending(false);
+    }
+  }
+
+  async function verify(e: React.FormEvent) {
+    e.preventDefault();
+    if (otp.length !== 6) return;
+    setVerifying(true);
+    setError("");
+    try {
+      await api.post("/api/auth/verify-login-otp", { email: email.trim(), otp });
+      router.push("/admin");
       router.refresh();
-    } catch (error) {
-      if (error instanceof ApiError) {
-        const data = error.data as { pendingVerification?: boolean; email?: string } | undefined;
-        if (data?.pendingVerification && data.email) {
-          toast.error("Please verify your email first.");
-          router.push(`/verify-email?email=${encodeURIComponent(data.email)}`);
-          return;
-        }
-        toast.error(error.message);
-      } else {
-        toast.error("Login failed");
-      }
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Verification failed");
+    } finally {
+      setVerifying(false);
     }
   }
 
@@ -71,42 +98,77 @@ export function LoginForm() {
         <div className="rounded-2xl border bg-card shadow-md p-6 space-y-5">
           <div className="space-y-1">
             <h2 className="text-base font-semibold tracking-tight">Welcome back</h2>
-            <p className="text-sm text-muted-foreground">Sign in to manage your shop.</p>
+            <p className="text-sm text-muted-foreground">
+              {step === "email" ? "Sign in with a one-time code — no password needed." : `We sent a code to ${email}`}
+            </p>
           </div>
 
-          <form onSubmit={handleSubmit(onSubmit)} className="space-y-3">
-            <FieldGroup>
-              <FormRow label="Email" htmlFor="email" required error={errors.email}>
+          {step === "email" ? (
+            <form onSubmit={sendOtp} className="space-y-3">
+              <FormRow label="Email" htmlFor="email" required>
                 <Input
                   id="email"
                   type="email"
                   autoComplete="username"
                   placeholder="you@example.com"
-                  {...register("email")}
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
                 />
               </FormRow>
-              <FormRow label="Password" htmlFor="password" required error={errors.password}>
+              <Button type="submit" className="h-10 w-full" disabled={sending}>
+                {sending ? "Sending…" : "Send code"}
+              </Button>
+            </form>
+          ) : (
+            <form onSubmit={verify} className="space-y-3">
+              <FormRow
+                label="Enter the 6-digit code"
+                htmlFor="otp"
+                required
+                error={error ? { message: error } : undefined}
+              >
                 <Input
-                  id="password"
-                  type="password"
-                  autoComplete="current-password"
-                  placeholder="••••••••"
-                  {...register("password")}
+                  id="otp"
+                  inputMode="numeric"
+                  maxLength={6}
+                  autoFocus
+                  value={otp}
+                  onChange={(e) => {
+                    setOtp(e.target.value.replace(/\D/g, "").slice(0, 6));
+                    setError("");
+                  }}
+                  placeholder="123456"
                 />
               </FormRow>
-            </FieldGroup>
+              <Button type="submit" className="h-10 w-full" disabled={verifying || otp.length !== 6}>
+                {verifying ? "Verifying…" : "Sign in"}
+              </Button>
+              <div className="flex items-center justify-between text-sm">
+                <button
+                  type="button"
+                  className="text-muted-foreground hover:text-foreground transition-colors"
+                  onClick={() => {
+                    setStep("email");
+                    setOtp("");
+                    setError("");
+                  }}
+                >
+                  Use a different email
+                </button>
+                <button
+                  type="button"
+                  className="font-medium text-primary hover:text-primary/80 transition-colors disabled:opacity-50 disabled:pointer-events-none"
+                  disabled={cooldown > 0 || sending}
+                  onClick={resend}
+                >
+                  {cooldown > 0 ? `Resend in ${cooldown}s` : "Resend code"}
+                </button>
+              </div>
+            </form>
+          )}
 
-            <Button
-              type="submit"
-              className="h-10 w-full bg-primary text-primary-foreground hover:bg-primary/90 shadow-sm shadow-primary/20 transition-all"
-              disabled={isSubmitting}
-            >
-              {isSubmitting ? "Signing in…" : "Sign in"}
-            </Button>
-          </form>
-
-          <div className="flex items-center justify-between text-sm">
-            <p className="text-muted-foreground">
+          {step === "email" && (
+            <p className="text-center text-sm text-muted-foreground">
               New here?{" "}
               <Link
                 href="/admin/signup"
@@ -115,13 +177,7 @@ export function LoginForm() {
                 Set up your shop
               </Link>
             </p>
-            <Link
-              href="/forgot-password"
-              className="font-medium text-primary hover:text-primary/80 transition-colors shrink-0"
-            >
-              Forgot password?
-            </Link>
-          </div>
+          )}
         </div>
       </div>
     </div>

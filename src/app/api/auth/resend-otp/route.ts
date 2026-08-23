@@ -2,12 +2,14 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { handleApiError } from "@/lib/api-utils";
-import { sendVerificationOtp, sendPasswordResetOtp, canResendOtp } from "@/lib/services/email-otp";
+import { sendVerificationOtp, canResendOtp } from "@/lib/services/email-otp";
 import { checkRateLimit } from "@/lib/rate-limit";
 
+// Resends the registration (step-1 email verification) code — see
+// /verify-email. Login codes are resent via /api/auth/send-login-otp
+// instead, which already has its own cooldown handling.
 const schema = z.object({
   email: z.string().email(),
-  purpose: z.enum(["SIGNUP", "PASSWORD_RESET"]).default("SIGNUP"),
 });
 
 export async function POST(request: Request) {
@@ -23,7 +25,7 @@ export async function POST(request: Request) {
 
     const admin = await db.admin.findUnique({
       where: { email: input.email },
-      select: { id: true, email: true, emailVerified: true, shop: { select: { businessName: true } } },
+      select: { id: true, email: true, emailVerified: true },
     });
 
     // Return success even if account doesn't exist (prevent enumeration)
@@ -31,11 +33,11 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: true });
     }
 
-    if (input.purpose === "SIGNUP" && admin.emailVerified) {
+    if (admin.emailVerified) {
       return NextResponse.json({ error: "This email is already verified." }, { status: 400 });
     }
 
-    const allowed = await canResendOtp(admin.id, input.purpose);
+    const allowed = await canResendOtp(admin.id, "SIGNUP");
     if (!allowed) {
       return NextResponse.json(
         { error: "Please wait 30 seconds before requesting a new code." },
@@ -43,12 +45,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const name = admin.shop?.businessName ?? "";
-    if (input.purpose === "SIGNUP") {
-      await sendVerificationOtp(admin.id, admin.email, name);
-    } else {
-      await sendPasswordResetOtp(admin.id, admin.email, name);
-    }
+    await sendVerificationOtp(admin.id, admin.email, "");
 
     return NextResponse.json({ ok: true });
   } catch (error) {

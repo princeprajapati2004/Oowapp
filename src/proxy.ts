@@ -3,7 +3,8 @@ import type { NextRequest } from "next/server";
 import { SESSION_COOKIE, SA_SESSION_COOKIE, verifySession, verifySuperAdminSession } from "@/lib/auth";
 import { REFERRAL_COOKIE, REFERRAL_COOKIE_DURATION_SECONDS } from "@/lib/referral-attribution";
 
-const PUBLIC_ADMIN_PATHS = ["/admin/signup"];
+const PUBLIC_ADMIN_PATHS = ["/admin/signup", "/admin/signup/business-details"];
+const PUBLIC_SUPER_ADMIN_PATHS = ["/super-admin/login"];
 
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
@@ -29,10 +30,13 @@ export async function proxy(request: NextRequest) {
   }
 
   if (pathname.startsWith("/super-admin")) {
+    if (PUBLIC_SUPER_ADMIN_PATHS.some((path) => pathname === path)) {
+      return NextResponse.next();
+    }
     const token = request.cookies.get(SA_SESSION_COOKIE)?.value;
     const session = token ? await verifySuperAdminSession(token) : null;
     if (!session) {
-      return NextResponse.redirect(new URL("/login", request.url));
+      return NextResponse.redirect(new URL("/super-admin/login", request.url));
     }
     return NextResponse.next();
   }

@@ -228,6 +228,7 @@ enum MenuImportStatus {
 enum EmailVerificationPurpose {
   SIGNUP
   PASSWORD_RESET
+  LOGIN
 }
 
 enum KotStatus {
@@ -283,7 +284,16 @@ enum AuditAction {
 model Admin {
   id             String   @id @default(cuid())
   email          String   @unique
-  passwordHash   String
+  // Collected at registration step 1, before a Shop exists — copied onto
+  // Shop.whatsappNumber once the Shop is created (step 2). Nullable because
+  // it's only meaningful during/around registration, not a Shop concern.
+  phone          String?
+  // Business-owner auth is now OTP-only (see complete-registration /
+  // send-login-otp / verify-login-otp) — nullable because new admins never
+  // get one. Existing admins keep their old hash inertly; nothing reads it
+  // anymore. (SuperAdmin/StaffMember have their own separate, still-required
+  // passwordHash columns — unaffected by this.)
+  passwordHash   String?
   emailVerified  Boolean  @default(false)
   // Verifies Shop.whatsappNumber (collected at signup) — kept on Admin, not
   // Shop, to mirror emailVerified's placement as an owner-identity flag.

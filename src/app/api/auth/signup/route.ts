@@ -1,77 +1,56 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { hashPassword } from "@/lib/auth";
-import { signupSchema } from "@/lib/validation/auth";
+import { registerStartSchema } from "@/lib/validation/auth";
 import { handleApiError } from "@/lib/api-utils";
-import { createShopForAdmin } from "@/lib/services/shop";
-import { createInitialSubscription } from "@/lib/services/subscription";
 import { writeAuditLog, extractRequestMeta } from "@/lib/services/audit-log";
 import { sendVerificationOtp } from "@/lib/services/email-otp";
+import { checkRateLimit } from "@/lib/rate-limit";
 
 export async function POST(request: Request) {
   try {
+    const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "unknown";
+    if (!checkRateLimit(`register-start:${ip}`, 8, 10 * 60_000)) {
+      return NextResponse.json({ error: "Too many requests. Please try again later." }, { status: 429 });
+    }
+
     const body = await request.json();
-    const input = signupSchema.parse(body);
+    const input = registerStartSchema.parse(body);
     const { ipAddress, userAgent, requestId } = extractRequestMeta(request);
 
     const existing = await db.admin.findUnique({
       where: { email: input.email },
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      select: { id: true, emailVerified: true } as any,
+      select: { id: true, emailVerified: true, shop: { select: { id: true } } },
     });
 
     if (existing) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      if (!(existing as any).emailVerified) {
-        // Allow resending OTP to an unverified account rather than blocking with an error
+      if (existing.emailVerified && existing.shop) {
         return NextResponse.json(
-          { pendingVerification: true, email: input.email },
-          { status: 200 }
+          { error: "An account with this email already exists. Please log in instead." },
+          { status: 409 }
         );
       }
-      return NextResponse.json(
-        { error: "An account with this email already exists" },
-        { status: 409 }
-      );
+      // Unverified / mid-registration account — let them resume instead of
+      // erroring, re-sending a fresh OTP to the (possibly updated) phone.
+      await db.admin.update({ where: { id: existing.id }, data: { phone: input.phone } });
+      await sendVerificationOtp(existing.id, input.email, "");
+      return NextResponse.json({ pendingVerification: true, email: input.email });
     }
 
-    const passwordHash = await hashPassword(input.password);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const admin = await (db.admin as any).create({
-      data: { email: input.email, passwordHash, emailVerified: false, phoneVerified: false },
+    const admin = await db.admin.create({
+      data: { email: input.email, phone: input.phone, emailVerified: false, phoneVerified: false },
     });
-    const shop = await createShopForAdmin(admin.id, input);
-    await createInitialSubscription(shop.id);
 
     await writeAuditLog({
       action: "ADMIN_SIGNUP",
       actorType: "admin",
       actorId: admin.id,
-      targetType: "shop",
-      targetId: shop.id,
-      shopId: shop.id,
-      metadata: { emailVerified: false },
+      metadata: { step: "registration_started" },
       ipAddress,
       userAgent,
       requestId,
     });
 
-    await writeAuditLog({
-      action: "SUBSCRIPTION_CHANGED",
-      actorType: "system",
-      actorId: admin.id,
-      targetType: "shop",
-      targetId: shop.id,
-      shopId: shop.id,
-      metadata: { event: "trial_started", plan: "FREE" },
-      ipAddress,
-      userAgent,
-      requestId,
-    });
-
-    // Extract a display name from the business name for the email greeting
-    const displayName = input.businessName;
-    await sendVerificationOtp(admin.id, input.email, displayName);
+    await sendVerificationOtp(admin.id, input.email, "");
 
     return NextResponse.json({ pendingVerification: true, email: input.email });
   } catch (error) {

@@ -74,14 +74,17 @@ function VerifyEmailForm() {
       setLoading(true);
       setError("");
       try {
-        const res = await api.post<{ shopSlug: string }>("/api/auth/verify-email", {
-          email,
-          otp: code,
-        });
-        toast.success("Email verified! Setting up your shop…");
-        router.push(`/admin`);
-        router.refresh();
-        void res;
+        const res = await api.post<{ shopSlug?: string; pendingBusinessDetails?: boolean }>(
+          "/api/auth/verify-email",
+          { email, otp: code }
+        );
+        toast.success("Email verified!");
+        if (res.pendingBusinessDetails) {
+          router.push("/admin/signup/business-details");
+        } else {
+          router.push(`/admin`);
+          router.refresh();
+        }
       } catch (err) {
         const msg = err instanceof ApiError ? err.message : "Verification failed. Please try again.";
         setError(msg);

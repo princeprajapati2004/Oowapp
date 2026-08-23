@@ -2,7 +2,14 @@ import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { signSession, SESSION_COOKIE, SESSION_DURATION_SECONDS } from "@/lib/auth";
+import {
+  signSession,
+  signPendingRegistration,
+  SESSION_COOKIE,
+  SESSION_DURATION_SECONDS,
+  PENDING_REGISTRATION_COOKIE,
+  PENDING_REGISTRATION_DURATION_SECONDS,
+} from "@/lib/auth";
 import { handleApiError } from "@/lib/api-utils";
 import { verifyOtp } from "@/lib/services/email-otp";
 import { writeAuditLog, extractRequestMeta } from "@/lib/services/audit-log";
@@ -29,16 +36,60 @@ export async function POST(request: Request) {
       include: { shop: true },
     });
 
-    if (!admin || !admin.shop) {
+    if (!admin) {
       // Constant-time response — don't reveal whether email exists
       return NextResponse.json({ error: "Invalid verification code." }, { status: 400 });
     }
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    if ((admin as any).emailVerified) {
-      // Already verified — issue session and let them in
+    const cookieStore = await cookies();
+
+    // Already verified from a previous request (e.g. a retried submit) —
+    // just route them to wherever they should be next instead of erroring.
+    if (admin.emailVerified) {
+      if (admin.shop) {
+        const token = await signSession({ adminId: admin.id, shopId: admin.shop.id });
+        cookieStore.set(SESSION_COOKIE, token, {
+          httpOnly: true,
+          secure: process.env.NODE_ENV === "production",
+          sameSite: "lax",
+          path: "/",
+          maxAge: SESSION_DURATION_SECONDS,
+        });
+        return NextResponse.json({ shopSlug: admin.shop.slug });
+      }
+      const pendingToken = await signPendingRegistration({ adminId: admin.id });
+      cookieStore.set(PENDING_REGISTRATION_COOKIE, pendingToken, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: "lax",
+        path: "/",
+        maxAge: PENDING_REGISTRATION_DURATION_SECONDS,
+      });
+      return NextResponse.json({ pendingBusinessDetails: true });
+    }
+
+    const result = await verifyOtp(admin.id, "SIGNUP", input.otp);
+    if (!result.success) {
+      return NextResponse.json({ error: result.error }, { status: 400 });
+    }
+
+    await db.admin.update({ where: { id: admin.id }, data: { emailVerified: true } });
+
+    await writeAuditLog({
+      action: "EMAIL_VERIFIED",
+      actorType: "admin",
+      actorId: admin.id,
+      shopId: admin.shop?.id,
+      ipAddress,
+      userAgent,
+      requestId,
+    });
+
+    if (admin.shop) {
+      // Defensive path — shouldn't happen in the current flow (Shop is only
+      // created in complete-registration, after this), but keeps old
+      // in-flight verification links from ever breaking.
       const token = await signSession({ adminId: admin.id, shopId: admin.shop.id });
-      const cookieStore = await cookies();
       cookieStore.set(SESSION_COOKIE, token, {
         httpOnly: true,
         secure: process.env.NODE_ENV === "production",
@@ -49,40 +100,15 @@ export async function POST(request: Request) {
       return NextResponse.json({ shopSlug: admin.shop.slug });
     }
 
-    const result = await verifyOtp(admin.id, "SIGNUP", input.otp);
-    if (!result.success) {
-      return NextResponse.json({ error: result.error }, { status: 400 });
-    }
-
-    // Mark email as verified
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await (db.admin as any).update({
-      where: { id: admin.id },
-      data: { emailVerified: true },
-    });
-
-    // Issue session — account is now active
-    const token = await signSession({ adminId: admin.id, shopId: admin.shop.id });
-    const cookieStore = await cookies();
-    cookieStore.set(SESSION_COOKIE, token, {
+    const pendingToken = await signPendingRegistration({ adminId: admin.id });
+    cookieStore.set(PENDING_REGISTRATION_COOKIE, pendingToken, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
       sameSite: "lax",
       path: "/",
-      maxAge: SESSION_DURATION_SECONDS,
+      maxAge: PENDING_REGISTRATION_DURATION_SECONDS,
     });
-
-    await writeAuditLog({
-      action: "EMAIL_VERIFIED",
-      actorType: "admin",
-      actorId: admin.id,
-      shopId: admin.shop.id,
-      ipAddress,
-      userAgent,
-      requestId,
-    });
-
-    return NextResponse.json({ shopSlug: admin.shop.slug });
+    return NextResponse.json({ pendingBusinessDetails: true });
   } catch (error) {
     return handleApiError(error);
   }

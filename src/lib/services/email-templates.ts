@@ -54,11 +54,11 @@ export function buildVerifyEmailTemplate(recipientName: string, otp: string): st
 </html>`;
 }
 
-export function buildPasswordResetTemplate(recipientName: string, otp: string): string {
+export function buildLoginOtpTemplate(recipientName: string, otp: string): string {
   const name = recipientName || "there";
   return `<!DOCTYPE html>
 <html lang="en">
-<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>Reset your password — OOWAPP</title>
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>Your login code — OOWAPP</title>
 <style>${sharedStyles}</style></head>
 <body>
 <div class="wrapper">
@@ -68,13 +68,13 @@ export function buildPasswordResetTemplate(recipientName: string, otp: string): 
   </div>
   <div class="body">
     <p class="greeting">Hello ${escapeHtml(name)},</p>
-    <p class="text">We received a request to reset the password for your OOWAPP account. Use the code below to proceed.</p>
+    <p class="text">Use the code below to sign in to your OOWAPP account.</p>
     <div class="otp-box">
       <div class="otp-code">${otp}</div>
       <p class="otp-expiry">This code expires in <strong>2 minutes</strong></p>
     </div>
     <div class="warning">
-      <strong>Didn't request this?</strong> If you didn't request a password reset, you can safely ignore this email. Your password will not be changed.
+      <strong>Didn't request this?</strong> If you didn't try to sign in, you can safely ignore this email.
     </div>
     <p class="text" style="margin:0;font-size:13px;color:#6b7280;">For security, this code can only be used once and expires in 2 minutes.</p>
   </div>
