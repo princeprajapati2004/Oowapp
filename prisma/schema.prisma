@@ -410,6 +410,7 @@ model Shop {
   products           Product[]
   taxes              Tax[]
   coupons            Coupon[]
+  walletTransactions WalletTransaction[]
   orders             Order[]
   paymentRecords     PaymentRecord[]
   customers          Customer[]
@@ -449,11 +450,16 @@ model Customer {
   // repeat OTP login finds the same account instead of creating a new
   // one, and so a password-signup account can also log in via OTP later.
   firebaseUid  String?  @unique
+  // Reward wallet balance — see WalletTransaction below for the ledger this
+  // is kept in sync with (every credit/debit writes both, in the same
+  // transaction, so this is always the sum of that ledger).
+  walletBalance Decimal @default(0) @db.Decimal(10, 2)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  orders        Order[]
-  tableSessions TableSession[]
+  orders             Order[]
+  tableSessions      TableSession[]
+  walletTransactions WalletTransaction[]
 
   @@unique([shopId, phone])
   @@index([shopId])
@@ -689,6 +695,43 @@ model CouponRedemption {
   @@map("coupon_redemptions")
 }
 
+enum WalletTransactionType {
+  CASHBACK_CREDIT
+  REFERRAL_CREDIT
+  REDEMPTION_DEBIT
+  ADMIN_ADJUSTMENT
+}
+
+// The reward-wallet ledger — every change to Customer.walletBalance writes one
+// of these in the same transaction, so the balance is always derivable as the
+// sum of this table (used as an audit trail / admin-visible history, not
+// re-summed on every read — the denormalized balance is authoritative).
+model WalletTransaction {
+  id         String   @id @default(cuid())
+  shopId     String
+  shop       Shop     @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  customerId String
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  type       WalletTransactionType
+  // Signed: positive = credit, negative = debit. Simpler than deriving sign
+  // from `type` (ADMIN_ADJUSTMENT alone can go either way).
+  amount       Decimal  @db.Decimal(10, 2)
+  balanceAfter Decimal  @db.Decimal(10, 2)
+  orderId      String?
+  order        Order?   @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  description  String?
+  createdAt    DateTime @default(now())
+
+  // Idempotency: a retry of the same order-triggered credit/debit is a
+  // no-op rather than a double-write. Doesn't constrain ADMIN_ADJUSTMENT
+  // rows (orderId is always null there, and NULL is distinct per row in
+  // Postgres — see the CouponRedemption model's note on the same behavior).
+  @@unique([orderId, type])
+  @@index([shopId])
+  @@index([customerId])
+  @@map("wallet_transactions")
+}
+
 model Order {
   id              String   @id @default(cuid())
   shopId          String
@@ -730,6 +773,11 @@ model Order {
   couponId             String?
   couponCode           String?
   couponDiscountAmount Decimal? @db.Decimal(10, 2)
+  // Wallet redemption at checkout — unlike a coupon this doesn't change what's
+  // owed (grandTotal/discountedTotal stay the sticker price); it's folded into
+  // paidAmount/paymentStatus below instead, same as any other payment method,
+  // so every existing amount-due screen already accounts for it with no changes.
+  walletAmountUsed     Decimal? @db.Decimal(10, 2)
   // Table order lifecycle — set only when this order was placed against an
   // active table session (see TableSession); null for pickup/delivery/manual
   // orders, which are unaffected by session grouping or the "no decrease" rule.
@@ -777,6 +825,7 @@ model Order {
   statusEvents  OrderStatusEvent[]
   paymentRecords PaymentRecord[]
   couponRedemption CouponRedemption?
+  walletTransactions WalletTransaction[]
 
   @@unique([shopId, clientRequestId])
   @@unique([shopId, billNumber])

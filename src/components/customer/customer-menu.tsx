@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Search, ShoppingCart, PackageSearch, History, LogIn, LogOut, Lock, AlertTriangle, Users } from "lucide-react";
+import { Search, ShoppingCart, PackageSearch, History, LogIn, LogOut, Lock, AlertTriangle, Users, Wallet } from "lucide-react";
 import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -273,6 +273,11 @@ export function CustomerMenu({
           <Button variant="ghost" size="icon" aria-label="Your orders" render={<Link href={`/order/${shop.slug}/orders`} />} nativeButton={false}>
             <History className="size-4.5" />
           </Button>
+          {customer && (
+            <Button variant="ghost" size="icon" aria-label="Your wallet" render={<Link href={`/order/${shop.slug}/wallet`} />} nativeButton={false}>
+              <Wallet className="size-4.5" />
+            </Button>
+          )}
           {customer ? (
             <Button variant="ghost" size="icon" aria-label={`Log out (${customer.name})`} onClick={handleLogout}>
               <LogOut className="size-4.5" />

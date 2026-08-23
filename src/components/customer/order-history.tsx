@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { Search, ClipboardList, LoaderCircle, LogIn } from "lucide-react";
+import { Search, ClipboardList, LoaderCircle, LogIn, Wallet } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { EmptyState } from "@/components/shared/empty-state";
 import { formatCurrency } from "@/lib/utils/currency";
@@ -104,13 +104,21 @@ export function OrderHistory({
           <p className="text-sm text-muted-foreground">{businessName}</p>
         </div>
 
-        {!isLoggedIn && (
+        {!isLoggedIn ? (
           <Link
             href={`/order/${slug}/login`}
             className="flex items-center gap-2 rounded-xl border bg-card px-4 py-2.5 text-sm text-muted-foreground hover:bg-muted/50 transition-colors"
           >
             <LogIn className="size-4 shrink-0 text-primary" />
             Log in to see your orders from any device
+          </Link>
+        ) : (
+          <Link
+            href={`/order/${slug}/wallet`}
+            className="flex items-center gap-2 rounded-xl border bg-card px-4 py-2.5 text-sm text-muted-foreground hover:bg-muted/50 transition-colors"
+          >
+            <Wallet className="size-4 shrink-0 text-primary" />
+            View your wallet balance
           </Link>
         )}
 

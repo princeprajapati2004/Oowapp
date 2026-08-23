@@ -24,6 +24,7 @@ import {
   FileSpreadsheet,
   Receipt,
   Ticket,
+  Wallet,
   ChevronDown,
   type LucideIcon,
 } from "lucide-react";
@@ -106,6 +107,7 @@ function buildNavEntries(foodBusiness: boolean, copy: ShellCopy): NavEntry[] {
       items: [
         { href: "/admin/staff", label: "Staff", icon: Users },
         { href: "/admin/parties", label: "Parties", icon: BookUser },
+        { href: "/admin/customers", label: "Customers", icon: Wallet },
       ],
     },
     {

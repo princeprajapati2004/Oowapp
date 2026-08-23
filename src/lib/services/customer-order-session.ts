@@ -9,15 +9,16 @@ import type { ActiveSession } from "@/lib/types/customer";
  * the same way on either screen.
  */
 export async function resolveCustomerIdentity(shopId: string) {
-  let customer: { name: string; phone: string } | null = null;
+  let customer: { id: string; name: string; phone: string; walletBalance: number } | null = null;
   const session = await getCustomerSession();
   // A customer session is scoped to one shop — confirm it matches this one
   // before treating the visitor as logged in here.
   if (session && session.shopId === shopId) {
-    customer = await db.customer.findUnique({
+    const row = await db.customer.findUnique({
       where: { id: session.customerId },
-      select: { name: true, phone: true },
+      select: { id: true, name: true, phone: true, walletBalance: true },
     });
+    customer = row ? { ...row, walletBalance: Number(row.walletBalance) } : null;
   }
 
   // A phone verified via OTP earlier in the same sitting (see phone-verification.tsx) —

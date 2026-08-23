@@ -26,6 +26,15 @@ export class InvalidCouponError extends Error {
   }
 }
 
+// Same shape/purpose as InvalidCouponError above, kept as its own class so a
+// wallet-redemption failure isn't reported as a coupon error in logs/traces.
+export class WalletError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "WalletError";
+  }
+}
+
 export function handleApiError(error: unknown) {
   if (error instanceof UnauthorizedError) {
     return NextResponse.json({ error: error.message }, { status: 401 });
@@ -43,6 +52,9 @@ export function handleApiError(error: unknown) {
     return NextResponse.json({ error: error.message }, { status: 409 });
   }
   if (error instanceof InvalidCouponError) {
+    return NextResponse.json({ error: error.message }, { status: 400 });
+  }
+  if (error instanceof WalletError) {
     return NextResponse.json({ error: error.message }, { status: 400 });
   }
   if (error instanceof ZodError) {

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { handleApiError, NotFoundError } from "@/lib/api-utils";
+import { handleApiError, NotFoundError, WalletError } from "@/lib/api-utils";
 import { calculateBill } from "@/lib/services/billing";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { sendNewOrderNotification } from "@/lib/services/push";
@@ -11,6 +11,7 @@ import { readPhoneVerifiedCookie } from "@/lib/phone-verify-auth";
 import { resolveOrCreateSession, computeSessionBill } from "@/lib/services/table-session";
 import { resolveOrderItems } from "@/lib/services/order-items";
 import { computeCouponForOrder, claimCouponForOrder } from "@/lib/services/coupon";
+import { debitWalletForRedemption } from "@/lib/services/wallet";
 import { nextBillNumber } from "@/lib/services/bill-number";
 import { createNotification } from "@/lib/services/notification";
 import { formatCurrency } from "@/lib/utils/currency";
@@ -37,6 +38,7 @@ const createOrderSchema = z.object({
   // to the same order instead of creating a duplicate.
   clientRequestId: z.string().min(10).max(100),
   couponCode: z.string().trim().min(1).optional(),
+  walletAmountUsed: z.number().min(0).optional(),
 });
 
 export async function POST(request: Request) {
@@ -152,6 +154,17 @@ export async function POST(request: Request) {
         ? Math.max(0, Math.round((bill.grandTotal - couponResult.discountAmount) * 100) / 100)
         : null;
 
+      // Wallet redemption — clamped to what's actually owed on THIS order
+      // (not any wider table-session running total), and only ever for a
+      // logged-in customer since a guest has no wallet to debit.
+      const finalTotal = discountedTotal ?? bill.grandTotal;
+      const walletAmountRequested = input.walletAmountUsed ?? 0;
+      let walletAmountUsed = 0;
+      if (walletAmountRequested > 0) {
+        if (!customerId) throw new WalletError("Please log in to use your wallet balance");
+        walletAmountUsed = Math.min(Math.round(walletAmountRequested * 100) / 100, finalTotal);
+      }
+
       // Decrement stock for products that track it (fire-and-forget errors — order still succeeds)
       await Promise.all(
         resolvedItems.map((item) =>
@@ -193,6 +206,16 @@ export async function POST(request: Request) {
                 discountedTotal,
               }
             : {}),
+          ...(walletAmountUsed > 0
+            ? {
+                walletAmountUsed,
+                paidAmount: walletAmountUsed,
+                paymentMethod: "WALLET",
+                paymentStatus: walletAmountUsed + 0.005 >= finalTotal ? "PAID" : "PARTIALLY_PAID",
+                paymentConfirmedBy: "wallet",
+                paymentConfirmedAt: new Date(),
+              }
+            : {}),
           items: {
             create: resolvedItems.map((item) => ({
               productId: item.productId,
@@ -208,6 +231,19 @@ export async function POST(request: Request) {
 
       if (couponResult) {
         await claimCouponForOrder(tx, shop.id, couponResult.couponId, customerId, created.id, couponResult.discountAmount);
+      }
+
+      if (walletAmountUsed > 0) {
+        await debitWalletForRedemption(tx, { shopId: shop.id, customerId: customerId!, amount: walletAmountUsed, orderId: created.id });
+        await tx.paymentRecord.create({
+          data: {
+            shopId: shop.id,
+            orderId: created.id,
+            amount: walletAmountUsed,
+            method: "WALLET",
+            note: "Wallet credit redeemed at checkout",
+          },
+        });
       }
 
       return { order: created, isDuplicate: false };

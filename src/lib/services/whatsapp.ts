@@ -17,6 +17,10 @@ export interface OrderMessageInput {
   // authoritative if the two ever disagree (see the coupon validate route's
   // doc comment on the accepted preview-vs-commit race).
   discount?: { label: string; amount: number };
+  // Wallet credit already redeemed against this order — unlike `discount`
+  // above, this doesn't change the sticker price shown, it reduces what's
+  // still owed on delivery/pickup (see buildOrderMessage's "Amount Due" line).
+  walletRedeemed?: number;
 }
 
 /** Exact "New Order" message format from the product spec — single source of truth for the WhatsApp order text. */
@@ -54,6 +58,17 @@ export function buildOrderMessage(input: OrderMessageInput) {
     ? Math.max(0, input.bill.grandTotal - input.discount.amount)
     : input.bill.grandTotal;
   lines.push("Grand Total:", formatCurrency(finalTotal, input.currency));
+
+  if (input.walletRedeemed) {
+    const amountDue = Math.max(0, finalTotal - input.walletRedeemed);
+    lines.push(
+      "Wallet credit used:",
+      `-${formatCurrency(input.walletRedeemed, input.currency)}`,
+      "",
+      "Amount Due:",
+      formatCurrency(amountDue, input.currency)
+    );
+  }
 
   if (input.notes) {
     lines.push("", "Notes:", input.notes);

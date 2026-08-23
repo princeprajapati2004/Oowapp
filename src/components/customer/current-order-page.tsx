@@ -30,6 +30,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { Checkbox } from "@/components/ui/checkbox";
 import { FormRow } from "@/components/shared/form-row";
 import { EmptyState } from "@/components/shared/empty-state";
 import { ThemeToggle } from "@/components/shared/theme-toggle";
@@ -82,6 +83,7 @@ type WhatsAppSnapshot = {
   taxLines: { id: string; name: string; amount: number }[];
   customerName?: string;
   discount?: { code: string; amount: number };
+  walletRedeemed?: number;
 };
 
 function WhatsAppOrderSent({
@@ -162,13 +164,22 @@ function WhatsAppOrderSent({
               <span>−{formatCurrency(snapshot.discount.amount, shop.currency)}</span>
             </div>
           )}
+          {!!snapshot.walletRedeemed && (
+            <div className="flex justify-between text-emerald-600 dark:text-emerald-400">
+              <span>Wallet credit</span>
+              <span>−{formatCurrency(snapshot.walletRedeemed, shop.currency)}</span>
+            </div>
+          )}
           <div className="flex justify-between border-t pt-2 mt-1 font-bold text-base">
             <span>Grand Total</span>
             <span className="text-primary">
               {formatCurrency(
-                snapshot.discount
-                  ? Math.max(0, Math.round((snapshot.grandTotal - snapshot.discount.amount) * 100) / 100)
-                  : snapshot.grandTotal,
+                Math.max(
+                  0,
+                  Math.round(
+                    (snapshot.grandTotal - (snapshot.discount?.amount ?? 0) - (snapshot.walletRedeemed ?? 0)) * 100
+                  ) / 100
+                ),
                 shop.currency
               )}
             </span>
@@ -230,7 +241,7 @@ export function CurrentOrderPage({
   shop: CustomerShop;
   taxes: CustomerTax[];
   prefilledTable?: string;
-  customer?: { name: string; phone: string } | null;
+  customer?: { id: string; name: string; phone: string; walletBalance: number } | null;
   activeSession: ActiveSession;
   verifiedPhone?: string | null;
 }) {
@@ -304,6 +315,7 @@ export function CurrentOrderPage({
   } | null>(null);
   const [couponApplying, setCouponApplying] = useState(false);
   const [couponError, setCouponError] = useState<string | null>(null);
+  const [useWalletCredit, setUseWalletCredit] = useState(false);
 
   const bill = useMemo(
     () =>
@@ -368,6 +380,16 @@ export function CurrentOrderPage({
     ? Math.max(0, Math.round((finalInvoiceBill.grandTotal - appliedCoupon.discountAmount) * 100) / 100)
     : finalInvoiceBill.grandTotal;
 
+  // Wallet redemption only offered for a standalone/first-round order — once
+  // there are already-ordered items (a 2nd+ round on an active table
+  // session), Order.paidAmount is per-order, not per-session, so redeeming
+  // against the whole running total here would misattribute how much of
+  // THIS order's total is actually covered. Kept simple rather than teaching
+  // the redemption math about table-session partial payments.
+  const walletEligible = !isIncremental && !!customer && customer.walletBalance > 0;
+  const walletAmountToUse =
+    walletEligible && useWalletCredit ? Math.min(customer!.walletBalance, finalTotalAfterCoupon) : 0;
+
   // A coupon's discount was computed against the cart contents at the moment
   // it was applied — if the cart changes afterward, that number may no
   // longer be right (a different subtotal, or category-restricted items
@@ -377,6 +399,7 @@ export function CurrentOrderPage({
   useEffect(() => {
     setAppliedCoupon(null);
     setCouponError(null);
+    setUseWalletCredit(false);
   }, [bill.subtotal]);
 
   async function applyCoupon() {
@@ -579,6 +602,7 @@ export function CurrentOrderPage({
           notes: resolvedValues.notes,
           items: cart.items,
           couponCode: appliedCoupon?.code,
+          walletAmountUsed: walletAmountToUse > 0 ? walletAmountToUse : undefined,
         });
         if (res.orderId && res.billNumber) {
           addStoredOrder(shop.slug, { orderId: res.orderId, billNumber: res.billNumber, placedAt: new Date().toISOString() });
@@ -593,6 +617,7 @@ export function CurrentOrderPage({
         }
         cart.clear();
         removeCoupon();
+        setUseWalletCredit(false);
         setDirectOrderPlaced(true);
       } catch (err) {
         if (err instanceof ApiError && err.status === 409) {
@@ -623,6 +648,7 @@ export function CurrentOrderPage({
       taxLines: bill.taxLines,
       customerName: resolvedValues.customerName || undefined,
       discount: appliedCoupon ? { code: appliedCoupon.code, amount: appliedCoupon.discountAmount } : undefined,
+      walletRedeemed: walletAmountToUse > 0 ? walletAmountToUse : undefined,
     });
 
     const message =
@@ -648,6 +674,7 @@ export function CurrentOrderPage({
             discount: appliedCoupon
               ? { label: `Coupon (${appliedCoupon.code})`, amount: appliedCoupon.discountAmount }
               : undefined,
+            walletRedeemed: walletAmountToUse > 0 ? walletAmountToUse : undefined,
           });
     const url = buildWhatsAppUrl(shop.whatsappNumber, message);
 
@@ -673,6 +700,7 @@ export function CurrentOrderPage({
         notes: resolvedValues.notes,
         items: cart.items,
         couponCode: !isIncremental ? appliedCoupon?.code : undefined,
+        walletAmountUsed: walletAmountToUse > 0 ? walletAmountToUse : undefined,
       })
       .then((res) => {
         if (res.saved && res.orderId && res.billNumber) {
@@ -696,6 +724,7 @@ export function CurrentOrderPage({
         }
         cart.clear();
         removeCoupon();
+        setUseWalletCredit(false);
       })
       .catch((err) => {
         if (err instanceof ApiError && err.status === 409) {
@@ -870,9 +899,17 @@ export function CurrentOrderPage({
                     <span>−{formatCurrency(appliedCoupon.discountAmount, shop.currency)}</span>
                   </div>
                 )}
+                {walletAmountToUse > 0 && (
+                  <div className="flex justify-between text-emerald-600 dark:text-emerald-400">
+                    <span>Wallet credit</span>
+                    <span>−{formatCurrency(walletAmountToUse, shop.currency)}</span>
+                  </div>
+                )}
                 <div className="flex justify-between border-t pt-2 mt-1 font-bold text-base">
                   <span>Grand Total</span>
-                  <span className="text-primary">{formatCurrency(finalTotalAfterCoupon, shop.currency)}</span>
+                  <span className="text-primary">
+                    {formatCurrency(Math.max(0, finalTotalAfterCoupon - walletAmountToUse), shop.currency)}
+                  </span>
                 </div>
               </div>
 
@@ -967,6 +1004,15 @@ export function CurrentOrderPage({
                     )}
                     {couponError && <p className="text-sm text-destructive mt-1.5">{couponError}</p>}
                   </FormRow>
+                  {walletEligible && (
+                    <label className="flex items-center gap-2.5 rounded-xl border px-4 py-2.5 text-sm cursor-pointer transition-colors hover:bg-muted/40">
+                      <Checkbox checked={useWalletCredit} onCheckedChange={(v) => setUseWalletCredit(!!v)} />
+                      <span className="flex-1">Use wallet balance</span>
+                      <span className="font-semibold text-muted-foreground">
+                        {formatCurrency(customer!.walletBalance, shop.currency)} available
+                      </span>
+                    </label>
+                  )}
                   {shop.enableTableNumber && prefilledTable && (
                     <FormRow label="Table" htmlFor="tableDisplay">
                       <div className="relative">
