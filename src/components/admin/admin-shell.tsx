@@ -26,6 +26,7 @@ import {
   Ticket,
   Wallet,
   Gift,
+  Share2,
   ChevronDown,
   type LucideIcon,
 } from "lucide-react";
@@ -103,6 +104,7 @@ function buildNavEntries(foodBusiness: boolean, copy: ShellCopy): NavEntry[] {
       items: [
         { href: "/admin/coupons", label: "Coupons", icon: Ticket },
         { href: "/admin/cashback", label: "Cashback", icon: Gift },
+        { href: "/admin/referrals", label: "Referrals", icon: Share2 },
       ],
     },
     {

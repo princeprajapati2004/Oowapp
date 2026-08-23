@@ -412,6 +412,8 @@ model Shop {
   coupons            Coupon[]
   walletTransactions WalletTransaction[]
   cashbackCampaigns  CashbackCampaign[]
+  referralProgramConfig ReferralProgramConfig?
+  referrals          Referral[]
   orders             Order[]
   paymentRecords     PaymentRecord[]
   customers          Customer[]
@@ -455,6 +457,10 @@ model Customer {
   // is kept in sync with (every credit/debit writes both, in the same
   // transaction, so this is always the sum of that ledger).
   walletBalance Decimal @default(0) @db.Decimal(10, 2)
+  // Lazily generated the first time this customer opens their "Refer & Earn"
+  // page (see referral-attribution.ts) — null until then, so a customer who
+  // never shares a code simply can't be referred-to yet.
+  referralCode String?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
@@ -462,8 +468,11 @@ model Customer {
   tableSessions        TableSession[]
   walletTransactions   WalletTransaction[]
   cashbackRedemptions  CashbackRedemption[]
+  referralsMade        Referral[] @relation("ReferralsMade")
+  referralReceived     Referral?  @relation("ReferralReceived")
 
   @@unique([shopId, phone])
+  @@unique([shopId, referralCode])
   @@index([shopId])
   @@map("customers")
 }
@@ -794,6 +803,55 @@ model CashbackRedemption {
   @@index([campaignId])
   @@index([customerId])
   @@map("cashback_redemptions")
+}
+
+// Owner-configured rules for the referral program — one row per shop
+// (create-on-first-save from the admin settings page, absent/disabled means
+// referrals are off). Separate from the per-referral tracking below: this is
+// "what the rules are," Referral is "who referred whom and did it pay out."
+model ReferralProgramConfig {
+  id                       String   @id @default(cuid())
+  shopId                   String   @unique
+  shop                     Shop     @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  isEnabled                Boolean  @default(false)
+  rewardAmount             Decimal  @db.Decimal(10, 2)
+  minQualifyingOrderAmount Decimal? @db.Decimal(10, 2)
+  // FIRST_ORDER: only the referred customer's very first paid order can
+  // trigger the reward (and only once — see rewards.ts). ANY_ORDER: any
+  // paid order that meets minQualifyingOrderAmount can.
+  qualifyingOrderScope     String   @default("FIRST_ORDER")
+  updatedAt                DateTime @updatedAt
+
+  @@map("referral_program_configs")
+}
+
+enum ReferralStatus {
+  PENDING
+  REWARDED
+}
+
+// One row per successful attribution (a referred customer signed up/logged
+// in with a referrer's code) — status flips to REWARDED once a qualifying
+// paid order actually credits the referrer's wallet (see
+// rewards.ts#processOrderPaidRewards). referredCustomerId is unique: a
+// customer can only ever be referred once, by construction.
+model Referral {
+  id                 String         @id @default(cuid())
+  shopId             String
+  shop               Shop           @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  referrerCustomerId String
+  referrerCustomer   Customer       @relation("ReferralsMade", fields: [referrerCustomerId], references: [id], onDelete: Cascade)
+  referredCustomerId String         @unique
+  referredCustomer   Customer       @relation("ReferralReceived", fields: [referredCustomerId], references: [id], onDelete: Cascade)
+  status             ReferralStatus @default(PENDING)
+  qualifyingOrderId  String?        @unique
+  rewardAmount       Decimal?       @db.Decimal(10, 2)
+  rewardedAt         DateTime?
+  createdAt          DateTime       @default(now())
+
+  @@index([shopId])
+  @@index([referrerCustomerId])
+  @@map("referrals")
 }
 
 model Order {

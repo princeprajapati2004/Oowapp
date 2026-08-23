@@ -13,6 +13,7 @@ import {
   CUSTOMER_SESSION_DURATION_SECONDS,
 } from "@/lib/customer-auth";
 import { linkGuestOrdersToCustomer } from "@/lib/link-guest-orders";
+import { attributeReferral } from "@/lib/referral-attribution";
 
 /**
  * Customer login via OTP — counterpart to the password-based /login route,
@@ -58,6 +59,9 @@ export async function POST(request: Request) {
       customer = await db.customer.create({
         data: { shopId: shop.id, name: "Guest", phone, passwordHash },
       });
+      // Only a genuinely new account can be a referral's "referred" side —
+      // an existing account logging in again isn't a new attribution event.
+      await attributeReferral(shop.id, customer.id);
     }
 
     await linkGuestOrdersToCustomer(shop.id, customer.id, phone);

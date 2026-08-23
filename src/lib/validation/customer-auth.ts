@@ -12,6 +12,7 @@ export const customerSignupSchema = z.object({
   name: z.string().trim().min(1, "Name is required").max(100),
   phone: phoneSchema,
   password: z.string().min(8, "Password must be at least 8 characters"),
+  referralCode: z.string().trim().max(20).optional(),
 });
 export type CustomerSignupInput = z.infer<typeof customerSignupSchema>;
 

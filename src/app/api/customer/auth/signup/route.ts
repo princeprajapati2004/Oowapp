@@ -11,6 +11,7 @@ import {
   CUSTOMER_SESSION_DURATION_SECONDS,
 } from "@/lib/customer-auth";
 import { linkGuestOrdersToCustomer } from "@/lib/link-guest-orders";
+import { attributeReferral } from "@/lib/referral-attribution";
 
 export async function POST(request: Request) {
   try {
@@ -44,6 +45,7 @@ export async function POST(request: Request) {
     });
 
     await linkGuestOrdersToCustomer(shop.id, customer.id, input.phone);
+    await attributeReferral(shop.id, customer.id, input.referralCode);
 
     const token = await signCustomerSession({ customerId: customer.id, shopId: shop.id });
     const cookieStore = await cookies();

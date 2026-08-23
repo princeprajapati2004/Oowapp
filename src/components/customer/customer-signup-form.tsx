@@ -89,6 +89,9 @@ export function CustomerSignupForm({
                   {...register("password")}
                 />
               </FormRow>
+              <FormRow label="Referral code" htmlFor="referralCode" description="Optional">
+                <Input id="referralCode" placeholder="Have a friend's code?" {...register("referralCode")} />
+              </FormRow>
             </FieldGroup>
 
             <Button
