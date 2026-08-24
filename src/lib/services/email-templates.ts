@@ -19,9 +19,11 @@ const sharedStyles = `
   .footer a { color:#059669; text-decoration:none; }
 `;
 
-export function buildVerifyEmailTemplate(recipientName: string, otp: string): string {
+export type EmailTemplate = { html: string; text: string };
+
+export function buildVerifyEmailTemplate(recipientName: string, otp: string): EmailTemplate {
   const name = recipientName || "there";
-  return `<!DOCTYPE html>
+  const html = `<!DOCTYPE html>
 <html lang="en">
 <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>Verify your email — OOWAPP</title>
 <style>${sharedStyles}</style></head>
@@ -52,11 +54,29 @@ export function buildVerifyEmailTemplate(recipientName: string, otp: string): st
 </div>
 </body>
 </html>`;
+
+  const text = `Hello ${name},
+
+Welcome to OOWAPP! To activate your account, use the verification code below.
+
+Your verification code: ${otp}
+
+This code expires in 2 minutes.
+
+Security notice: If you did not create an account on OOWAPP, please ignore this email. Do not share this code with anyone.
+
+Need help? Reply to this email and our team will assist you.
+
+---
+OOWAPP · ${BASE_URL}
+© ${new Date().getFullYear()} OOWAPP. All rights reserved.`;
+
+  return { html, text };
 }
 
-export function buildLoginOtpTemplate(recipientName: string, otp: string): string {
+export function buildPasswordResetTemplate(recipientName: string, otp: string): EmailTemplate {
   const name = recipientName || "there";
-  return `<!DOCTYPE html>
+  const html = `<!DOCTYPE html>
 <html lang="en">
 <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>Your login code — OOWAPP</title>
 <style>${sharedStyles}</style></head>
@@ -87,6 +107,22 @@ export function buildLoginOtpTemplate(recipientName: string, otp: string): strin
 </div>
 </body>
 </html>`;
+
+  const text = `Hello ${name},
+
+We received a request to reset the password for your OOWAPP account.
+
+Your password reset code: ${otp}
+
+This code expires in 2 minutes and can only be used once.
+
+Didn't request this? You can safely ignore this email. Your password will not be changed.
+
+---
+OOWAPP · ${BASE_URL}
+© ${new Date().getFullYear()} OOWAPP. All rights reserved.`;
+
+  return { html, text };
 }
 
 function escapeHtml(str: string): string {
