@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Search, ShoppingCart, PackageSearch, History, LogIn, LogOut, Lock, AlertTriangle, Users, Wallet, Gift } from "lucide-react";
+import { Search, ShoppingCart, PackageSearch, History, LogIn, LogOut, Lock, AlertTriangle, Users, Wallet, Gift, Star } from "lucide-react";
 import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -59,6 +59,7 @@ export function CustomerMenu({
   prefilledTable,
   customer,
   activeSession,
+  ratingSummary,
 }: {
   shop: CustomerShop;
   categories: CustomerCategory[];
@@ -66,6 +67,7 @@ export function CustomerMenu({
   prefilledTable?: string;
   customer?: { name: string; phone: string } | null;
   activeSession?: ActiveSession;
+  ratingSummary?: { average: number; count: number } | null;
 }) {
   const router = useRouter();
   const cart = useCart(shop.slug);
@@ -263,7 +265,18 @@ export function CustomerMenu({
           )}
           <div className="min-w-0 flex-1">
             <h1 className="truncate font-bold leading-tight text-base">{shop.businessName}</h1>
-            <p className="text-xs text-muted-foreground">Scan, order, done.</p>
+            {ratingSummary && ratingSummary.count > 0 ? (
+              <Link
+                href={`/order/${shop.slug}/reviews`}
+                className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+              >
+                <Star className="size-3 fill-amber-400 text-amber-400" />
+                <span className="font-medium text-foreground">{ratingSummary.average.toFixed(1)}</span>
+                <span>· {ratingSummary.count} rating{ratingSummary.count === 1 ? "" : "s"}</span>
+              </Link>
+            ) : (
+              <p className="text-xs text-muted-foreground">Scan, order, done.</p>
+            )}
           </div>
           {prefilledTable && (
             <span className="shrink-0 rounded-full border border-[#00b074] bg-[#e6f7f1] px-3 py-1 text-xs font-bold text-[#00b074] dark:bg-[#00b074]/10">

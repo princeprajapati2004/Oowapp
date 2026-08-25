@@ -57,6 +57,10 @@ export type OrderEventOrder = {
   taxBreakdown: unknown;
   items: OrderEventItem[];
   statusEvents?: PublicStatusEvent[];
+  // Present only when the caller's query actually included it (order-history
+  // and order-tracking do; most other toOrderEvent callers don't need it and
+  // leave it undefined) — never fetched unless there's a real reason to.
+  review?: { id: string; rating: number; reviewText: string | null } | null;
 };
 
 // Superset of OrderEventOrder used ONLY by admin-facing routes — carries
@@ -237,6 +241,7 @@ type RawOrderForEvent = {
     lineTotal: unknown;
   }[];
   statusEvents?: { status: string; changedAt: unknown; changedBy: string | null }[];
+  review?: { id: string; rating: number; reviewText: string | null } | null;
 };
 
 // Deliberately takes a concrete (non-generic) shape and builds the result
@@ -285,6 +290,12 @@ export function toOrderEvent(order: RawOrderForEvent): OrderEventOrder {
       status: e.status,
       changedAt: (e.changedAt as Date).toISOString(),
     })),
+    review:
+      order.review === undefined
+        ? undefined
+        : order.review
+          ? { id: order.review.id, rating: order.review.rating, reviewText: order.review.reviewText }
+          : null,
   };
 }
 

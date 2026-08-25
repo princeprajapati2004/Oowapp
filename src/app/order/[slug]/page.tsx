@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { getPublicShopBundle } from "@/lib/services/shop";
 import { serializeProducts } from "@/lib/serialize";
 import { resolveCustomerIdentity, resolveActiveTableSession } from "@/lib/services/customer-order-session";
+import { getShopRatingSummary } from "@/lib/services/review";
 import { db } from "@/lib/db";
 import { CustomerMenu } from "@/components/customer/customer-menu";
 
@@ -35,6 +36,8 @@ export default async function OrderPage({
     ? await resolveActiveTableSession({ shopId: shopRow.id, enableTableQr: shop.enableTableQr, tableNumber: prefilledTable })
     : null;
 
+  const ratingSummary = shopRow ? await getShopRatingSummary(shopRow.id) : null;
+
   return (
     <CustomerMenu
       shop={shopInfo}
@@ -43,6 +46,7 @@ export default async function OrderPage({
       prefilledTable={prefilledTable}
       customer={customer}
       activeSession={activeSession}
+      ratingSummary={ratingSummary}
     />
   );
 }

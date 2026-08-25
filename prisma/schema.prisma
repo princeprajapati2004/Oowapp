@@ -201,6 +201,11 @@ enum PartyPaymentDirection {
   PAID
 }
 
+enum ReviewStatus {
+  ACTIVE
+  HIDDEN
+}
+
 enum NotificationType {
   NEW_ORDER
   BILL_REQUESTED
@@ -477,6 +482,7 @@ model Shop {
   parties            Party[]
   partyPayments      PartyPayment[]
   paymentAllocations PaymentAllocation[]
+  reviews            Review[]
   notifications      Notification[]
   menuImages         MenuImage[]
   menuImports        MenuImport[]
@@ -521,6 +527,7 @@ model Customer {
   cashbackRedemptions  CashbackRedemption[]
   referralsMade        Referral[] @relation("ReferralsMade")
   referralReceived     Referral?  @relation("ReferralReceived")
+  reviews              Review[]
 
   @@unique([shopId, phone])
   @@unique([shopId, referralCode])
@@ -615,6 +622,32 @@ model PaymentAllocation {
   @@index([partyPaymentId])
   @@index([orderId])
   @@map("payment_allocations")
+}
+
+// One review per completed Order — orderId is @unique so a duplicate
+// submission is rejected at the database level, not just hidden in the UI.
+// Rating aggregates (average/count/distribution) are always computed live
+// from these rows (see lib/services/review.ts), never cached on Shop, so
+// there's exactly one source of truth for a store's rating.
+model Review {
+  id              String       @id @default(cuid())
+  shopId          String
+  shop            Shop         @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  customerId      String
+  customer        Customer     @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  orderId         String       @unique
+  order           Order        @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  rating          Int
+  reviewText      String?
+  status          ReviewStatus @default(ACTIVE)
+  ownerResponse   String?
+  ownerResponseAt DateTime?
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  @@index([shopId])
+  @@index([customerId])
+  @@map("reviews")
 }
 
 model Category {
@@ -1052,6 +1085,7 @@ model Order {
   walletTransactions WalletTransaction[]
   cashbackRedemption CashbackRedemption?
   paymentAllocations PaymentAllocation[]
+  review             Review?
 
   @@unique([shopId, clientRequestId])
   @@unique([shopId, billNumber])

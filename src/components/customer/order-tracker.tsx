@@ -27,6 +27,7 @@ import { Button } from "@/components/ui/button";
 import { QtyStepper } from "@/components/shared/qty-stepper";
 import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 import { PaymentOptions } from "@/components/customer/payment-options";
+import { RateOrderWidget, type OrderReview } from "@/components/customer/rate-order-widget";
 import { formatCurrency } from "@/lib/utils/currency";
 import { generateInvoicePdf, type InvoicePdfItem } from "@/lib/utils/invoice-pdf";
 import { mergeLineItems } from "@/lib/services/billing";
@@ -106,6 +107,7 @@ export function OrderTracker({
 }) {
   const [order, setOrder] = useState(initialOrder);
   const [displayItems, setDisplayItems] = useState(initialOrder.items);
+  const [review, setReview] = useState<OrderReview | null>(initialOrder.review ?? null);
   const [cancelOpen, setCancelOpen] = useState(false);
   const [cancelling, setCancelling] = useState(false);
   // No payment-gateway integration behind any of this — the "waiting/rejected"
@@ -696,6 +698,10 @@ export function OrderTracker({
               </div>
             </div>
           </div>
+        )}
+
+        {order.status === "COMPLETED" && (
+          <RateOrderWidget orderId={order.id} businessName={shop.businessName} review={review} onSaved={setReview} />
         )}
 
         {/* Payment — customer-initiated, order workflow status stays owner-only.

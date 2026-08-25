@@ -28,6 +28,7 @@ import {
   Gift,
   Share2,
   ChevronDown,
+  Star,
   type LucideIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -114,6 +115,7 @@ function buildNavEntries(foodBusiness: boolean, copy: ShellCopy): NavEntry[] {
         { href: "/admin/staff", label: "Staff", icon: Users },
         { href: "/admin/parties", label: "Parties", icon: BookUser },
         { href: "/admin/customers", label: "Customers", icon: Wallet },
+        { href: "/admin/reviews", label: "Reviews", icon: Star },
       ],
     },
     {

@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { Search, ClipboardList, LoaderCircle, LogIn, Wallet, Gift } from "lucide-react";
+import { Search, ClipboardList, LoaderCircle, LogIn, Wallet, Gift, Star } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { EmptyState } from "@/components/shared/empty-state";
 import { formatCurrency } from "@/lib/utils/currency";
@@ -204,6 +204,21 @@ export function OrderHistory({
                       {STATUS_LABELS[order.status] ?? order.status}
                     </span>
                     <p className="font-semibold text-sm">{formatCurrency(total, currency)}</p>
+                    {/* Only meaningful once logged in — a guest order has no
+                        customerId, so it can never have a Review tied to it. */}
+                    {isLoggedIn && order.status === "COMPLETED" && (
+                      <p className="mt-1 flex items-center justify-end gap-1 text-[11px] font-medium">
+                        {order.review ? (
+                          <>
+                            {[1, 2, 3, 4, 5].map((n) => (
+                              <Star key={n} className={cn("size-3", n <= order.review!.rating ? "fill-amber-400 text-amber-400" : "text-muted-foreground/30")} />
+                            ))}
+                          </>
+                        ) : (
+                          <span className="text-primary">Rate Store →</span>
+                        )}
+                      </p>
+                    )}
                   </div>
                 </Link>
               );

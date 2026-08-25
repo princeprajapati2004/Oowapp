@@ -62,7 +62,10 @@ export async function GET(
 ) {
   try {
     const { id } = await params;
-    const order = await db.order.findUnique({ where: { id }, include: { items: true } });
+    const order = await db.order.findUnique({
+      where: { id },
+      include: { items: true, review: { select: { id: true, rating: true, reviewText: true } } },
+    });
     if (!order) throw new NotFoundError("Order not found");
     await assertOwnsOrderIfLinked(order);
     return NextResponse.json({ order: toOrderEvent(order) });
