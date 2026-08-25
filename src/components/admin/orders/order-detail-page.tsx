@@ -19,6 +19,7 @@ import {
   Pencil,
   Plus,
   SquarePen,
+  MessageCircle,
 } from "lucide-react";
 import { Button, buttonVariants } from "@/components/ui/button";
 import {
@@ -386,11 +387,25 @@ export function OrderDetailPage({
                 <MoreHorizontal className="size-5" />
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-48">
+                {status !== "CANCELLED" && (
+                  <>
+                    <DropdownMenuItem onClick={() => openEditModal("add")}>
+                      <Plus className="size-4" /> Add Items
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => openEditModal("items")}>
+                      <Pencil className="size-4" /> Edit Items
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                  </>
+                )}
                 <DropdownMenuItem disabled={printingBill} onClick={handlePrintBill}>
                   {printingBill ? <Loader2 className="size-4 animate-spin" /> : <Printer className="size-4" />} Print Receipt
                 </DropdownMenuItem>
                 <DropdownMenuItem disabled={billActions.downloadingPdf} onClick={billActions.downloadPdf}>
                   <Download className="size-4" /> Download PDF
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={shareReceiptOnWhatsApp}>
+                  <MessageCircle className="size-4" /> Share Order
                 </DropdownMenuItem>
                 {shop.enableOrderBarcodeLabels && (
                   <DropdownMenuItem render={<a href={`/admin/orders/${order.id}/barcodes`} target="_blank" rel="noopener noreferrer" />}>
@@ -530,20 +545,6 @@ export function OrderDetailPage({
             // that one gap so the two never show the same action twice.
             onConfirmPayment={status === "PENDING" ? () => setPaymentOpen(true) : undefined}
           />
-
-          {status !== "CANCELLED" && (
-            <div className="space-y-1.5">
-              <p className="px-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Order Actions</p>
-              <div className="flex gap-2">
-                <Button variant="outline" size="sm" className="flex-1 gap-1.5" onClick={() => openEditModal("add")}>
-                  <Plus className="size-3.5" /> Add Items
-                </Button>
-                <Button variant="outline" size="sm" className="flex-1 gap-1.5" onClick={() => openEditModal("items")}>
-                  <Pencil className="size-3.5" /> Edit Order
-                </Button>
-              </div>
-            </div>
-          )}
 
           <p className="pb-1 text-center text-xs text-muted-foreground">
             Order ID: {order.id}
