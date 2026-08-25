@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { cookies } from "next/headers";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { handleApiError, NotFoundError, WalletError } from "@/lib/api-utils";
@@ -7,6 +8,7 @@ import { checkRateLimit } from "@/lib/rate-limit";
 import { sendNewOrderNotification } from "@/lib/services/push";
 import { publishOrderEvent, toOrderEvent } from "@/lib/server/order-events";
 import { getCustomerSession } from "@/lib/customer-session";
+import { CUSTOMER_SESSION_COOKIE } from "@/lib/customer-auth";
 import { readPhoneVerifiedCookie } from "@/lib/phone-verify-auth";
 import { resolveOrCreateSession, computeSessionBill } from "@/lib/services/table-session";
 import { resolveOrderItems } from "@/lib/services/order-items";
@@ -114,8 +116,25 @@ export async function POST(request: Request) {
     // from the session cookie server-side, never trusted from client input.
     // A session scoped to a different shop doesn't count here.
     const customerSession = await getCustomerSession();
-    const customerId =
+    let customerId =
       customerSession && customerSession.shopId === shop.id ? customerSession.customerId : null;
+
+    // The session cookie can outlive the account it points to (e.g. the
+    // customer record was deleted after the JWT was issued — it's valid for
+    // 30 days). Inserting a dangling customerId would otherwise crash the
+    // order transaction below with a raw FK violation instead of just
+    // placing the order as a guest, so verify it up front.
+    let staleCustomerSession = false;
+    if (customerId) {
+      const customerExists = await db.customer.findUnique({ where: { id: customerId }, select: { id: true } });
+      if (!customerExists) {
+        customerId = null;
+        staleCustomerSession = true;
+        // Stop the browser from continuing to present as logged-in to a
+        // deleted account on the next page load.
+        (await cookies()).delete(CUSTOMER_SESSION_COOKIE);
+      }
+    }
 
     const { order, isDuplicate } = await db.$transaction(async (tx) => {
       const existing = await tx.order.findUnique({
@@ -381,6 +400,7 @@ export async function POST(request: Request) {
       sessionStatus,
       sessionOrders,
       sessionBill,
+      sessionExpired: staleCustomerSession || undefined,
     });
   } catch (error) {
     return handleApiError(error);

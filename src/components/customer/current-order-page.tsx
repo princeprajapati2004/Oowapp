@@ -633,6 +633,7 @@ export function CurrentOrderPage({
           tableSessionId?: string | null;
           sessionStatus?: string | null;
           sessionOrders?: { status: string; items: { productId: string | null; name: string; price: number; quantity: number; categoryId?: string; imageUrl?: string | null }[] }[];
+          sessionExpired?: boolean;
         }>("/api/orders", {
           shopSlug: shop.slug,
           clientRequestId: newClientRequestId,
@@ -648,6 +649,9 @@ export function CurrentOrderPage({
         });
         if (res.orderId && res.billNumber) {
           addStoredOrder(shop.slug, { orderId: res.orderId, billNumber: res.billNumber, placedAt: new Date().toISOString() });
+        }
+        if (res.sessionExpired) {
+          toast("Your account session had expired, so this order was placed as a guest — please log in again.");
         }
         if (res.tableSessionId && res.sessionOrders) {
           setSession({ id: res.tableSessionId, status: res.sessionStatus ?? "ACTIVE", orders: res.sessionOrders });
@@ -733,6 +737,7 @@ export function CurrentOrderPage({
           status: string;
           items: { productId: string | null; name: string; price: number; quantity: number; categoryId?: string; imageUrl?: string | null }[];
         }[];
+        sessionExpired?: boolean;
       }>("/api/orders", {
         shopSlug: shop.slug,
         clientRequestId: newClientRequestId,
@@ -749,6 +754,9 @@ export function CurrentOrderPage({
       .then((res) => {
         if (res.saved && res.orderId && res.billNumber) {
           addStoredOrder(shop.slug, { orderId: res.orderId, billNumber: res.billNumber, placedAt: new Date().toISOString() });
+        }
+        if (res.sessionExpired) {
+          toast("Your account session had expired, so this order was placed as a guest — please log in again.");
         }
         if (res.tableSessionId && res.sessionOrders) {
           setSession({ id: res.tableSessionId, status: res.sessionStatus ?? "ACTIVE", orders: res.sessionOrders });
@@ -993,13 +1001,46 @@ export function CurrentOrderPage({
                       Bill already requested for this table — please check with staff before ordering more.
                     </div>
                   )}
+                  {/* Logged-in customers already have a name/phone on file —
+                      show them read-only instead of asking again. The value
+                      still reaches the submit handler via useForm's
+                      defaultValues (customerName/customerPhone), which stay
+                      registered even while no <input> for them is rendered. */}
                   {shop.requireCustomerName && (
-                    <FormRow label="Name" htmlFor="customerName" required error={errors.customerName}>
-                      <Input id="customerName" placeholder="Your name" {...register("customerName")} />
-                    </FormRow>
+                    customer ? (
+                      <FormRow label="Name" htmlFor="customerNameDisplay">
+                        <div className="relative">
+                          <User className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                          <Input
+                            id="customerNameDisplay"
+                            value={customer.name}
+                            readOnly
+                            disabled
+                            className="pl-8 font-semibold disabled:cursor-default disabled:bg-muted/50 disabled:opacity-100"
+                          />
+                        </div>
+                      </FormRow>
+                    ) : (
+                      <FormRow label="Name" htmlFor="customerName" required error={errors.customerName}>
+                        <Input id="customerName" placeholder="Your name" {...register("customerName")} />
+                      </FormRow>
+                    )
                   )}
                   {shop.requirePhone && (
-                    shop.requirePhoneVerification ? (
+                    customer ? (
+                      <FormRow label="Phone number" htmlFor="customerPhoneDisplay">
+                        <div className="relative">
+                          <Phone className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                          <Input
+                            id="customerPhoneDisplay"
+                            value={customer.phone}
+                            readOnly
+                            disabled
+                            className="pl-8 font-semibold disabled:cursor-default disabled:bg-muted/50 disabled:opacity-100"
+                          />
+                        </div>
+                      </FormRow>
+                    ) : shop.requirePhoneVerification ? (
                       <PhoneVerification
                         shopSlug={shop.slug}
                         phone={phoneValue}
