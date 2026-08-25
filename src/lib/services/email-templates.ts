@@ -74,7 +74,7 @@ OOWAPP · ${BASE_URL}
   return { html, text };
 }
 
-export function buildPasswordResetTemplate(recipientName: string, otp: string): EmailTemplate {
+export function buildLoginOtpTemplate(recipientName: string, otp: string): EmailTemplate {
   const name = recipientName || "there";
   const html = `<!DOCTYPE html>
 <html lang="en">
@@ -110,13 +110,13 @@ export function buildPasswordResetTemplate(recipientName: string, otp: string): 
 
   const text = `Hello ${name},
 
-We received a request to reset the password for your OOWAPP account.
+Use the code below to sign in to your OOWAPP account.
 
-Your password reset code: ${otp}
+Your login code: ${otp}
 
 This code expires in 2 minutes and can only be used once.
 
-Didn't request this? You can safely ignore this email. Your password will not be changed.
+Didn't request this? You can safely ignore this email.
 
 ---
 OOWAPP · ${BASE_URL}

@@ -13,6 +13,7 @@ import {
   Trash2,
   ImageOff,
   PackagePlus,
+  ScanLine,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -25,6 +26,7 @@ import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from "@/components/ui/accordion";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { AddItemsPanel } from "@/components/admin/add-items-panel";
+import { ScanItemsPanel } from "@/components/admin/scan-items-panel";
 import { api, ApiError } from "@/lib/api-client";
 import { calculateBill } from "@/lib/services/billing";
 import { formatCurrency } from "@/lib/utils/currency";
@@ -38,6 +40,7 @@ import {
   type PastCustomer,
   type PaymentMethod,
   PAYMENT_METHODS,
+  getBarcodeDetectorCtor,
 } from "@/lib/types/manual-order";
 
 // Same status-label color language as tables-board.tsx's LABEL_BADGE, so the
@@ -136,6 +139,14 @@ export function CreateOrderPage({
   const [catalogLoadedAt, setCatalogLoadedAt] = useState(0);
   const [submitting, setSubmitting] = useState(false);
   const [addItemsOpen, setAddItemsOpen] = useState(!!initialTableNumber);
+  const [scanItemsOpen, setScanItemsOpen] = useState(false);
+  const barcodeScanSupported = useMemo(
+    () =>
+      getBarcodeDetectorCtor() !== null &&
+      typeof navigator !== "undefined" &&
+      !!navigator.mediaDevices?.getUserMedia,
+    []
+  );
 
   // Form state
   const [cart, setCart] = useState<CartItem[]>([]);
@@ -654,16 +665,26 @@ export function CreateOrderPage({
 
         {/* Order items */}
         {cart.length === 0 ? (
-          <button
-            onClick={() => setAddItemsOpen(true)}
-            className="flex w-full flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed p-10 text-center transition-colors hover:border-primary hover:bg-primary/5"
-          >
-            <div className="flex size-12 items-center justify-center rounded-full bg-primary/10">
-              <PackagePlus className="size-6 text-primary" />
-            </div>
-            <p className="font-semibold">Add Items</p>
-            <p className="text-xs text-muted-foreground">Search or browse your menu</p>
-          </button>
+          <div className="space-y-2">
+            <button
+              onClick={() => setAddItemsOpen(true)}
+              className="flex w-full flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed p-10 text-center transition-colors hover:border-primary hover:bg-primary/5"
+            >
+              <div className="flex size-12 items-center justify-center rounded-full bg-primary/10">
+                <PackagePlus className="size-6 text-primary" />
+              </div>
+              <p className="font-semibold">Add Items</p>
+              <p className="text-xs text-muted-foreground">Search or browse your menu</p>
+            </button>
+            {barcodeScanSupported && (
+              <button
+                onClick={() => setScanItemsOpen(true)}
+                className="flex w-full items-center justify-center gap-2 rounded-xl border px-4 py-2.5 text-sm font-medium text-muted-foreground transition-colors hover:border-primary hover:text-primary"
+              >
+                <ScanLine className="size-4" /> Scan Items
+              </button>
+            )}
+          </div>
         ) : (
           <div className="space-y-3 rounded-2xl border bg-card p-3 shadow-sm">
             <div className="flex items-center justify-between px-1">
@@ -675,6 +696,14 @@ export function CreateOrderPage({
                 >
                   + Add more
                 </button>
+                {barcodeScanSupported && (
+                  <button
+                    onClick={() => setScanItemsOpen(true)}
+                    className="text-xs font-medium text-primary hover:underline"
+                  >
+                    + Scan Items
+                  </button>
+                )}
                 <button
                   onClick={() => setShowClearConfirm(true)}
                   className="flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-destructive"
@@ -1190,6 +1219,15 @@ export function CreateOrderPage({
           onCommitSearch={commitSearch}
           onClose={() => setAddItemsOpen(false)}
           showImages={showProductImages}
+        />
+      )}
+
+      {scanItemsOpen && (
+        <ScanItemsPanel
+          currency={currency}
+          products={products}
+          onAddToCart={addToCart}
+          onClose={() => setScanItemsOpen(false)}
         />
       )}
     </div>

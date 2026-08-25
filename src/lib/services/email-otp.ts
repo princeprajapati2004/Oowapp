@@ -1,7 +1,7 @@
 import bcrypt from "bcryptjs";
 import { db } from "@/lib/db";
 import { sendEmail } from "@/lib/services/email";
-import { buildVerifyEmailTemplate, buildPasswordResetTemplate } from "@/lib/services/email-templates";
+import { buildVerifyEmailTemplate, buildLoginOtpTemplate } from "@/lib/services/email-templates";
 
 // db.emailVerification becomes available after `prisma migrate dev` regenerates the client.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -47,8 +47,8 @@ export async function sendLoginOtp(adminId: string, email: string, name: string)
     data: { adminId, purpose: "LOGIN", otpHash, expiresAt },
   });
 
-  const { html, text } = buildPasswordResetTemplate(name, otp);
-  await sendEmail(email, "Reset your OOWAPP password", html, text);
+  const { html, text } = buildLoginOtpTemplate(name, otp);
+  await sendEmail(email, "Your OOWAPP login code", html, text);
 }
 
 export type VerifyOtpResult =
