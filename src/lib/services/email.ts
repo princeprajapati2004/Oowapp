@@ -8,6 +8,7 @@ function getTransporter() {
     host: process.env.SMTP_HOST ?? "mail.oowapp.in",
     port: Number(process.env.SMTP_PORT ?? 587),
     secure: false,
+    name: process.env.SMTP_HELO_NAME ?? "oowapp.in",
     auth: {
       user: process.env.NO_REPLY_EMAIL,
       pass: process.env.NO_REPLY_EMAIL_PASSWORD,
@@ -33,7 +34,6 @@ export async function sendEmail(
     html,
     text,
     headers: {
-      "X-Mailer": "OOWAPP Mailer",
       Precedence: "transactional",
     },
   });
