@@ -37,6 +37,17 @@ export class WalletError extends Error {
   }
 }
 
+// Same shape/purpose again, for multi-order party-payment settlement
+// (amount exceeds outstanding, no outstanding orders to settle, etc.) — its
+// own class rather than reusing WalletError so these two unrelated payment
+// domains don't get conflated in logs/traces.
+export class PaymentSettlementError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "PaymentSettlementError";
+  }
+}
+
 export function handleApiError(error: unknown) {
   if (error instanceof UnauthorizedError) {
     return NextResponse.json({ error: error.message }, { status: 401 });
@@ -57,6 +68,9 @@ export function handleApiError(error: unknown) {
     return NextResponse.json({ error: error.message }, { status: 400 });
   }
   if (error instanceof WalletError) {
+    return NextResponse.json({ error: error.message }, { status: 400 });
+  }
+  if (error instanceof PaymentSettlementError) {
     return NextResponse.json({ error: error.message }, { status: 400 });
   }
   if (error instanceof OtpNotFoundError || error instanceof OtpExpiredError || error instanceof OtpProviderError) {

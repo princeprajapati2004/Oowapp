@@ -6,7 +6,7 @@ generator client {
 }
 
 datasource db {
-  provider = "mysql"
+  provider = "postgresql"
 }
 
 // ─── Enums ────────────────────────────────────────────────────────────────────
@@ -270,6 +270,7 @@ enum AuditAction {
   ORDER_CREATED
   ORDER_MARKED_PAID
   ORDER_CANCELLED
+  ORDER_ITEMS_EDITED
   TABLE_SESSION_MARKED_PAID
   TABLE_SESSION_RELEASED
   TABLE_SESSION_TRANSFERRED
@@ -475,6 +476,7 @@ model Shop {
   staffMembers       StaffMember[]
   parties            Party[]
   partyPayments      PartyPayment[]
+  paymentAllocations PaymentAllocation[]
   notifications      Notification[]
   menuImages         MenuImage[]
   menuImports        MenuImport[]
@@ -563,27 +565,56 @@ model Party {
   @@map("parties")
 }
 
-// A single logged cash movement against a Party's running balance — not tied
-// to a specific Order. RECEIVED = money the shop took in from the party
-// (paying down what they owe); PAID = money the shop gave out to the party
-// (a supplier settlement, or a customer refund/advance). See
-// lib/services/party.ts for how direction affects the outstanding balance.
+// A single logged cash movement against a Party's running balance. RECEIVED =
+// money the shop took in from the party (paying down what they owe); PAID =
+// money the shop gave out to the party (a supplier settlement, or a customer
+// refund/advance). See lib/services/party.ts for how direction affects the
+// outstanding balance. Optionally settles one or more specific Orders — see
+// PaymentAllocation — in which case `amount` is the real cash collected and
+// `discountAmount` (if any) is recorded separately, never folded silently
+// into `amount`, since it isn't money that was actually received.
 model PartyPayment {
-  id        String                @id @default(cuid())
-  shopId    String
-  shop      Shop                  @relation(fields: [shopId], references: [id], onDelete: Cascade)
-  partyId   String
-  party     Party                 @relation(fields: [partyId], references: [id], onDelete: Cascade)
-  amount    Decimal               @db.Decimal(10, 2)
-  method    PartyPaymentMethod    @default(CASH)
-  direction PartyPaymentDirection
-  note      String?
-  createdBy String
-  createdAt DateTime              @default(now())
+  id             String                @id @default(cuid())
+  shopId         String
+  shop           Shop                  @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  partyId        String
+  party          Party                 @relation(fields: [partyId], references: [id], onDelete: Cascade)
+  amount         Decimal               @db.Decimal(10, 2)
+  discountAmount Decimal?              @db.Decimal(10, 2)
+  method         PartyPaymentMethod    @default(CASH)
+  direction      PartyPaymentDirection
+  note           String?
+  createdBy      String
+  createdAt      DateTime              @default(now())
+
+  allocations PaymentAllocation[]
 
   @@index([shopId])
   @@index([partyId])
   @@map("party_payments")
+}
+
+// Links one PartyPayment to the specific Order(s) it settled, and how much
+// of that payment's real cash went to each — a single settlement can span
+// multiple orders (FIFO by default, or the owner's explicit selection), and
+// a single order can receive allocations from multiple separate payments
+// over time as it's paid down. allocatedAmount is always real cash, never
+// includes the payment's discountAmount.
+model PaymentAllocation {
+  id              String       @id @default(cuid())
+  shopId          String
+  shop            Shop         @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  partyPaymentId  String
+  partyPayment    PartyPayment @relation(fields: [partyPaymentId], references: [id], onDelete: Cascade)
+  orderId         String
+  order           Order        @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  allocatedAmount Decimal      @db.Decimal(10, 2)
+  createdAt       DateTime     @default(now())
+
+  @@index([shopId])
+  @@index([partyPaymentId])
+  @@index([orderId])
+  @@map("payment_allocations")
 }
 
 model Category {
@@ -1020,6 +1051,7 @@ model Order {
   couponRedemption CouponRedemption?
   walletTransactions WalletTransaction[]
   cashbackRedemption CashbackRedemption?
+  paymentAllocations PaymentAllocation[]
 
   @@unique([shopId, clientRequestId])
   @@unique([shopId, billNumber])

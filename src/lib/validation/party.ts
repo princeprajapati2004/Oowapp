@@ -28,6 +28,11 @@ export const partyPaymentSchema = z.object({
   method: z.enum(["CASH", "UPI", "CARD", "BANK_TRANSFER", "OTHER"]).default("CASH"),
   direction: z.enum(["RECEIVED", "PAID"]),
   note: z.string().trim().max(300).optional().or(z.literal("")),
+  // Settles specific outstanding orders instead of just logging a generic
+  // ledger line — only meaningful when direction is RECEIVED. Omitted (or
+  // empty) preserves the original simple behavior exactly.
+  discount: z.coerce.number().min(0).optional(),
+  orderIds: z.array(z.string()).optional(),
 });
 
 export type PartyPaymentInput = z.infer<typeof partyPaymentSchema>;

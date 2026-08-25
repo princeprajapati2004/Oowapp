@@ -7,6 +7,8 @@ import { processOrderPaidRewards, voidPendingCashbackRedemption } from "@/lib/se
 import { writeAuditLog, extractRequestMeta } from "@/lib/services/audit-log";
 import { db } from "@/lib/db";
 import { calculateBill } from "@/lib/services/billing";
+import { resolveOrderItems } from "@/lib/services/order-items";
+import { recomputePaymentStatus } from "@/lib/services/order-payment-status";
 import { sendOrderStatusNotification } from "@/lib/services/push";
 import { createNotification } from "@/lib/services/notification";
 import { publishOrderEvent, toOrderEvent, toAdminOrderEvent } from "@/lib/server/order-events";
@@ -77,7 +79,11 @@ const updateOrderSchema = z.discriminatedUnion("action", [
   z.object({
     action: z.literal("edit_items"),
     // quantity: 0 removes the item entirely
-    items: z.array(z.object({ id: z.string(), quantity: z.number().int().min(0) })).min(1),
+    items: z.array(z.object({ id: z.string(), quantity: z.number().int().min(0) })).default([]),
+    // Products not yet on this order — resolved server-side, price/name
+    // never trusted from the client (same rule resolveOrderItems already
+    // enforces for customer-facing order creation).
+    newItems: z.array(z.object({ productId: z.string(), quantity: z.number().int().positive() })).default([]),
   }),
   z.object({
     action: z.literal("mark_paid"),
@@ -159,7 +165,7 @@ export async function PATCH(
       assertActorCanPerform(actor, parsed.action);
 
       if (parsed.action === "edit_items") {
-        return handleEditItems(id, parsed.items, existing.shopId);
+        return handleEditItems(id, parsed.items, parsed.newItems, existing, actor, request);
       }
 
       if (parsed.action === "status") {
@@ -400,10 +406,18 @@ export async function DELETE(
 async function handleEditItems(
   orderId: string,
   updates: { id: string; quantity: number }[],
-  shopId: string
+  newItems: { productId: string; quantity: number }[],
+  existing: NonNullable<Awaited<ReturnType<typeof db.order.findFirst>>>,
+  actor: ShopActor,
+  request: Request
 ) {
   try {
+    const shopId = existing.shopId;
     const taxes = await db.tax.findMany({ where: { shopId, isEnabled: true } });
+    // Real product data only — never a client-sent name/price. Read outside
+    // the transaction since it's a plain lookup, same as the customer-facing
+    // order route's resolveOrderItems call.
+    const resolvedNewItems = newItems.length > 0 ? await resolveOrderItems(shopId, newItems) : [];
 
     const updated = await db.$transaction(async (tx) => {
       // Apply quantity changes — delete items with qty 0. Every item id is
@@ -423,7 +437,34 @@ async function handleEditItems(
         }
       }
 
-      // Recalculate totals from remaining items.
+      // Merge a newly-added product into its existing line rather than a
+      // second row for the same item (brief's "don't duplicate the line"
+      // rule) — the merged quantity keeps that line's original frozen
+      // price rather than mixing in the product's current price.
+      for (const item of resolvedNewItems) {
+        const existingLine = await tx.orderItem.findFirst({ where: { orderId, productId: item.productId } });
+        if (existingLine) {
+          const newQuantity = existingLine.quantity + item.quantity;
+          await tx.orderItem.update({
+            where: { id: existingLine.id },
+            data: { quantity: newQuantity, lineTotal: Number(existingLine.price) * newQuantity },
+          });
+        } else {
+          await tx.orderItem.create({
+            data: {
+              orderId,
+              productId: item.productId,
+              name: item.name,
+              price: item.price,
+              costPrice: item.costPrice,
+              quantity: item.quantity,
+              lineTotal: item.price * item.quantity,
+            },
+          });
+        }
+      }
+
+      // Recalculate totals from the final item set.
       const remaining = await tx.orderItem.findMany({
         where: { orderId },
         include: { product: { select: { categoryId: true } } },
@@ -442,6 +483,34 @@ async function handleEditItems(
         taxes.map((t) => ({ ...t, value: Number(t.value) }))
       );
 
+      // A manual (non-coupon) discount is recomputed against the new base
+      // so it doesn't go stale. A coupon's discount amount is left exactly
+      // as-is — re-validating coupon eligibility against a changed cart is
+      // out of scope (mirrors remove_discount's existing refusal to touch
+      // coupon-based orders).
+      let discountedTotal = existing.discountedTotal != null ? Number(existing.discountedTotal) : null;
+      if (existing.discountType && !existing.couponId) {
+        const base = bill.subtotal + bill.taxTotal;
+        const discount =
+          existing.discountType === "PERCENTAGE"
+            ? (base * Number(existing.discountValue)) / 100
+            : Number(existing.discountValue);
+        discountedTotal = Math.max(0, base - discount);
+      }
+
+      // Payment status must track paidAmount vs. the (possibly now
+      // different) total, in both directions — a PAID order whose total
+      // grew becomes PARTIALLY_PAID, and one that's PARTIALLY_PAID can
+      // become PAID again if items are removed and what's already collected
+      // now covers the reduced total. Only kicks in once something has
+      // actually been paid (paidAmount > 0) — an order nobody has paid
+      // anything on yet stays PENDING regardless of item changes, and a
+      // REFUNDED order is a terminal state left untouched either way.
+      // paidAmount itself and PaymentRecord history are never modified here.
+      const finalTotal = discountedTotal ?? bill.grandTotal;
+      const paidAmount = Number(existing.paidAmount ?? 0);
+      const paymentStatus = recomputePaymentStatus(existing.paymentStatus, paidAmount, finalTotal);
+
       return tx.order.update({
         where: { id: orderId },
         data: {
@@ -449,13 +518,46 @@ async function handleEditItems(
           taxTotal: bill.taxTotal,
           grandTotal: bill.grandTotal,
           taxBreakdown: bill.taxLines as unknown as Prisma.InputJsonValue,
+          discountedTotal,
+          paymentStatus,
         },
         include: { items: true },
       });
     });
 
     publishOrderEvent(shopId, { type: "order.updated", order: toOrderEvent(updated) });
-    return NextResponse.json(updated);
+
+    const { ipAddress, userAgent, requestId } = extractRequestMeta(request);
+    writeAuditLog({
+      action: "ORDER_ITEMS_EDITED",
+      ...actorAuditFields(actor),
+      targetType: "order",
+      targetId: orderId,
+      shopId,
+      metadata: {
+        billNumber: existing.billNumber,
+        quantityChanges: updates,
+        addedItems: resolvedNewItems.map((i) => ({ productId: i.productId, name: i.name, quantity: i.quantity })),
+        previousTotal: Number(existing.discountedTotal ?? existing.grandTotal),
+        newTotal: Number(updated.discountedTotal ?? updated.grandTotal),
+      },
+      ipAddress,
+      userAgent,
+      requestId,
+    });
+
+    // handleEditItems returns directly (it never reaches the shared
+    // toAdminOrderEvent/paymentRecords/statusEvents assembly below the main
+    // action dispatch) — so it has to do that assembly itself, or the
+    // response comes back shaped like a raw Prisma row instead of an
+    // AdminOrderEventOrder (Decimal/Date fields, no statusEvents/
+    // paymentRecords arrays at all), which crashes the page on render.
+    const [paymentRecords, statusEvents] = await Promise.all([
+      db.paymentRecord.findMany({ where: { orderId }, orderBy: { createdAt: "asc" } }),
+      db.orderStatusEvent.findMany({ where: { orderId }, orderBy: { changedAt: "asc" } }),
+    ]);
+
+    return NextResponse.json(toAdminOrderEvent({ ...updated, statusEvents, paymentRecords }));
   } catch (error) {
     return handleApiError(error);
   }

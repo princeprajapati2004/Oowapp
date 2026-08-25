@@ -30,6 +30,7 @@ import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Select,
   SelectContent,
@@ -84,11 +85,16 @@ const METHOD_LABELS: Record<string, string> = {
   OTHER: "Other",
 };
 
-function isUnpaid(paymentMethod: string | null) {
-  return paymentMethod === null || paymentMethod === "PENDING";
+// Real payment status/amount, never the free-text paymentMethod field — see
+// the matching fix in lib/services/party.ts for why the old
+// paymentMethod-based check was wrong for partially-paid orders.
+function orderPaymentBadge(paymentStatus: string | null): "unpaid" | "partial" | "paid" {
+  if (paymentStatus === "PARTIALLY_PAID") return "partial";
+  if (paymentStatus === "PAID") return "paid";
+  return "unpaid";
 }
 
-type EntryStatus = "unpaid" | "paid" | "received" | "paidOut";
+type EntryStatus = "unpaid" | "partial" | "paid" | "received" | "paidOut";
 
 // Icon color reflects the transaction TYPE (green = sale, blue/gray = payment
 // direction); the badge reflects its STATUS — the two are independent, so an
@@ -97,6 +103,12 @@ const STATUS_STYLES: Record<EntryStatus, { badgeLabel: string; badgeClass: strin
   unpaid: {
     badgeLabel: "Unpaid",
     badgeClass: "bg-orange-100 text-orange-700 dark:bg-orange-500/15 dark:text-orange-400",
+    icon: ShoppingBag,
+    iconClass: "bg-emerald-100 text-emerald-600 dark:bg-emerald-500/15 dark:text-emerald-400",
+  },
+  partial: {
+    badgeLabel: "Partial",
+    badgeClass: "bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-400",
     icon: ShoppingBag,
     iconClass: "bg-emerald-100 text-emerald-600 dark:bg-emerald-500/15 dark:text-emerald-400",
   },
@@ -161,9 +173,68 @@ export function PartyStatement({
   );
   const [method, setMethod] = useState<"CASH" | "UPI" | "CARD" | "BANK_TRANSFER" | "OTHER">("CASH");
   const [note, setNote] = useState("");
+  const [discount, setDiscount] = useState("");
+  const [selectedOrderIds, setSelectedOrderIds] = useState<Set<string>>(new Set());
   const [saving, setSaving] = useState(false);
 
   const { party } = statement;
+
+  // Oldest first (FIFO default) — same order the backend allocates in.
+  const outstandingOrders = useMemo(
+    () =>
+      statement.orders
+        .filter((o) => o.status !== "CANCELLED" && (o.paymentStatus === "PENDING" || o.paymentStatus === "PARTIALLY_PAID"))
+        .slice()
+        .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()),
+    [statement.orders]
+  );
+
+  // Every outstanding order starts selected exactly when the dialog
+  // transitions to open — "FIFO across everything" is the default, the
+  // owner can uncheck specific invoices. "Adjusting state when a prop
+  // changes" during render, same pattern OrderPaymentModal/OrderEditModal
+  // already use, rather than an effect.
+  const [wasLogOpen, setWasLogOpen] = useState(logOpen);
+  if (logOpen !== wasLogOpen) {
+    setWasLogOpen(logOpen);
+    if (logOpen) setSelectedOrderIds(new Set(outstandingOrders.map((o) => o.id)));
+  }
+
+  function toggleOrderSelected(orderId: string) {
+    setSelectedOrderIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(orderId)) next.delete(orderId);
+      else next.add(orderId);
+      return next;
+    });
+  }
+
+  // Client-side preview only — mirrors settlePartyPayment's exact cash-then-
+  // discount, oldest-first logic so what the owner sees here matches what
+  // actually gets saved. The server recomputes authoritatively regardless.
+  const allocationPreview = useMemo(() => {
+    const amountNum = Number(amount) || 0;
+    const discountNum = Number(discount) || 0;
+    const selected = outstandingOrders.filter((o) => selectedOrderIds.has(o.id));
+    type Row = { order: (typeof outstandingOrders)[number]; cashPortion: number; discountPortion: number; newOutstanding: number };
+    const initial: { remainingCash: number; remainingDiscount: number; rows: Row[] } = {
+      remainingCash: amountNum,
+      remainingDiscount: discountNum,
+      rows: [],
+    };
+    return selected.reduce((acc, o) => {
+      const outstanding = o.outstanding ?? 0;
+      const cashPortion = acc.remainingCash > 0.005 ? Math.min(acc.remainingCash, outstanding) : 0;
+      const discountPortion = acc.remainingDiscount > 0.005 ? Math.min(acc.remainingDiscount, outstanding - cashPortion) : 0;
+      const newOutstanding = Math.max(0, outstanding - cashPortion - discountPortion);
+      return {
+        remainingCash: acc.remainingCash - cashPortion,
+        remainingDiscount: acc.remainingDiscount - discountPortion,
+        rows: [...acc.rows, { order: o, cashPortion, discountPortion, newOutstanding }],
+      };
+    }, initial).rows;
+  }, [outstandingOrders, selectedOrderIds, amount, discount]);
+  const totalSelectedOutstanding = allocationPreview.reduce((s, a) => s + (a.order.outstanding ?? 0), 0);
 
   const timeline = useMemo(() => {
     type Entry = {
@@ -181,7 +252,7 @@ export function PartyStatement({
       kind: "order",
       label: `Order #${o.billNumber} · ${o.itemCount} item${o.itemCount !== 1 ? "s" : ""}`,
       amount: o.discountedTotal ?? o.grandTotal,
-      status: isUnpaid(o.paymentMethod) ? "unpaid" : "paid",
+      status: orderPaymentBadge(o.paymentStatus),
       href: `/admin/orders/${o.id}`,
     }));
     const paymentEntries: Entry[] = statement.payments.map((p) => ({
@@ -270,14 +341,29 @@ export function PartyStatement({
       toast.error("Enter a valid amount");
       return;
     }
+    const discountNum = Number(discount) || 0;
+    const settlingOrders = direction === "RECEIVED" && allocationPreview.length > 0;
+    if (settlingOrders && num + discountNum > totalSelectedOutstanding + 0.005) {
+      toast.error(`Payment plus discount can't exceed the selected invoices' outstanding total (${formatCurrency(totalSelectedOutstanding, shop.currency)})`);
+      return;
+    }
     setSaving(true);
     try {
-      await api.post(`/api/admin/parties/${party.id}/payments`, { amount: num, method, direction, note });
+      await api.post(`/api/admin/parties/${party.id}/payments`, {
+        amount: num,
+        method,
+        direction,
+        note,
+        ...(settlingOrders
+          ? { discount: discountNum > 0 ? discountNum : undefined, orderIds: allocationPreview.map((a) => a.order.id) }
+          : {}),
+      });
       await refresh();
-      toast.success("Payment logged");
+      toast.success(settlingOrders ? `Payment logged — ${allocationPreview.length} invoice(s) updated` : "Payment logged");
       setLogOpen(false);
       setAmount("");
       setNote("");
+      setDiscount("");
     } catch (error) {
       toast.error(error instanceof ApiError ? error.message : "Failed to log payment");
     } finally {
@@ -694,6 +780,62 @@ export function PartyStatement({
                 className="h-[52px] rounded-xl px-4 text-base"
               />
             </FormRow>
+
+            {direction === "RECEIVED" && outstandingOrders.length > 0 && (
+              <>
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between px-1">
+                    <p className="text-sm font-medium">Settle outstanding invoices</p>
+                    <span className="text-xs text-muted-foreground">
+                      {formatCurrency(totalSelectedOutstanding, shop.currency)} selected
+                    </span>
+                  </div>
+                  <p className="px-1 text-xs text-muted-foreground">
+                    Settle outstanding invoices with the payment above — oldest first by default, uncheck any you don&apos;t want this payment applied to.
+                  </p>
+                  <div className="max-h-56 space-y-1.5 overflow-y-auto rounded-xl border p-2">
+                    {outstandingOrders.map((o) => {
+                      const preview = allocationPreview.find((a) => a.order.id === o.id);
+                      const checked = selectedOrderIds.has(o.id);
+                      return (
+                        <label
+                          key={o.id}
+                          className={cn(
+                            "flex cursor-pointer items-center gap-2.5 rounded-lg border px-2.5 py-2 text-sm transition-colors",
+                            checked ? "border-primary/40 bg-primary/5" : "hover:bg-muted/40"
+                          )}
+                        >
+                          <Checkbox checked={checked} onCheckedChange={() => toggleOrderSelected(o.id)} />
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate font-medium">#{o.billNumber}</p>
+                            <p className="text-xs text-muted-foreground">
+                              {new Date(o.createdAt).toLocaleDateString()} · Outstanding {formatCurrency(o.outstanding ?? 0, shop.currency)}
+                            </p>
+                          </div>
+                          {checked && preview && (preview.cashPortion > 0.005 || preview.discountPortion > 0.005) && (
+                            <span className={cn("shrink-0 text-xs font-semibold", preview.newOutstanding <= 0.005 ? "text-emerald-600 dark:text-emerald-400" : "text-amber-600 dark:text-amber-400")}>
+                              {preview.newOutstanding <= 0.005 ? "Fully paid" : `${formatCurrency(preview.newOutstanding, shop.currency)} left`}
+                            </span>
+                          )}
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+                <FormRow label="Discount" htmlFor="payment-discount" description="Optional — recorded separately, not folded into the amount">
+                  <Input
+                    id="payment-discount"
+                    type="number"
+                    step="0.01"
+                    min={0}
+                    value={discount}
+                    onChange={(e) => setDiscount(e.target.value)}
+                    className="h-[52px] rounded-xl px-4 text-base"
+                  />
+                </FormRow>
+              </>
+            )}
+
             <FormRow label="Method" htmlFor="payment-method">
               <Select value={method} onValueChange={(v) => setMethod((v as typeof method) ?? "CASH")}>
                 <SelectTrigger id="payment-method" className="h-[52px]! w-full rounded-xl px-4">

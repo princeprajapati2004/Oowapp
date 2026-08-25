@@ -16,6 +16,7 @@ import {
   Ban,
   PartyPopper,
   X,
+  Pencil,
 } from "lucide-react";
 import { Button, buttonVariants } from "@/components/ui/button";
 import {
@@ -51,6 +52,7 @@ import type { AdminOrderEventOrder } from "@/lib/server/order-events";
 import { OrderItemsSummary } from "./order-items-summary";
 import { OrderCancelDialog } from "./order-cancel-dialog";
 import { OrderPaymentModal } from "./order-payment-modal";
+import { OrderEditModal } from "./order-edit-modal";
 import { CustomerDetailsCard } from "./customer-details-card";
 import { PaymentDetailsCard } from "./payment-details-card";
 import { PaymentMethodsCard } from "./payment-methods-card";
@@ -113,6 +115,7 @@ export function OrderDetailPage({
   // openPayment=true so staff go straight to Payment instead of an extra
   // Confirm Order click — see create-order-page.tsx's handleSubmit.
   const [paymentOpen, setPaymentOpen] = useState(!!openPayment);
+  const [editOpen, setEditOpen] = useState(false);
   const [paymentQr, setPaymentQr] = useState<string | null>(null);
   const [claimActionLoading, setClaimActionLoading] = useState(false);
 
@@ -481,6 +484,12 @@ export function OrderDetailPage({
             onConfirmPayment={() => setPaymentOpen(true)}
           />
 
+          {status !== "CANCELLED" && (
+            <Button variant="outline" className="w-full gap-1.5" onClick={() => setEditOpen(true)}>
+              <Pencil className="size-4" /> Modify Order
+            </Button>
+          )}
+
           <p className="pb-1 text-center text-xs text-muted-foreground">
             Order ID: {order.id}
           </p>
@@ -505,6 +514,7 @@ export function OrderDetailPage({
 
       <OrderCancelDialog order={order} open={cancelOpen} onOpenChange={setCancelOpen} onCancelled={applyUpdate} />
       <OrderPaymentModal order={order} currency={currency} shop={shop} open={paymentOpen} onOpenChange={setPaymentOpen} onPaid={applyUpdate} />
+      <OrderEditModal order={order} currency={currency} open={editOpen} onOpenChange={setEditOpen} onSaved={applyUpdate} />
 
       <ConfirmDialog
         open={showDeleteConfirm}

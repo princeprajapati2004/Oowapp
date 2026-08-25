@@ -1,14 +1,51 @@
 import { db } from "@/lib/db";
-import { NotFoundError, ConflictError } from "@/lib/api-utils";
+import { NotFoundError, ConflictError, PaymentSettlementError } from "@/lib/api-utils";
+import { recomputePaymentStatus } from "@/lib/services/order-payment-status";
 import type { PartyInput, PartyPaymentInput } from "@/lib/validation/party";
 import type { Prisma } from "@/generated/prisma/client";
 
 type Tx = Prisma.TransactionClient;
 
-const UNPAID_METHODS = new Set<string | null>([null, "PENDING"]);
+// An order is outstanding based on its real payment status/amount, never
+// the free-text paymentMethod field — a PARTIALLY_PAID order still has
+// paymentMethod set to whatever was used for the partial payment (e.g.
+// "CASH"), so a method-based check silently drops it from "outstanding"
+// the moment ANY payment (even a partial one) is recorded on it.
+const OUTSTANDING_STATUSES = new Set(["PENDING", "PARTIALLY_PAID"]);
 
 function orderAmount(order: { grandTotal: unknown; discountedTotal: unknown }) {
   return Number(order.discountedTotal ?? order.grandTotal);
+}
+
+function orderOutstanding(order: { grandTotal: unknown; discountedTotal: unknown; paidAmount: unknown }) {
+  return Math.max(0, orderAmount(order) - Number(order.paidAmount ?? 0));
+}
+
+function isOutstandingOrder(order: { status: string; paymentStatus: string | null }) {
+  return order.status !== "CANCELLED" && OUTSTANDING_STATUSES.has(order.paymentStatus ?? "PENDING");
+}
+
+type PaymentWithAllocations = { direction: string; amount: unknown; allocations: unknown[] };
+
+// Sums every RECEIVED/PAID payment regardless of whether it settled specific
+// orders — for "how much has this party paid us in total" display figures.
+function sumPayments(payments: PaymentWithAllocations[], direction: "RECEIVED" | "PAID") {
+  return payments.filter((p) => p.direction === direction).reduce((s, p) => s + Number(p.amount), 0);
+}
+
+// Same, but only counting payments with no PaymentAllocation rows — for the
+// outstanding-balance formula, which must not double-subtract a settlement
+// payment whose effect is already reflected in the (paidAmount-netted)
+// unpaidOrderTotal above.
+function paymentsReceivedUnallocated(payments: PaymentWithAllocations[]) {
+  return payments
+    .filter((p) => p.direction === "RECEIVED" && p.allocations.length === 0)
+    .reduce((s, p) => s + Number(p.amount), 0);
+}
+function paymentsPaidUnallocated(payments: PaymentWithAllocations[]) {
+  return payments
+    .filter((p) => p.direction === "PAID" && p.allocations.length === 0)
+    .reduce((s, p) => s + Number(p.amount), 0);
 }
 
 async function assertUniquePhoneAndGst(
@@ -65,8 +102,8 @@ export async function listPartiesWithBalances(shopId: string) {
       // Every order that has a phone number gets linked here at creation
       // time; historical orders were backfilled the same way, so this is
       // now the authoritative source instead of a phone-string join.
-      orders: { select: { grandTotal: true, discountedTotal: true, paymentMethod: true } },
-      payments: true,
+      orders: { select: { grandTotal: true, discountedTotal: true, paidAmount: true, status: true, paymentStatus: true } },
+      payments: { include: { allocations: { select: { id: true } } } },
     },
   });
   if (parties.length === 0) return [];
@@ -79,10 +116,15 @@ export async function listPartiesWithBalances(shopId: string) {
     // into the returned shape as well as the derived summary fields.
     const { orders, payments, ...party } = partyWithRelations;
     const unpaidOrderTotal = orders
-      .filter((o) => UNPAID_METHODS.has(o.paymentMethod))
-      .reduce((sum, o) => sum + orderAmount(o), 0);
-    const received = payments.filter((p) => p.direction === "RECEIVED").reduce((s, p) => s + Number(p.amount), 0);
-    const paid = payments.filter((p) => p.direction === "PAID").reduce((s, p) => s + Number(p.amount), 0);
+      .filter(isOutstandingOrder)
+      .reduce((sum, o) => sum + orderOutstanding(o), 0);
+    // A settlement payment (one with PaymentAllocation rows) already reduced
+    // unpaidOrderTotal above via the orders' own paidAmount — counting it
+    // again here would subtract the same money twice. Only a plain,
+    // order-unlinked ledger entry (a generic advance/refund) belongs in
+    // this sum; totalPaid below still reports every payment either way.
+    const received = paymentsReceivedUnallocated(payments);
+    const paid = paymentsPaidUnallocated(payments);
 
     return {
       ...party,
@@ -111,17 +153,20 @@ export async function getPartyStatement(shopId: string, id: string) {
     where: { id, shopId },
     include: {
       orders: { orderBy: { createdAt: "desc" }, include: { items: true } },
-      payments: { orderBy: { createdAt: "desc" } },
+      payments: { orderBy: { createdAt: "desc" }, include: { allocations: { select: { id: true } } } },
     },
   });
   if (!partyWithRelations) throw new NotFoundError("Party not found");
   const { orders, payments, ...party } = partyWithRelations;
 
   const unpaidOrderTotal = orders
-    .filter((o) => UNPAID_METHODS.has(o.paymentMethod))
-    .reduce((sum, o) => sum + orderAmount(o), 0);
-  const received = payments.filter((p) => p.direction === "RECEIVED").reduce((s, p) => s + Number(p.amount), 0);
-  const paid = payments.filter((p) => p.direction === "PAID").reduce((s, p) => s + Number(p.amount), 0);
+    .filter(isOutstandingOrder)
+    .reduce((sum, o) => sum + orderOutstanding(o), 0);
+  // See the matching comment in listPartiesWithBalances — only unallocated
+  // payments count toward the outstanding formula; totalPaid below reports
+  // every payment regardless.
+  const received = paymentsReceivedUnallocated(payments);
+  const paid = paymentsPaidUnallocated(payments);
 
   return {
     party: {
@@ -140,6 +185,9 @@ export async function getPartyStatement(shopId: string, id: string) {
       grandTotal: Number(o.grandTotal),
       discountedTotal: o.discountedTotal !== null ? Number(o.discountedTotal) : null,
       paymentMethod: o.paymentMethod,
+      paymentStatus: o.paymentStatus,
+      paidAmount: o.paidAmount !== null ? Number(o.paidAmount) : null,
+      outstanding: orderOutstanding(o),
       status: o.status,
       itemCount: o.items.length,
     })),
@@ -153,7 +201,7 @@ export async function getPartyStatement(shopId: string, id: string) {
     })),
     summary: {
       outstanding: computeOutstanding(party, unpaidOrderTotal, received, paid),
-      totalPaid: party.type === "SUPPLIER" ? paid : received,
+      totalPaid: party.type === "SUPPLIER" ? sumPayments(payments, "PAID") : sumPayments(payments, "RECEIVED"),
       orderCount: orders.length,
     },
   };
@@ -238,6 +286,146 @@ export async function createPartyPayment(
     },
   });
   return { ...payment, amount: Number(payment.amount) };
+}
+
+/**
+ * Settles one or more of a party's outstanding orders with a single
+ * payment — creates one PartyPayment (the ledger line the statement
+ * already renders), a PaymentAllocation row per order it actually touched,
+ * and a PaymentRecord + recomputed paidAmount/paymentStatus on each of
+ * those orders, exactly like the existing single-order mark_paid action
+ * already does. Real cash (`input.amount`) is applied first, oldest order
+ * first; any remaining discount is then applied the same way to whatever's
+ * still outstanding. Everything — the "what's actually outstanding right
+ * now" read included — happens inside one transaction so a concurrent
+ * change to the same orders can't be read stale and then silently
+ * overwritten.
+ */
+export async function settlePartyPayment(
+  shopId: string,
+  partyId: string,
+  createdBy: string,
+  input: {
+    amount: number;
+    discount?: number;
+    method: "CASH" | "UPI" | "CARD" | "BANK_TRANSFER" | "OTHER";
+    note?: string;
+    orderIds?: string[];
+  }
+) {
+  await assertOwnedParty(shopId, partyId);
+  const discount = input.discount ?? 0;
+
+  return db.$transaction(async (tx) => {
+    const allOrders = await tx.order.findMany({
+      where: { shopId, partyId, status: { not: "CANCELLED" } },
+      orderBy: { createdAt: "asc" }, // oldest first = FIFO default
+    });
+    let targetOrders = allOrders.filter(isOutstandingOrder);
+    if (input.orderIds && input.orderIds.length > 0) {
+      const idSet = new Set(input.orderIds);
+      targetOrders = targetOrders.filter((o) => idSet.has(o.id));
+    }
+    if (targetOrders.length === 0) {
+      throw new PaymentSettlementError("No outstanding orders to settle for this party.");
+    }
+
+    const totalOutstanding = targetOrders.reduce((s, o) => s + orderOutstanding(o), 0);
+    if (input.amount + discount > totalOutstanding + 0.005) {
+      throw new PaymentSettlementError(
+        `Payment plus discount (${(input.amount + discount).toFixed(2)}) exceeds the outstanding amount (${totalOutstanding.toFixed(2)}) for the selected invoice(s).`
+      );
+    }
+
+    // Real cash first, oldest order first; any leftover discount then
+    // covers whatever's still outstanding, same order.
+    const allocations: { orderId: string; cashPortion: number; discountPortion: number }[] = [];
+    let remainingCash = input.amount;
+    let remainingDiscount = discount;
+    for (const order of targetOrders) {
+      if (remainingCash <= 0.005 && remainingDiscount <= 0.005) break;
+      const outstanding = orderOutstanding(order);
+      if (outstanding <= 0.005) continue;
+      const cashPortion = Math.min(remainingCash, outstanding);
+      remainingCash -= cashPortion;
+      const discountPortion = Math.min(remainingDiscount, outstanding - cashPortion);
+      remainingDiscount -= discountPortion;
+      if (cashPortion > 0.005 || discountPortion > 0.005) {
+        allocations.push({ orderId: order.id, cashPortion, discountPortion });
+      }
+    }
+
+    const partyPayment = await tx.partyPayment.create({
+      data: {
+        shopId,
+        partyId,
+        amount: input.amount,
+        discountAmount: discount > 0 ? discount : null,
+        method: input.method,
+        direction: "RECEIVED",
+        note: input.note || null,
+        createdBy,
+      },
+    });
+
+    for (const alloc of allocations) {
+      const order = targetOrders.find((o) => o.id === alloc.orderId)!;
+      const newPaidAmount = Number(order.paidAmount ?? 0) + alloc.cashPortion;
+      const currentEffectiveTotal = orderAmount(order);
+      const newDiscountedTotal =
+        alloc.discountPortion > 0.005 ? Math.max(0, currentEffectiveTotal - alloc.discountPortion) : order.discountedTotal;
+      const finalTotal = newDiscountedTotal != null ? Number(newDiscountedTotal) : Number(order.grandTotal);
+      const paymentStatus = recomputePaymentStatus(order.paymentStatus, newPaidAmount, finalTotal);
+
+      await tx.order.update({
+        where: { id: order.id },
+        data: {
+          paidAmount: newPaidAmount,
+          paymentMethod: input.method,
+          paymentStatus,
+          ...(alloc.discountPortion > 0.005
+            ? {
+                discountedTotal: newDiscountedTotal,
+                // Only set the descriptive discount fields when the order
+                // has no manual discount yet — if discountType is already
+                // PERCENTAGE, discountValue is a percentage number, and
+                // overwriting it with a raw currency amount here would
+                // corrupt it. discountedTotal (the field that actually
+                // drives every other total calculation) is set correctly
+                // above regardless of this.
+                ...(order.discountType === null
+                  ? { discountType: "FIXED", discountValue: alloc.discountPortion, discountReason: "Payment settlement discount" }
+                  : {}),
+              }
+            : {}),
+        },
+      });
+
+      if (alloc.cashPortion > 0.005) {
+        await tx.paymentRecord.create({
+          data: {
+            shopId,
+            orderId: order.id,
+            amount: alloc.cashPortion,
+            method: input.method,
+            note: input.note || "Party payment settlement",
+            recordedBy: createdBy,
+          },
+        });
+      }
+
+      await tx.paymentAllocation.create({
+        data: { shopId, partyPaymentId: partyPayment.id, orderId: order.id, allocatedAmount: alloc.cashPortion },
+      });
+    }
+
+    return {
+      ...partyPayment,
+      amount: Number(partyPayment.amount),
+      discountAmount: partyPayment.discountAmount != null ? Number(partyPayment.discountAmount) : null,
+      ordersSettled: allocations.length,
+    };
+  });
 }
 
 /**
