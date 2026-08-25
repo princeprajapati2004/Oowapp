@@ -18,6 +18,7 @@ import {
   X,
   Pencil,
   Plus,
+  SquarePen,
 } from "lucide-react";
 import { Button, buttonVariants } from "@/components/ui/button";
 import {
@@ -60,6 +61,7 @@ import { PaymentDetailsCard } from "./payment-details-card";
 import { PaymentMethodsCard } from "./payment-methods-card";
 import { PaymentHistorySection } from "./payment-history-section";
 import { PaymentClaimBanner } from "./payment-claim-banner";
+import { OrderInlineEditPanel } from "./order-inline-edit-panel";
 import { OrderActionBar } from "./order-action-bar";
 import { OrderRoundsSection } from "./order-rounds-section";
 
@@ -119,6 +121,10 @@ export function OrderDetailPage({
   const [paymentOpen, setPaymentOpen] = useState(!!openPayment);
   const [editOpen, setEditOpen] = useState(false);
   const [editInitialView, setEditInitialView] = useState<"items" | "add">("items");
+  // "Full Edit Mode" — a separate, additional editing surface from the
+  // modal above: lets the owner change customer name/order type/payment
+  // method and override item prices, none of which the modal supports.
+  const [inlineEditMode, setInlineEditMode] = useState(false);
 
   function openEditModal(view: "items" | "add") {
     setEditInitialView(view);
@@ -355,10 +361,24 @@ export function OrderDetailPage({
               >
                 <ArrowLeft className="size-5" />
               </Button>
-              <h1 className="truncate text-base font-semibold">Order Details</h1>
+              <h1 className="truncate text-base font-semibold">{inlineEditMode ? "Edit Order Details" : "Order Details"}</h1>
             </div>
 
-            <DropdownMenu>
+            {!inlineEditMode && (
+              <div className="flex items-center gap-1">
+                {status !== "CANCELLED" && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-9 w-9 shrink-0"
+                    aria-label="Full Edit Mode"
+                    title="Full Edit Mode"
+                    onClick={() => setInlineEditMode(true)}
+                  >
+                    <SquarePen className="size-4.5" />
+                  </Button>
+                )}
+                <DropdownMenu>
               <DropdownMenuTrigger
                 className={cn(buttonVariants({ variant: "ghost", size: "icon" }), "h-9 w-9 shrink-0")}
                 aria-label="More actions"
@@ -388,6 +408,8 @@ export function OrderDetailPage({
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
+              </div>
+            )}
           </div>
         </div>
 
@@ -418,6 +440,18 @@ export function OrderDetailPage({
             <p className="text-sm text-muted-foreground">{orderDayTimeLabel}</p>
           </div>
 
+          {inlineEditMode ? (
+            <OrderInlineEditPanel
+              order={order}
+              currency={currency}
+              onCancel={() => setInlineEditMode(false)}
+              onSaved={(updated) => {
+                applyUpdate(updated);
+                setInlineEditMode(false);
+              }}
+            />
+          ) : (
+            <>
           {status === "CANCELLED" && order.cancelReason && (
             <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm dark:border-red-900/50 dark:bg-red-900/20">
               <p className="font-medium text-red-700 dark:text-red-400">Cancelled</p>
@@ -514,23 +548,27 @@ export function OrderDetailPage({
           <p className="pb-1 text-center text-xs text-muted-foreground">
             Order ID: {order.id}
           </p>
+            </>
+          )}
         </div>
 
-        <div className="mx-auto max-w-[620px] px-3 sm:px-4">
-          <OrderActionBar
-            status={status}
-            paymentStatus={paymentStatus}
-            nextStatus={nextStatus}
-            busy={actionLoading}
-            printing={printingBill}
-            onCancel={() => setCancelOpen(true)}
-            onConfirm={() => nextStatus && advanceStatus(nextStatus)}
-            onAdvance={advanceStatus}
-            onPayment={() => setPaymentOpen(true)}
-            onPrint={handlePrintBill}
-            onShareReceipt={shareReceiptOnWhatsApp}
-          />
-        </div>
+        {!inlineEditMode && (
+          <div className="mx-auto max-w-[620px] px-3 sm:px-4">
+            <OrderActionBar
+              status={status}
+              paymentStatus={paymentStatus}
+              nextStatus={nextStatus}
+              busy={actionLoading}
+              printing={printingBill}
+              onCancel={() => setCancelOpen(true)}
+              onConfirm={() => nextStatus && advanceStatus(nextStatus)}
+              onAdvance={advanceStatus}
+              onPayment={() => setPaymentOpen(true)}
+              onPrint={handlePrintBill}
+              onShareReceipt={shareReceiptOnWhatsApp}
+            />
+          </div>
+        )}
       </div>
 
       <OrderCancelDialog order={order} open={cancelOpen} onOpenChange={setCancelOpen} onCancelled={applyUpdate} />

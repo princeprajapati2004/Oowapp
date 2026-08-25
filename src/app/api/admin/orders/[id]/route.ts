@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { ForbiddenError } from "@/lib/session";
 import { requireShopActor, actorAuditFields, type ShopActor } from "@/lib/shop-actor";
-import { handleApiError, NotFoundError } from "@/lib/api-utils";
+import { handleApiError, NotFoundError, ConflictError } from "@/lib/api-utils";
 import { processOrderPaidRewards, voidPendingCashbackRedemption } from "@/lib/services/rewards";
 import { writeAuditLog, extractRequestMeta } from "@/lib/services/audit-log";
 import { db } from "@/lib/db";
@@ -66,6 +66,39 @@ function assertActorCanPerform(actor: ShopActor, action: UpdateOrderAction) {
   }
 }
 
+const editItemsSchema = z
+  .object({
+    action: z.literal("edit_items"),
+    // quantity: 0 removes the item entirely. price is an optional manual
+    // override — omitted, it falls back to the item's existing frozen price
+    // (unchanged behavior for the item-only modal, which never sends it).
+    items: z
+      .array(z.object({ id: z.string(), quantity: z.number().int().min(0), price: z.number().min(0).optional() }))
+      .default([]),
+    // Products not yet on this order — name/costPrice always resolved
+    // server-side, never trusted from the client (same rule resolveOrderItems
+    // already enforces for customer-facing order creation). price is an
+    // optional manual override of the resolved product's selling price.
+    newItems: z
+      .array(z.object({ productId: z.string(), quantity: z.number().int().positive(), price: z.number().min(0).optional() }))
+      .default([]),
+    // The following are only ever sent by the inline "Full Edit Mode" panel
+    // — the item-only modal never includes them.
+    customerName: z.string().trim().min(1).max(120).optional(),
+    paymentMethod: z.enum(PAYMENT_METHOD_VALUES).optional(),
+    // "Order type" isn't a stored column — see deriveOrderType() in
+    // order-status.ts. Translated into tableNumber/deliveryAddress below.
+    orderType: z.enum(["Takeaway", "Dine-in", "Delivery"]).optional(),
+    tableNumber: z.string().trim().max(20).optional(),
+    deliveryAddress: z.string().trim().max(300).optional(),
+  })
+  .refine((v) => v.orderType !== "Dine-in" || !!v.tableNumber, {
+    message: "Table number is required for Dine-in orders",
+  })
+  .refine((v) => v.orderType !== "Delivery" || !!v.deliveryAddress, {
+    message: "Delivery address is required for Delivery orders",
+  });
+
 const updateOrderSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("status"), status: z.enum(ORDER_STATUSES as [string, ...string[]]) }),
   z.object({
@@ -76,15 +109,6 @@ const updateOrderSchema = z.discriminatedUnion("action", [
   }),
   z.object({ action: z.literal("remove_discount") }),
   z.object({ action: z.literal("priority"), priorityFlag: z.enum(["VIP", "RUSH"]).nullable() }),
-  z.object({
-    action: z.literal("edit_items"),
-    // quantity: 0 removes the item entirely
-    items: z.array(z.object({ id: z.string(), quantity: z.number().int().min(0) })).default([]),
-    // Products not yet on this order — resolved server-side, price/name
-    // never trusted from the client (same rule resolveOrderItems already
-    // enforces for customer-facing order creation).
-    newItems: z.array(z.object({ productId: z.string(), quantity: z.number().int().positive() })).default([]),
-  }),
   z.object({
     action: z.literal("mark_paid"),
     paymentMethod: z.enum(PAYMENT_METHOD_VALUES),
@@ -160,13 +184,18 @@ export async function PATCH(
     let shouldVoidPendingCashback = false;
     let shouldProcessPaidRewards = false;
 
+    if ("action" in body && body.action === "edit_items") {
+      // Parsed separately — a .refine() (needed for the order-type/table
+      // /delivery-address combo check) can't be a member of a
+      // discriminatedUnion, so this one action is validated on its own.
+      const parsed = editItemsSchema.parse(body);
+      assertActorCanPerform(actor, "edit_items");
+      return handleEditItems(id, parsed, existing, actor, request);
+    }
+
     if ("action" in body) {
       const parsed = updateOrderSchema.parse(body);
       assertActorCanPerform(actor, parsed.action);
-
-      if (parsed.action === "edit_items") {
-        return handleEditItems(id, parsed.items, parsed.newItems, existing, actor, request);
-      }
 
       if (parsed.action === "status") {
         const allowed = getNextStatuses(existing);
@@ -405,23 +434,44 @@ export async function DELETE(
 
 async function handleEditItems(
   orderId: string,
-  updates: { id: string; quantity: number }[],
-  newItems: { productId: string; quantity: number }[],
+  parsed: {
+    items: { id: string; quantity: number; price?: number }[];
+    newItems: { productId: string; quantity: number; price?: number }[];
+    customerName?: string;
+    paymentMethod?: string;
+    orderType?: "Takeaway" | "Dine-in" | "Delivery";
+    tableNumber?: string;
+    deliveryAddress?: string;
+  },
   existing: NonNullable<Awaited<ReturnType<typeof db.order.findFirst>>>,
   actor: ShopActor,
   request: Request
 ) {
   try {
+    const { items: updates, newItems, customerName, paymentMethod, orderType, tableNumber, deliveryAddress } = parsed;
     const shopId = existing.shopId;
+
+    // Order type isn't a stored column (see deriveOrderType() in
+    // order-status.ts) — changing it away from Delivery once an order is
+    // already mid-delivery-flow would strand it with no valid next status,
+    // since the non-delivery flow doesn't contain OUT_FOR_DELIVERY/DELIVERED
+    // at all. Enforced here, not just hidden in the UI.
+    if (orderType && (existing.status === "OUT_FOR_DELIVERY" || existing.status === "DELIVERED")) {
+      throw new ConflictError("Order type can't be changed once the order is out for delivery.");
+    }
+
     const taxes = await db.tax.findMany({ where: { shopId, isEnabled: true } });
-    // Real product data only — never a client-sent name/price. Read outside
-    // the transaction since it's a plain lookup, same as the customer-facing
-    // order route's resolveOrderItems call.
+    // Real product data only — never a client-sent name/price (price CAN be
+    // overridden, but only the selling price — costPrice always comes from
+    // the real product record so profit-margin reporting stays accurate).
+    // Read outside the transaction since it's a plain lookup, same as the
+    // customer-facing order route's resolveOrderItems call.
     const resolvedNewItems = newItems.length > 0 ? await resolveOrderItems(shopId, newItems) : [];
+    const newItemPriceOverrides = new Map(newItems.map((i) => [i.productId, i.price]));
 
     const updated = await db.$transaction(async (tx) => {
-      // Apply quantity changes — delete items with qty 0. Every item id is
-      // re-checked against orderId here so a caller can't reference an
+      // Apply quantity/price changes — delete items with qty 0. Every item id
+      // is re-checked against orderId here so a caller can't reference an
       // OrderItem belonging to a different order (or another shop's order).
       for (const u of updates) {
         if (u.quantity === 0) {
@@ -429,9 +479,10 @@ async function handleEditItems(
         } else {
           const item = await tx.orderItem.findFirst({ where: { id: u.id, orderId } });
           if (item) {
+            const price = u.price ?? Number(item.price);
             await tx.orderItem.update({
               where: { id: u.id },
-              data: { quantity: u.quantity, lineTotal: Number(item.price) * u.quantity },
+              data: { quantity: u.quantity, price, lineTotal: price * u.quantity },
             });
           }
         }
@@ -440,25 +491,29 @@ async function handleEditItems(
       // Merge a newly-added product into its existing line rather than a
       // second row for the same item (brief's "don't duplicate the line"
       // rule) — the merged quantity keeps that line's original frozen
-      // price rather than mixing in the product's current price.
+      // price rather than mixing in the product's current price, unless a
+      // manual override was supplied for this add.
       for (const item of resolvedNewItems) {
+        const overridePrice = newItemPriceOverrides.get(item.productId);
         const existingLine = await tx.orderItem.findFirst({ where: { orderId, productId: item.productId } });
         if (existingLine) {
           const newQuantity = existingLine.quantity + item.quantity;
+          const price = overridePrice ?? Number(existingLine.price);
           await tx.orderItem.update({
             where: { id: existingLine.id },
-            data: { quantity: newQuantity, lineTotal: Number(existingLine.price) * newQuantity },
+            data: { quantity: newQuantity, price, lineTotal: price * newQuantity },
           });
         } else {
+          const price = overridePrice ?? item.price;
           await tx.orderItem.create({
             data: {
               orderId,
               productId: item.productId,
               name: item.name,
-              price: item.price,
+              price,
               costPrice: item.costPrice,
               quantity: item.quantity,
-              lineTotal: item.price * item.quantity,
+              lineTotal: price * item.quantity,
             },
           });
         }
@@ -511,6 +566,18 @@ async function handleEditItems(
       const paidAmount = Number(existing.paidAmount ?? 0);
       const paymentStatus = recomputePaymentStatus(existing.paymentStatus, paidAmount, finalTotal);
 
+      // orderType is translated into the two real columns it's derived from
+      // — Delivery takes priority in deriveOrderType(), so Dine-in/Takeaway
+      // always clear deliveryAddress too, matching that same priority.
+      const orderTypeFields =
+        orderType === "Takeaway"
+          ? { tableNumber: null, deliveryAddress: null }
+          : orderType === "Dine-in"
+            ? { tableNumber: tableNumber ?? null, deliveryAddress: null }
+            : orderType === "Delivery"
+              ? { tableNumber: null, deliveryAddress: deliveryAddress ?? null }
+              : {};
+
       return tx.order.update({
         where: { id: orderId },
         data: {
@@ -520,6 +587,9 @@ async function handleEditItems(
           taxBreakdown: bill.taxLines as unknown as Prisma.InputJsonValue,
           discountedTotal,
           paymentStatus,
+          ...(customerName ? { customerName } : {}),
+          ...(paymentMethod ? { paymentMethod } : {}),
+          ...orderTypeFields,
         },
         include: { items: true },
       });
@@ -540,6 +610,10 @@ async function handleEditItems(
         addedItems: resolvedNewItems.map((i) => ({ productId: i.productId, name: i.name, quantity: i.quantity })),
         previousTotal: Number(existing.discountedTotal ?? existing.grandTotal),
         newTotal: Number(updated.discountedTotal ?? updated.grandTotal),
+        priceOverridden: updates.some((u) => u.price !== undefined) || newItems.some((i) => i.price !== undefined),
+        ...(customerName && customerName !== existing.customerName ? { customerNameChanged: { from: existing.customerName, to: customerName } } : {}),
+        ...(paymentMethod && paymentMethod !== existing.paymentMethod ? { paymentMethodChanged: { from: existing.paymentMethod, to: paymentMethod } } : {}),
+        ...(orderType ? { orderTypeChanged: orderType } : {}),
       },
       ipAddress,
       userAgent,
