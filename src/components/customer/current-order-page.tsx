@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { useForm } from "react-hook-form";
@@ -248,6 +248,22 @@ export function CurrentOrderPage({
   const cart = useCart(shop.slug);
   const [session, setSession] = useState<ActiveSession>(activeSession);
   const [placing, setPlacing] = useState(false);
+  // The idempotency key must survive a manual retry of the SAME attempt
+  // (customer sees a failure/timeout and taps Confirm Order again with an
+  // unchanged cart) — regenerating it every call meant a retry after a slow
+  // request that had actually succeeded server-side could create a genuine
+  // duplicate order. Keyed on the order-defining inputs so a retry reuses
+  // the same id, but a genuinely different order (cart edited, coupon
+  // changed) still gets a fresh one.
+  const lastOrderAttemptRef = useRef<{ signature: string; requestId: string } | null>(null);
+  function getOrderRequestId(signature: string) {
+    if (lastOrderAttemptRef.current?.signature === signature) {
+      return lastOrderAttemptRef.current.requestId;
+    }
+    const requestId = crypto.randomUUID();
+    lastOrderAttemptRef.current = { signature, requestId };
+    return requestId;
+  }
   const [requestingBill, setRequestingBill] = useState(false);
   const [billRequestFailed, setBillRequestFailed] = useState(false);
   const [downloadingInvoicePdf, setDownloadingInvoicePdf] = useState(false);
@@ -619,11 +635,19 @@ export function CurrentOrderPage({
       ...values,
       tableNumber: shop.enableTableNumber ? (values.tableNumber || prefilledTable || "") : "",
     };
-    const newClientRequestId = crypto.randomUUID();
     setCheckoutValues(resolvedValues);
     setPlacing(true);
 
     if (shop.orderMode === "DIRECT") {
+      const attemptSignature = JSON.stringify({
+        items: cart.items,
+        couponCode: appliedCoupon?.code,
+        walletAmountUsed: walletAmountToUse > 0 ? walletAmountToUse : undefined,
+        cashbackCode: appliedCashback?.code,
+        tableNumber: resolvedValues.tableNumber,
+        notes: resolvedValues.notes,
+      });
+      const requestId = getOrderRequestId(attemptSignature);
       try {
         const res = await api.post<{
           ok: boolean;
@@ -634,19 +658,26 @@ export function CurrentOrderPage({
           sessionStatus?: string | null;
           sessionOrders?: { status: string; items: { productId: string | null; name: string; price: number; quantity: number; categoryId?: string; imageUrl?: string | null }[] }[];
           sessionExpired?: boolean;
-        }>("/api/orders", {
-          shopSlug: shop.slug,
-          clientRequestId: newClientRequestId,
-          customerName: resolvedValues.customerName,
-          customerPhone: resolvedValues.customerPhone,
-          tableNumber: resolvedValues.tableNumber,
-          deliveryAddress: resolvedValues.deliveryAddress,
-          notes: resolvedValues.notes,
-          items: cart.items,
-          couponCode: appliedCoupon?.code,
-          walletAmountUsed: walletAmountToUse > 0 ? walletAmountToUse : undefined,
-          cashbackCode: appliedCashback?.code,
-        });
+        }>(
+          "/api/orders",
+          {
+            shopSlug: shop.slug,
+            clientRequestId: requestId,
+            customerName: resolvedValues.customerName,
+            customerPhone: resolvedValues.customerPhone,
+            tableNumber: resolvedValues.tableNumber,
+            deliveryAddress: resolvedValues.deliveryAddress,
+            notes: resolvedValues.notes,
+            items: cart.items,
+            couponCode: appliedCoupon?.code,
+            walletAmountUsed: walletAmountToUse > 0 ? walletAmountToUse : undefined,
+            cashbackCode: appliedCashback?.code,
+          },
+          // Bounded wait — the transaction itself now has up to 15s of
+          // headroom (see route.ts), so this stays comfortably above that
+          // rather than racing it.
+          20000
+        );
         if (res.orderId && res.billNumber) {
           addStoredOrder(shop.slug, { orderId: res.orderId, billNumber: res.billNumber, placedAt: new Date().toISOString() });
         }
@@ -666,10 +697,21 @@ export function CurrentOrderPage({
         setUseWalletCredit(false);
         removeCashback();
         setDirectOrderPlaced(true);
+        // A later order — even one that happens to look identical — must
+        // never reuse this attempt's id.
+        lastOrderAttemptRef.current = null;
       } catch (err) {
         if (err instanceof ApiError && err.status === 409) {
           toast.error("Bill was just requested for this table — please check with staff before ordering more.");
           setSession((prev) => (prev ? { ...prev, status: "AWAITING_PAYMENT" } : prev));
+        } else if (err instanceof Error && err.name === "AbortError") {
+          toast.error("This is taking longer than usual. Please check your order history before trying again — it may have already gone through.");
+        } else if (err instanceof ApiError && err.message && err.message !== "Something went wrong") {
+          // The server already has good, specific messages (invalid coupon,
+          // insufficient wallet balance, rate-limited, unavailable item,
+          // etc.) — only the generic "Something went wrong" bucket
+          // (unexpected exceptions) falls through to the flat fallback below.
+          toast.error(err.message);
         } else {
           toast.error("Couldn't place your order — please try again.");
         }
@@ -725,6 +767,17 @@ export function CurrentOrderPage({
           });
     const url = buildWhatsAppUrl(shop.whatsappNumber, message);
 
+    const whatsappRequestId = getOrderRequestId(
+      JSON.stringify({
+        items: cart.items,
+        couponCode: !isIncremental ? appliedCoupon?.code : undefined,
+        walletAmountUsed: walletAmountToUse > 0 ? walletAmountToUse : undefined,
+        cashbackCode: appliedCashback?.code,
+        tableNumber: resolvedValues.tableNumber,
+        notes: resolvedValues.notes,
+      })
+    );
+
     api
       .post<{
         ok: boolean;
@@ -740,7 +793,7 @@ export function CurrentOrderPage({
         sessionExpired?: boolean;
       }>("/api/orders", {
         shopSlug: shop.slug,
-        clientRequestId: newClientRequestId,
+        clientRequestId: whatsappRequestId,
         customerName: resolvedValues.customerName,
         customerPhone: resolvedValues.customerPhone,
         tableNumber: resolvedValues.tableNumber,
@@ -778,6 +831,7 @@ export function CurrentOrderPage({
         removeCoupon();
         setUseWalletCredit(false);
         removeCashback();
+        lastOrderAttemptRef.current = null;
       })
       .catch((err) => {
         if (err instanceof ApiError && err.status === 409) {

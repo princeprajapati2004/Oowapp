@@ -10,30 +10,42 @@ export class ApiError extends Error {
 
 async function request<T>(
   path: string,
-  init?: RequestInit
+  init?: RequestInit,
+  // Optional bounded wait — a caller with no natural retry/feedback loop
+  // (e.g. checkout) can opt in so the request never hangs indefinitely.
+  // Omitted, behavior is unchanged: a bare fetch with no ceiling, same as
+  // every existing caller today.
+  timeoutMs?: number
 ): Promise<T> {
-  const res = await fetch(path, {
-    ...init,
-    headers: {
-      "Content-Type": "application/json",
-      ...init?.headers,
-    },
-  });
+  const controller = timeoutMs ? new AbortController() : undefined;
+  const timer = controller ? setTimeout(() => controller.abort(), timeoutMs) : undefined;
+  try {
+    const res = await fetch(path, {
+      ...init,
+      signal: controller?.signal,
+      headers: {
+        "Content-Type": "application/json",
+        ...init?.headers,
+      },
+    });
 
-  const isJson = res.headers.get("content-type")?.includes("application/json");
-  const body = isJson ? await res.json().catch(() => null) : null;
+    const isJson = res.headers.get("content-type")?.includes("application/json");
+    const body = isJson ? await res.json().catch(() => null) : null;
 
-  if (!res.ok) {
-    throw new ApiError(body?.error ?? "Something went wrong", res.status, body);
+    if (!res.ok) {
+      throw new ApiError(body?.error ?? "Something went wrong", res.status, body);
+    }
+
+    return body as T;
+  } finally {
+    if (timer) clearTimeout(timer);
   }
-
-  return body as T;
 }
 
 export const api = {
   get: <T,>(path: string) => request<T>(path),
-  post: <T,>(path: string, data?: unknown) =>
-    request<T>(path, { method: "POST", body: data ? JSON.stringify(data) : undefined }),
+  post: <T,>(path: string, data?: unknown, timeoutMs?: number) =>
+    request<T>(path, { method: "POST", body: data ? JSON.stringify(data) : undefined }, timeoutMs),
   patch: <T,>(path: string, data?: unknown) =>
     request<T>(path, { method: "PATCH", body: data ? JSON.stringify(data) : undefined }),
   put: <T,>(path: string, data?: unknown) =>

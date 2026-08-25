@@ -136,6 +136,14 @@ export async function POST(request: Request) {
       }
     }
 
+    // Explicit headroom over Prisma's 5000ms/2000ms defaults — a checkout
+    // with coupon + cashback + wallet + table-session + referral-payout all
+    // stacked can be ~25 sequential DB round-trips inside this one
+    // transaction, comfortably exceeding the default under any ordinary
+    // latency bump (this was the actual cause of "long wait, then generic
+    // failure" — a Prisma transaction-timeout error surfacing as a flat
+    // "Something went wrong"). 15s covers the realistic worst case without
+    // resorting to an unbounded "just wait forever" timeout.
     const { order, isDuplicate } = await db.$transaction(async (tx) => {
       const existing = await tx.order.findUnique({
         where: { shopId_clientRequestId: { shopId: shop.id, clientRequestId: input.clientRequestId } },
@@ -304,7 +312,7 @@ export async function POST(request: Request) {
       }
 
       return { order: created, isDuplicate: false };
-    });
+    }, { timeout: 15000, maxWait: 5000 });
 
     if (!isDuplicate) {
       // Fire-and-forget push notification — never blocks the response.
