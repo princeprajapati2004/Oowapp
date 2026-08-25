@@ -17,12 +17,14 @@ import {
   PartyPopper,
   X,
   Pencil,
+  Plus,
 } from "lucide-react";
 import { Button, buttonVariants } from "@/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { ConfirmDialog } from "@/components/shared/confirm-dialog";
@@ -116,6 +118,12 @@ export function OrderDetailPage({
   // Confirm Order click — see create-order-page.tsx's handleSubmit.
   const [paymentOpen, setPaymentOpen] = useState(!!openPayment);
   const [editOpen, setEditOpen] = useState(false);
+  const [editInitialView, setEditInitialView] = useState<"items" | "add">("items");
+
+  function openEditModal(view: "items" | "add") {
+    setEditInitialView(view);
+    setEditOpen(true);
+  }
   const [paymentQr, setPaymentQr] = useState<string | null>(null);
   const [claimActionLoading, setClaimActionLoading] = useState(false);
 
@@ -369,6 +377,7 @@ export function OrderDetailPage({
                     <Barcode className="size-4" /> Print Barcode
                   </DropdownMenuItem>
                 )}
+                <DropdownMenuSeparator />
                 {showCancelInMenu && (
                   <DropdownMenuItem variant="destructive" onClick={() => setCancelOpen(true)}>
                     <Ban className="size-4" /> Cancel Order
@@ -481,13 +490,25 @@ export function OrderDetailPage({
             // whichever is missing, instead of silently hiding the button.
             canSendWhatsApp={true}
             onSendWhatsApp={sendPaymentQrOnWhatsApp}
-            onConfirmPayment={() => setPaymentOpen(true)}
+            // The sticky OrderActionBar below already offers an identical
+            // "Add/confirm Payment" action for every status except PENDING
+            // (it has no payment button there) — only pass this through in
+            // that one gap so the two never show the same action twice.
+            onConfirmPayment={status === "PENDING" ? () => setPaymentOpen(true) : undefined}
           />
 
           {status !== "CANCELLED" && (
-            <Button variant="outline" className="w-full gap-1.5" onClick={() => setEditOpen(true)}>
-              <Pencil className="size-4" /> Modify Order
-            </Button>
+            <div className="space-y-1.5">
+              <p className="px-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Order Actions</p>
+              <div className="flex gap-2">
+                <Button variant="outline" size="sm" className="flex-1 gap-1.5" onClick={() => openEditModal("add")}>
+                  <Plus className="size-3.5" /> Add Items
+                </Button>
+                <Button variant="outline" size="sm" className="flex-1 gap-1.5" onClick={() => openEditModal("items")}>
+                  <Pencil className="size-3.5" /> Edit Order
+                </Button>
+              </div>
+            </div>
           )}
 
           <p className="pb-1 text-center text-xs text-muted-foreground">
@@ -514,7 +535,7 @@ export function OrderDetailPage({
 
       <OrderCancelDialog order={order} open={cancelOpen} onOpenChange={setCancelOpen} onCancelled={applyUpdate} />
       <OrderPaymentModal order={order} currency={currency} shop={shop} open={paymentOpen} onOpenChange={setPaymentOpen} onPaid={applyUpdate} />
-      <OrderEditModal order={order} currency={currency} open={editOpen} onOpenChange={setEditOpen} onSaved={applyUpdate} />
+      <OrderEditModal order={order} currency={currency} open={editOpen} initialView={editInitialView} onOpenChange={setEditOpen} onSaved={applyUpdate} />
 
       <ConfirmDialog
         open={showDeleteConfirm}

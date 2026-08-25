@@ -21,4 +21,4 @@ export const orderDetailColors = {
 
 /** Shared button chrome for the sticky bottom action bar's two buttons. */
 export const actionButtonBase =
-  "flex h-12 flex-1 items-center justify-center gap-2 rounded-xl text-[15px] font-bold leading-tight text-center transition-colors disabled:opacity-60 disabled:pointer-events-none";
+  "flex h-11 flex-1 items-center justify-center gap-2 rounded-xl text-sm font-bold leading-tight text-center transition-colors disabled:opacity-60 disabled:pointer-events-none";

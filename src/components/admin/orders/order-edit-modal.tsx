@@ -35,12 +35,17 @@ export function OrderEditModal({
   order,
   currency,
   open,
+  initialView = "items",
   onOpenChange,
   onSaved,
 }: {
   order: AdminOrderEventOrder;
   currency: string;
   open: boolean;
+  // Lets the two "Order Actions" shortcuts (Add Items / Edit Order) open the
+  // same modal directly on the intended panel, instead of always landing on
+  // the items list first.
+  initialView?: "items" | "add";
   onOpenChange: (open: boolean) => void;
   onSaved: (order: AdminOrderEventOrder) => void;
 }) {
@@ -68,7 +73,7 @@ export function OrderEditModal({
           quantity: item.quantity,
         }))
       );
-      setShowAddPanel(false);
+      setShowAddPanel(initialView === "add");
       setSearch("");
     }
   }

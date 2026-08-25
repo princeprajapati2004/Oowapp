@@ -112,25 +112,29 @@ export function PaymentMethodsCard({
           </div>
         )}
 
-        {onConfirmPayment && (
-          <button
-            type="button"
-            onClick={onConfirmPayment}
-            className="flex h-11 w-full items-center justify-center gap-1.5 rounded-xl bg-[#FFA000] text-sm font-bold text-white hover:bg-[#e69200]"
-          >
-            <CreditCard className="size-3.5" /> Add/Confirm Payment
-          </button>
-        )}
+        {(onConfirmPayment || canSendWhatsApp) && (
+          <div className="flex gap-2">
+            {onConfirmPayment && (
+              <button
+                type="button"
+                onClick={onConfirmPayment}
+                className="flex h-10 flex-1 items-center justify-center gap-1.5 rounded-xl bg-[#FFA000] text-sm font-bold text-white hover:bg-[#e69200]"
+              >
+                <CreditCard className="size-3.5" /> Add Payment
+              </button>
+            )}
 
-        {canSendWhatsApp && (
-          <button
-            type="button"
-            onClick={onSendWhatsApp}
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-[#25d366] text-[15px] font-bold text-white hover:bg-[#1ebc57]"
-          >
-            <MessageCircle className="size-[18px]" />
-            Send Payment QR & Link
-          </button>
+            {canSendWhatsApp && (
+              <button
+                type="button"
+                onClick={onSendWhatsApp}
+                className="flex h-10 flex-1 items-center justify-center gap-1.5 rounded-xl bg-[#25d366] text-sm font-bold text-white hover:bg-[#1ebc57]"
+              >
+                <MessageCircle className="size-4" />
+                Send Payment
+              </button>
+            )}
+          </div>
         )}
       </div>
     </div>
