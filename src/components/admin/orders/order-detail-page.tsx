@@ -37,6 +37,7 @@ import { cn } from "@/lib/utils";
 import { useOrderEvents } from "@/lib/hooks/use-order-events";
 import { useBillActions, type BillOrderData, type BillShopData } from "@/lib/hooks/use-bill-actions";
 import { PrintOnlyBill } from "@/components/printing/bill-document";
+import { PrintPreviewModal } from "@/components/printing/print-preview-modal";
 import { printBill } from "@/lib/printing/print-service";
 import { printViaSystemDialog } from "@/lib/printing/adapters/system-print";
 import { buildWhatsAppUrl } from "@/lib/services/whatsapp";
@@ -158,9 +159,16 @@ export function OrderDetailPage({
 
   const billActions = useBillActions(toBillOrderData(order), shop);
   const [printingBill, setPrintingBill] = useState(false);
+  const [showPrintPreview, setShowPrintPreview] = useState(false);
 
-  async function handlePrintBill() {
-    if (printingBill) return; // guards against a double-click firing two print jobs
+  // Opens the preview modal — actual print dispatched from there.
+  function handlePrintBill() {
+    if (printingBill) return;
+    setShowPrintPreview(true);
+  }
+
+  async function executePrint() {
+    if (printingBill) return;
     setPrintingBill(true);
     try {
       const outcome = await printBill(toBillOrderData(order), shop);
@@ -171,6 +179,7 @@ export function OrderDetailPage({
       } else if (outcome.printer && outcome.printer.connectionType !== "SYSTEM") {
         toast.success(`Sent to ${outcome.printer.name}`);
       }
+      setShowPrintPreview(false);
     } finally {
       setPrintingBill(false);
     }
@@ -587,6 +596,16 @@ export function OrderDetailPage({
       />
 
       <PrintOnlyBill format={shop.printFormat} order={toBillOrderData(order)} shop={shop} />
+
+      <PrintPreviewModal
+        open={showPrintPreview}
+        onClose={() => setShowPrintPreview(false)}
+        onConfirmPrint={executePrint}
+        order={toBillOrderData(order)}
+        shop={shop}
+        format={shop.printFormat}
+        printing={printingBill}
+      />
     </>
   );
 }

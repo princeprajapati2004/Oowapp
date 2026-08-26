@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { ArrowLeft, Printer, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { BillDocument } from "@/components/printing/bill-document";
+import { PrintPreviewModal } from "@/components/printing/print-preview-modal";
 import { printBill } from "@/lib/printing/print-service";
 import { printViaSystemDialog } from "@/lib/printing/adapters/system-print";
 import type { PrintFormat } from "@/lib/types/print";
@@ -21,13 +22,14 @@ export function SessionBill({
   shop: BillShopData;
 }) {
   const [printing, setPrinting] = useState(false);
+  const [showPreview, setShowPreview] = useState(false);
 
-  // Same dispatcher the admin Order Details "Print Receipt" button already
-  // uses — routes to the shop's configured Bluetooth/WiFi/USB thermal
-  // printer, falling back to the browser print dialog only when no printer
-  // is configured. Previously this page only ever did window.print(),
-  // silently skipping any printer the shop had actually set up.
-  async function handlePrint() {
+  function handlePrint() {
+    if (printing) return;
+    setShowPreview(true);
+  }
+
+  async function executePrint() {
     if (printing) return;
     setPrinting(true);
     try {
@@ -39,6 +41,7 @@ export function SessionBill({
       } else if (outcome.printer && outcome.printer.connectionType !== "SYSTEM") {
         toast.success(`Sent to ${outcome.printer.name}`);
       }
+      setShowPreview(false);
     } finally {
       setPrinting(false);
     }
@@ -60,6 +63,16 @@ export function SessionBill({
           <BillDocument format={format} order={order} shop={shop} />
         </div>
       </div>
+
+      <PrintPreviewModal
+        open={showPreview}
+        onClose={() => setShowPreview(false)}
+        onConfirmPrint={executePrint}
+        order={order}
+        shop={shop}
+        format={format}
+        printing={printing}
+      />
     </div>
   );
 }

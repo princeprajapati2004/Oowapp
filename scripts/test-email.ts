@@ -5,7 +5,7 @@
 import nodemailer from "nodemailer";
 
 const SMTP_HOST     = process.env.SMTP_HOST     ?? "mail.oowapp.in";
-const SMTP_PORT     = Number(process.env.SMTP_PORT ?? 465);
+const SMTP_PORT     = Number(process.env.SMTP_PORT ?? 587);
 const NO_REPLY_EMAIL    = process.env.NO_REPLY_EMAIL    ?? "noreply@oowapp.in";
 const NO_REPLY_PASSWORD = process.env.NO_REPLY_EMAIL_PASSWORD ?? "Oowapp@noreply@10216";
 const TO = "princegprajapati2023@gmail.com";
@@ -21,10 +21,9 @@ if (!NO_REPLY_EMAIL || !NO_REPLY_PASSWORD) {
 const transporter = nodemailer.createTransport({
   host: SMTP_HOST,
   port: SMTP_PORT,
-  secure: true,
+  secure: false,
   name: process.env.SMTP_HELO_NAME ?? "oowapp.in",
   auth: { user: NO_REPLY_EMAIL, pass: NO_REPLY_PASSWORD },
-  tls: { rejectUnauthorized: false },
   logger: true,
   debug: true,
 });
@@ -40,7 +39,7 @@ async function main() {
     to: TO,
     subject: "OOWAPP test mail",
     text: "This is a plain-text test email from OOWAPP nodemailer script.",
-    html: "<p>This is a <strong>test email</strong> from OOWAPP nodemailer script.</p>",
+    html: "<p>This is a <strong>test email 001</strong> from OOWAPP nodemailer script.</p>",
   });
 
   console.log("\n✓ Sent!");
