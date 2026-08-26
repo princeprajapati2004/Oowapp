@@ -33,17 +33,17 @@ export async function creditWallet(
   args: {
     shopId: string;
     customerId: string;
-    type: "CASHBACK_CREDIT" | "REFERRAL_CREDIT" | "ADMIN_ADJUSTMENT";
+    type: "CASHBACK_CREDIT" | "REFERRAL_CREDIT" | "ADMIN_ADJUSTMENT" | "REFUND_CREDIT";
     amount: number;
     orderId?: string | null;
     description?: string | null;
   }
-): Promise<{ credited: boolean }> {
+): Promise<{ credited: boolean; transactionId: string }> {
   if (args.orderId) {
     const existing = await tx.walletTransaction.findUnique({
       where: { orderId_type: { orderId: args.orderId, type: args.type } },
     });
-    if (existing) return { credited: false };
+    if (existing) return { credited: false, transactionId: existing.id };
   }
 
   const updated = await tx.customer.update({
@@ -51,7 +51,7 @@ export async function creditWallet(
     data: { walletBalance: { increment: args.amount } },
   });
 
-  await tx.walletTransaction.create({
+  const transaction = await tx.walletTransaction.create({
     data: {
       shopId: args.shopId,
       customerId: args.customerId,
@@ -63,7 +63,7 @@ export async function creditWallet(
     },
   });
 
-  return { credited: true };
+  return { credited: true, transactionId: transaction.id };
 }
 
 /**

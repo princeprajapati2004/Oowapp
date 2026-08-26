@@ -3,7 +3,7 @@ import { Prisma, type AuditAction } from "@/generated/prisma/client";
 
 export interface WriteAuditLogInput {
   action: AuditAction;
-  actorType: "admin" | "staff" | "super_admin" | "system";
+  actorType: "admin" | "staff" | "super_admin" | "system" | "customer";
   actorId: string;
   targetType?: string;
   targetId?: string;

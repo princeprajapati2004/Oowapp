@@ -1,4 +1,6 @@
 import { EventEmitter } from "node:events";
+import { computeOrderReturnBadge, computeOrderTotalRefunded, type OrderReturnBadge } from "@/lib/services/return-eligibility";
+import type { ReturnStatus } from "@/generated/prisma/enums";
 
 export type OrderEventItem = {
   id: string;
@@ -7,6 +9,10 @@ export type OrderEventItem = {
   price: number;
   quantity: number;
   lineTotal: number;
+  // Reserved-or-physically-returned quantity — quantity minus this is what's
+  // still eligible for a new return request. See computeReturnableQuantity
+  // in src/lib/services/return-eligibility.ts.
+  returnedQuantity: number;
 };
 
 // A status-change entry safe to show a customer — no `changedBy` (that's an
@@ -61,6 +67,15 @@ export type OrderEventOrder = {
   // and order-tracking do; most other toOrderEvent callers don't need it and
   // leave it undefined) — never fetched unless there's a real reason to.
   review?: { id: string; rating: number; reviewText: string | null } | null;
+  // Small "Partially/Fully Returned" indicator — same opt-in convention as
+  // `review` above. Undefined unless the caller's query included
+  // returnRequests (order-search.ts, customer orders/track routes do).
+  returnBadge?: OrderReturnBadge;
+  // Sum of actually-REFUNDED returns — same opt-in convention, computed from
+  // the same returnRequests include as returnBadge. Never mutates paidAmount
+  // itself; purely a display figure ("Refund" / "Net Paid" next to Payment
+  // Details).
+  totalRefunded?: number;
 };
 
 // Superset of OrderEventOrder used ONLY by admin-facing routes — carries
@@ -143,12 +158,65 @@ export type NotificationEventPayload = {
   createdAt: string;
 };
 
+// Lightweight — list/detail consumers use this only to know *something*
+// changed (update a row in place, or trigger a REST refetch by id match),
+// same convention as order.updated (see order-detail-page.tsx's
+// useOrderEvents handler, which always re-fetches rather than trusting the
+// SSE payload for full detail). No internal actor ids (approvedById etc.) —
+// safe to forward on the customer per-order stream too.
+export type ReturnEventPayload = {
+  id: string;
+  shopId: string;
+  orderId: string;
+  orderBillNumber: string;
+  customerName: string | null;
+  customerPhone: string | null;
+  status: string;
+  reason: string;
+  requestedRefundAmount: number;
+  items: { productName: string; quantity: number }[];
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type OrderEvent =
   | { type: "order.created"; order: OrderEventOrder }
   | { type: "order.updated"; order: OrderEventOrder }
   | { type: "session.created"; session: TableSessionEventPayload }
   | { type: "session.updated"; session: TableSessionEventPayload }
-  | { type: "notification.created"; notification: NotificationEventPayload };
+  | { type: "notification.created"; notification: NotificationEventPayload }
+  | { type: "return.created"; return: ReturnEventPayload }
+  | { type: "return.updated"; return: ReturnEventPayload };
+
+type RawReturnForEvent = {
+  id: string;
+  shopId: string;
+  orderId: string;
+  status: string;
+  reason: string;
+  requestedRefundAmount: unknown;
+  createdAt: unknown;
+  updatedAt: unknown;
+  order: { billNumber: string; customerName: string | null; customerPhone: string | null };
+  items: { productName: string; quantity: number }[];
+};
+
+export function toReturnEvent(returnRequest: RawReturnForEvent): ReturnEventPayload {
+  return {
+    id: returnRequest.id,
+    shopId: returnRequest.shopId,
+    orderId: returnRequest.orderId,
+    orderBillNumber: returnRequest.order.billNumber,
+    customerName: returnRequest.order.customerName,
+    customerPhone: returnRequest.order.customerPhone,
+    status: returnRequest.status,
+    reason: returnRequest.reason,
+    requestedRefundAmount: Number(returnRequest.requestedRefundAmount),
+    items: returnRequest.items.map((i) => ({ productName: i.productName, quantity: i.quantity })),
+    createdAt: (returnRequest.createdAt as Date).toISOString(),
+    updatedAt: (returnRequest.updatedAt as Date).toISOString(),
+  };
+}
 
 type RawSessionForEvent = {
   id: string;
@@ -239,9 +307,11 @@ type RawOrderForEvent = {
     price: unknown;
     quantity: number;
     lineTotal: unknown;
+    returnedQuantity?: number;
   }[];
   statusEvents?: { status: string; changedAt: unknown; changedBy: string | null }[];
   review?: { id: string; rating: number; reviewText: string | null } | null;
+  returnRequests?: { status: string; requestedRefundAmount: unknown; items: { quantity: number }[] }[];
 };
 
 // Deliberately takes a concrete (non-generic) shape and builds the result
@@ -284,6 +354,7 @@ export function toOrderEvent(order: RawOrderForEvent): OrderEventOrder {
       price: Number(item.price),
       quantity: item.quantity,
       lineTotal: Number(item.lineTotal),
+      returnedQuantity: item.returnedQuantity ?? 0,
     })),
     // changedBy is internal (admin/staff id, or "customer") — never sent to a customer.
     statusEvents: order.statusEvents?.map((e) => ({
@@ -296,6 +367,22 @@ export function toOrderEvent(order: RawOrderForEvent): OrderEventOrder {
         : order.review
           ? { id: order.review.id, rating: order.review.rating, reviewText: order.review.reviewText }
           : null,
+    returnBadge:
+      order.returnRequests === undefined
+        ? undefined
+        : computeOrderReturnBadge(
+            order.items.map((i) => ({ quantity: i.quantity })),
+            order.returnRequests.map((r) => ({ status: r.status as ReturnStatus, items: r.items }))
+          ),
+    totalRefunded:
+      order.returnRequests === undefined
+        ? undefined
+        : computeOrderTotalRefunded(
+            order.returnRequests.map((r) => ({
+              status: r.status as ReturnStatus,
+              requestedRefundAmount: Number(r.requestedRefundAmount),
+            }))
+          ),
   };
 }
 

@@ -9,12 +9,16 @@ export function PaymentDetailsCard({
   paidAmount,
   amountDue,
   currency,
+  totalRefunded,
 }: {
   paymentStatus: PaymentStatus;
   paymentMethod: string | null;
   paidAmount: number | null;
   amountDue: number;
   currency: string;
+  // Sum of REFUNDED returns for this order — see computeOrderTotalRefunded.
+  // Never derived from/written to paidAmount itself, just shown alongside it.
+  totalRefunded?: number;
 }) {
   return (
     <div className="overflow-hidden rounded-xl border bg-card">
@@ -44,6 +48,22 @@ export function PaymentDetailsCard({
             <div className="flex justify-between text-sm text-muted-foreground">
               <span>{paymentStatus === "PARTIALLY_PAID" ? "Remaining" : "Amount Due"}</span>
               <span className="font-semibold text-amber-600 dark:text-amber-400">{formatCurrency(amountDue, currency)}</span>
+            </div>
+          </div>
+        )}
+        {!!totalRefunded && totalRefunded > 0 && (
+          <div className="mt-1.5 space-y-1 border-t pt-1.5">
+            <div className="flex justify-between text-sm text-muted-foreground">
+              <span>Paid</span>
+              <span className="font-medium text-foreground">{formatCurrency(paidAmount ?? 0, currency)}</span>
+            </div>
+            <div className="flex justify-between text-sm text-muted-foreground">
+              <span>Refund</span>
+              <span className="font-medium text-foreground">{formatCurrency(totalRefunded, currency)}</span>
+            </div>
+            <div className="flex justify-between text-sm font-semibold">
+              <span>Net Paid</span>
+              <span>{formatCurrency((paidAmount ?? 0) - totalRefunded, currency)}</span>
             </div>
           </div>
         )}

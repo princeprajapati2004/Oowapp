@@ -48,6 +48,16 @@ export class PaymentSettlementError extends Error {
   }
 }
 
+// Return/refund eligibility & concurrency violations (not enough returnable
+// quantity left, refund would exceed paid amount, order not eligible, etc.)
+// — its own class so these are never masked as a generic 400.
+export class ReturnError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ReturnError";
+  }
+}
+
 export function handleApiError(error: unknown) {
   if (error instanceof UnauthorizedError) {
     return NextResponse.json({ error: error.message }, { status: 401 });
@@ -71,6 +81,9 @@ export function handleApiError(error: unknown) {
     return NextResponse.json({ error: error.message }, { status: 400 });
   }
   if (error instanceof PaymentSettlementError) {
+    return NextResponse.json({ error: error.message }, { status: 400 });
+  }
+  if (error instanceof ReturnError) {
     return NextResponse.json({ error: error.message }, { status: 400 });
   }
   if (error instanceof OtpNotFoundError || error instanceof OtpExpiredError || error instanceof OtpProviderError) {

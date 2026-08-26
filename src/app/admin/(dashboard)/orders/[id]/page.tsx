@@ -25,6 +25,7 @@ export default async function OrderDetailRoute({
       items: true,
       statusEvents: { orderBy: { changedAt: "asc" } },
       paymentRecords: { orderBy: { createdAt: "asc" } },
+      returnRequests: { select: { status: true, requestedRefundAmount: true, items: { select: { quantity: true } } } },
     },
   });
   if (!order) notFound();

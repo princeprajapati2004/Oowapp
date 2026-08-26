@@ -31,6 +31,15 @@ const STATUS_COLORS: Record<string, string> = {
   CANCELLED: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400",
 };
 
+const RETURN_BADGE_LABELS: Record<"PARTIAL" | "FULL", string> = {
+  PARTIAL: "Partially Returned",
+  FULL: "Fully Returned",
+};
+const RETURN_BADGE_COLORS: Record<"PARTIAL" | "FULL", string> = {
+  PARTIAL: "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400",
+  FULL: "bg-slate-100 text-slate-700 dark:bg-slate-900/30 dark:text-slate-400",
+};
+
 // The four buckets asked for — Confirmed also covers every in-progress state
 // (Preparing/Ready/Out for delivery) so an order is never hidden, just
 // grouped with "confirmed" until it's actually delivered/completed.
@@ -203,6 +212,11 @@ export function OrderHistory({
                     >
                       {STATUS_LABELS[order.status] ?? order.status}
                     </span>
+                    {order.returnBadge && (
+                      <span className={cn("block rounded-full px-2 py-0.5 text-[11px] font-medium mb-1", RETURN_BADGE_COLORS[order.returnBadge])}>
+                        {RETURN_BADGE_LABELS[order.returnBadge]}
+                      </span>
+                    )}
                     <p className="font-semibold text-sm">{formatCurrency(total, currency)}</p>
                     {/* Only meaningful once logged in — a guest order has no
                         customerId, so it can never have a Review tied to it. */}

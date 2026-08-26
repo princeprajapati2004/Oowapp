@@ -13,6 +13,7 @@ import {
   type OrderStatus,
   type PaymentStatus,
 } from "@/lib/order-status";
+import { ORDER_RETURN_BADGE_LABELS, ORDER_RETURN_BADGE_CLASS } from "@/lib/return-status";
 import type { AdminOrderEventOrder } from "@/lib/server/order-events";
 
 // Compact summary only — full item list, billing breakdown, payment
@@ -69,6 +70,11 @@ export function OrderCard({
           <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium ${STATUS_BADGE_CLASS[status]}`}>
             {STATUS_LABELS[status]}
           </span>
+          {order.returnBadge && (
+            <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium ${ORDER_RETURN_BADGE_CLASS[order.returnBadge]}`}>
+              {ORDER_RETURN_BADGE_LABELS[order.returnBadge]}
+            </span>
+          )}
         </div>
       </div>
     </Link>

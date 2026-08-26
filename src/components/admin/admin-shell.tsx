@@ -12,6 +12,8 @@ import {
   Percent,
   QrCode,
   ClipboardList,
+  RotateCcw,
+  PackageX,
   Menu,
   LogOut,
   ExternalLink,
@@ -70,6 +72,8 @@ export type ShellCopy = {
 function buildNavEntries(foodBusiness: boolean, copy: ShellCopy): NavEntry[] {
   const operationsItems: NavItem[] = [
     { href: "/admin/orders", label: "Orders", icon: ClipboardList },
+    { href: "/admin/returns", label: "Returns & Refunds", icon: RotateCcw },
+    { href: "/admin/loss-damage", label: "Loss & Damage", icon: PackageX },
   ];
   if (foodBusiness) {
     operationsItems.push({ href: "/admin/tables", label: "Tables", icon: Table2 });

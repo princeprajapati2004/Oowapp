@@ -22,6 +22,8 @@ export async function GET(
   return createOrderEventStream(
     request,
     order.shopId,
-    (event) => (event.type === "order.created" || event.type === "order.updated") && event.order.id === id
+    (event) =>
+      ((event.type === "order.created" || event.type === "order.updated") && event.order.id === id) ||
+      ((event.type === "return.created" || event.type === "return.updated") && event.return.orderId === id)
   );
 }

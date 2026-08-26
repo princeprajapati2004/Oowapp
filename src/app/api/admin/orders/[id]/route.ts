@@ -146,6 +146,7 @@ export async function GET(
         items: true,
         statusEvents: { orderBy: { changedAt: "asc" } },
         paymentRecords: { orderBy: { createdAt: "asc" } },
+        returnRequests: { select: { status: true, requestedRefundAmount: true, items: { select: { quantity: true } } } },
       },
     });
     if (!order) throw new NotFoundError("Order not found");
@@ -458,6 +459,24 @@ async function handleEditItems(
     // at all. Enforced here, not just hidden in the UI.
     if (orderType && (existing.status === "OUT_FOR_DELIVERY" || existing.status === "DELIVERED")) {
       throw new ConflictError("Order type can't be changed once the order is out for delivery.");
+    }
+
+    // A line with any return history must stay immutable — its frozen
+    // price/quantity is what a ReturnItem snapshot and refund figure are
+    // computed against, and ReturnItem.orderItemId uses onDelete: Restrict,
+    // so an unguarded delete here would otherwise surface as a raw Prisma
+    // FK-constraint error instead of a clean message.
+    if (updates.length > 0) {
+      const targetedIds = updates.map((u) => u.id);
+      const itemsWithReturns = await db.orderItem.findMany({
+        where: { id: { in: targetedIds }, orderId, returnedQuantity: { gt: 0 } },
+        select: { id: true, name: true },
+      });
+      if (itemsWithReturns.length > 0) {
+        throw new ConflictError(
+          `${itemsWithReturns.map((i) => i.name).join(", ")} has return history and can't be edited.`
+        );
+      }
     }
 
     const taxes = await db.tax.findMany({ where: { shopId, isEnabled: true } });

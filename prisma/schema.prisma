@@ -146,6 +146,81 @@ enum PaymentStatus {
   REFUNDED
 }
 
+// Lifecycle of an itemized ReturnRequest — deliberately separate from
+// OrderStatus and PaymentStatus (see ReturnRequest's doc comment). Never
+// written back onto Order.paymentStatus, even at REFUNDED.
+enum ReturnStatus {
+  RETURN_REQUESTED
+  RETURN_APPROVED
+  RETURN_REJECTED
+  ITEM_RETURNED
+  REFUND_PENDING
+  REFUND_PROCESSING
+  REFUNDED
+  REFUND_FAILED
+  CANCELLED
+}
+
+enum ReturnReason {
+  WRONG_ITEM
+  MISSING_ITEM
+  DAMAGED_ITEM
+  QUALITY_ISSUE
+  CHANGED_MIND
+  DUPLICATE_ORDER
+  OTHER
+}
+
+// There is no payment gateway integration (see Shop's payment settings) —
+// every refund is a manual record of how the owner actually paid the
+// customer back, mirroring PartyPaymentMethod.
+enum RefundMethod {
+  ORIGINAL_PAYMENT_METHOD
+  UPI
+  CASH
+  BANK_TRANSFER
+  // Credits the customer's real reward-wallet balance (WalletTransaction
+  // type REFUND_CREDIT) — only valid when the return's order has a
+  // logged-in customerId; guests have no wallet to credit.
+  WALLET
+  OTHER
+}
+
+// Physical disposition of a returned item, set by the owner when marking it
+// physically returned — drives whether stock is restored to sellable
+// inventory or a linked LossDamageRecord is created instead. See ReturnItem
+// .condition and src/lib/services/return-request.ts's inventory-impact logic.
+enum ReturnItemCondition {
+  RESELLABLE
+  DAMAGED
+  WASTE
+  NOT_RESELLABLE
+}
+
+// Independent of customer returns — tracks stock lost to the business
+// itself (breakage, spoilage, theft, miscount, etc.), see LossDamageRecord.
+enum LossDamageType {
+  LOST
+  DAMAGED
+  BROKEN
+  SPOILED
+  WASTED
+  MISSING
+  OTHER
+}
+
+// Finer-grained sub-classification shown only when LossDamageType === DAMAGED.
+enum DamageType {
+  BROKEN
+  PACKAGING_DAMAGE
+  FOOD_DAMAGE
+  WATER_DAMAGE
+  ELECTRICAL_DAMAGE
+  EXPIRED
+  QUALITY_ISSUE
+  OTHER
+}
+
 enum TableSessionStatus {
   ACTIVE
   AWAITING_PAYMENT
@@ -280,6 +355,16 @@ enum AuditAction {
   TABLE_SESSION_RELEASED
   TABLE_SESSION_TRANSFERRED
   TABLE_SESSION_MERGED
+  // Returns & Refunds
+  RETURN_REQUESTED
+  RETURN_APPROVED
+  RETURN_REJECTED
+  RETURN_ITEM_RETURNED
+  RETURN_REFUND_PROCESSED
+  RETURN_REFUND_FAILED
+  RETURN_CANCELLED
+  // Loss & Damage
+  LOSS_DAMAGE_CREATED
   // Platform
   PLATFORM_SETTINGS_UPDATED
   SUBSCRIPTION_CHANGED
@@ -490,6 +575,8 @@ model Shop {
   kitchenTickets     KitchenTicket[]
   printerProfiles    PrinterProfile[]
   printJobs          PrintJob[]
+  returnRequests     ReturnRequest[]
+  lossDamageRecords  LossDamageRecord[]
 
   @@map("shops")
 }
@@ -528,6 +615,7 @@ model Customer {
   referralsMade        Referral[] @relation("ReferralsMade")
   referralReceived     Referral?  @relation("ReferralReceived")
   reviews              Review[]
+  returnRequests       ReturnRequest[]
 
   @@unique([shopId, phone])
   @@unique([shopId, referralCode])
@@ -703,6 +791,7 @@ model Product {
   orderItems OrderItem[]
   kotItems   KotItem[]
   couponProducts CouponProduct[]
+  lossDamageRecords LossDamageRecord[]
 
   @@index([shopId])
   @@index([categoryId])
@@ -832,6 +921,9 @@ enum WalletTransactionType {
   REFERRAL_CREDIT
   REDEMPTION_DEBIT
   ADMIN_ADJUSTMENT
+  // A ReturnRequest processed with refundMethod: WALLET — see
+  // src/lib/services/return-request.ts's process_refund handling.
+  REFUND_CREDIT
 }
 
 // The reward-wallet ledger — every change to Customer.walletBalance writes one
@@ -1086,6 +1178,7 @@ model Order {
   cashbackRedemption CashbackRedemption?
   paymentAllocations PaymentAllocation[]
   review             Review?
+  returnRequests     ReturnRequest[]
 
   @@unique([shopId, clientRequestId])
   @@unique([shopId, billNumber])
@@ -1247,6 +1340,15 @@ model OrderItem {
   costPrice Decimal? @db.Decimal(10, 2)
   quantity  Int
   lineTotal Decimal  @db.Decimal(10, 2)
+  // Reserved (not just physically-returned) quantity against this line —
+  // incremented transactionally the moment a ReturnRequest is created (before
+  // owner approval), so `quantity - returnedQuantity` is always the
+  // authoritative "still returnable" amount and two concurrent return
+  // requests can never both claim the same units. Rolled back on
+  // RETURN_REJECTED/CANCELLED. See src/lib/services/return-reservation.ts.
+  returnedQuantity Int @default(0)
+
+  returnItems ReturnItem[]
 
   @@index([orderId])
   @@map("order_items")
@@ -1380,6 +1482,225 @@ model OrderStatusEvent {
 
   @@index([orderId])
   @@map("order_status_events")
+}
+
+// ─── Returns & Refunds ─────────────────────────────────────────────────────────
+
+// One itemized return/refund case against an Order. Deliberately independent
+// of Order.status and Order.paymentStatus — a return's lifecycle (requested →
+// approved → item returned → refund pending/processing → refunded, or
+// rejected/cancelled/failed at various points) is tracked entirely on `status`
+// here and never written back onto the parent Order, so "what the customer
+// paid" and "what's been returned/refunded" stay two clearly separate facts
+// (the legacy whole-order Order.paymentStatus = REFUNDED via the "mark_refunded"
+// action in src/app/api/admin/orders/[id]/route.ts is untouched by this model
+// and remains its own separate, CANCELLED-order-only manual override).
+// requestedRefundAmount is computed server-side once at creation (see
+// src/lib/services/refund-calculation.ts) and frozen — never recomputed off
+// mutable Order/OrderItem state later.
+model ReturnRequest {
+  id     String @id @default(cuid())
+  shopId String
+  shop   Shop   @relation(fields: [shopId], references: [id], onDelete: Cascade)
+
+  orderId String
+  order   Order  @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  // Null when owner/staff-initiated on behalf of a guest order.
+  customerId String?
+  customer   Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
+
+  status ReturnStatus @default(RETURN_REQUESTED)
+
+  reason          ReturnReason
+  // Required (Zod-enforced at the API layer) when reason === OTHER.
+  reasonOtherText String?
+  notes           String?
+
+  // "admin" | "staff" | "customer" — same loose actor-id convention as
+  // OrderStatusEvent.changedBy / PaymentRecord.recordedBy, no FK.
+  initiatedByType String
+  initiatedById   String?
+
+  requestedRefundAmount Decimal @db.Decimal(10, 2)
+
+  approvedById    String?
+  approvedAt      DateTime?
+  rejectedById    String?
+  rejectedAt      DateTime?
+  rejectionReason String?
+
+  itemReturnedById String?
+  itemReturnedAt   DateTime?
+
+  refundMethod        RefundMethod?
+  refundReference      String?
+  refundProcessedById String?
+  refundProcessedAt   DateTime?
+  refundFailedReason   String?
+  refundFailedAt       DateTime?
+  // Set only when refundMethod === WALLET — the WalletTransaction (type
+  // REFUND_CREDIT) that actually credited the customer. Not enforced via
+  // WalletTransaction's own @@unique([orderId, type]) constraint, since a
+  // single order can have multiple independent ReturnRequests each
+  // wallet-refunded; this direct link plus the CAS-guarded REFUND_PENDING ->
+  // REFUNDED transition is what prevents a double-credit instead.
+  walletTransactionId String?
+
+  cancelledById String?
+  cancelledAt   DateTime?
+  cancelReason  String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  items          ReturnItem[]
+  statusEvents   ReturnStatusEvent[]
+  evidencePhotos ReturnEvidencePhoto[]
+
+  @@index([shopId])
+  @@index([shopId, status])
+  @@index([orderId])
+  @@index([customerId])
+  @@map("return_requests")
+}
+
+// One returned line within a ReturnRequest — quantity/unitPrice/discount
+// allocation are frozen snapshots at request time (the parent OrderItem line
+// becomes immutable to edits once it has any returnItems — see the
+// edit_items guard in src/app/api/admin/orders/[id]/route.ts), so a later
+// price/discount change on the order can never retroactively alter a
+// historical refund figure.
+model ReturnItem {
+  id       String        @id @default(cuid())
+  returnId String
+  returnRequest ReturnRequest @relation(fields: [returnId], references: [id], onDelete: Cascade)
+
+  orderItemId String
+  orderItem   OrderItem @relation(fields: [orderItemId], references: [id], onDelete: Restrict)
+
+  productName              String
+  quantity                 Int
+  unitPrice                Decimal @db.Decimal(10, 2)
+  allocatedDiscountPerUnit Decimal @db.Decimal(10, 2) @default(0)
+  refundableAmount         Decimal @db.Decimal(10, 2)
+
+  // Physical disposition, set once by the owner in the same transaction as
+  // the RETURN_APPROVED -> REFUND_PENDING transition ("Mark Item Returned")
+  // — null beforehand. RESELLABLE restocks Product.stock; the other three
+  // values create a linked LossDamageRecord instead (see lossDamageRecord
+  // below) and never restock. Set exactly once — presence of a non-null
+  // value IS the guard against reprocessing inventory impact twice.
+  condition ReturnItemCondition?
+
+  lossDamageRecord LossDamageRecord?
+
+  @@index([returnId])
+  @@index([orderItemId])
+  @@map("return_items")
+}
+
+// Append-only status-change log for a ReturnRequest — mirrors
+// OrderStatusEvent's shape/purpose exactly, the finer-grained audit trail
+// underneath the coarser AuditLog rows written for owner-menu actions.
+model ReturnStatusEvent {
+  id       String   @id @default(cuid())
+  returnId String
+  returnRequest ReturnRequest @relation(fields: [returnId], references: [id], onDelete: Cascade)
+
+  status    ReturnStatus
+  changedAt DateTime     @default(now())
+  // adminId, staffId, customerId, or null (system).
+  changedBy String?
+  note      String?
+
+  @@index([returnId])
+  @@map("return_status_events")
+}
+
+// Customer- or owner-submitted evidence photos (e.g. a damaged/wrong item) —
+// reuses the same Cloudinary upload pipeline as everything else in the app
+// (see src/app/api/upload/route.ts), just a different destination folder.
+model ReturnEvidencePhoto {
+  id       String   @id @default(cuid())
+  returnId String
+  returnRequest ReturnRequest @relation(fields: [returnId], references: [id], onDelete: Cascade)
+
+  url            String
+  // "admin" | "staff" | "customer"
+  uploadedByType String
+  uploadedById   String?
+  createdAt      DateTime @default(now())
+
+  @@index([returnId])
+  @@map("return_evidence_photos")
+}
+
+// Business-side stock loss — independent of customer returns (breakage,
+// spoilage, theft, stocktake miscount, etc.). Two ways a row gets created:
+// (1) directly by the owner via "+ Add Loss / Damage", or (2) automatically
+// when a ReturnItem is marked with a non-RESELLABLE condition (returnItemId
+// set in that case — see ReturnItem.condition). Deliberately its own model
+// rather than reusing Expense: Expense is a flat business-expense line with
+// no product/quantity/inventory shape, and this needs both. Kept fully
+// separate from Expense (no auto-mirrored expense row) so the owner's
+// existing expense totals never change shape without their own action —
+// this record's own totals (see the search/summary service) are the source
+// of truth for loss reporting instead.
+model LossDamageRecord {
+  id     String @id @default(cuid())
+  shopId String
+  shop   Shop   @relation(fields: [shopId], references: [id], onDelete: Cascade)
+
+  productId   String
+  product     Product @relation(fields: [productId], references: [id], onDelete: Restrict)
+  productName String // frozen at creation, same convention as ReturnItem.productName
+
+  quantity Int
+  type     LossDamageType
+  // Only meaningful when type === DAMAGED — a finer sub-classification.
+  damageType DamageType?
+  notes      String?
+  date       DateTime       @default(now())
+
+  // Frozen cost-basis snapshot — never recomputed from a later
+  // Product.costPrice change (same convention as OrderItem.costPrice /
+  // profit.ts). Both null together when the product had no costPrice set at
+  // creation time — never fabricated, matches computeUnitProfit's
+  // null-hides-rather-than-estimates rule.
+  unitCost       Decimal? @db.Decimal(10, 2)
+  totalLossValue Decimal? @db.Decimal(10, 2)
+
+  // Stock snapshot at the moment of this record — null on both when the
+  // product doesn't track stock (Product.stock is null = untracked), so
+  // there's nothing to adjust or snapshot.
+  inventoryBefore Int?
+  inventoryAfter  Int?
+
+  evidencePhotoUrls String[] @default([])
+
+  // Set only when this record was auto-created from a returned item's
+  // non-RESELLABLE condition — @unique so a given ReturnItem can only ever
+  // produce one LossDamageRecord (the same guard, from the other side, as
+  // ReturnItem.condition being set exactly once).
+  returnItemId String?     @unique
+  returnItem   ReturnItem? @relation(fields: [returnItemId], references: [id], onDelete: SetNull)
+
+  // Client-generated idempotency key (same pattern as Order.clientRequestId)
+  // — a double-submitted "+ Add Loss / Damage" form is a no-op retry, not a
+  // second stock deduction.
+  clientRequestId String?
+
+  createdBy String?
+  createdAt DateTime @default(now())
+  updatedBy String?
+  updatedAt DateTime @updatedAt
+
+  @@unique([shopId, clientRequestId])
+  @@index([shopId])
+  @@index([shopId, date])
+  @@index([productId])
+  @@map("loss_damage_records")
 }
 
 // ─── SaaS Platform Models ─────────────────────────────────────────────────────
