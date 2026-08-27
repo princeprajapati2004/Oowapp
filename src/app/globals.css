@@ -126,6 +126,45 @@
   --sidebar-ring: oklch(0.696 0.17 162.48);
 }
 
+/*
+ * The app is dark-theme-only (html carries a hardcoded `.dark` class), but
+ * printed reports must be readable on paper. Chrome's print dialog strips
+ * background-colors by default ("Background graphics" unchecked), reverting
+ * the page to a white background — but it always prints foreground `color`,
+ * so the dark theme's near-white text would print as near-invisible
+ * white-on-white without this override. `:root` and `.dark` share the same
+ * specificity (0,1,0) and both match the <html> element when dark is
+ * active, so placing this block after the `.dark` block below wins on
+ * source order and forces the light palette whenever printing, regardless
+ * of the active theme class.
+ */
+@media print {
+  :root {
+    --background: oklch(1 0 0);
+    --foreground: oklch(0.145 0 0);
+    --card: oklch(1 0 0);
+    --card-foreground: oklch(0.145 0 0);
+    --popover: oklch(1 0 0);
+    --popover-foreground: oklch(0.145 0 0);
+    --primary: oklch(0.596 0.145 163.23);
+    --primary-foreground: oklch(0.985 0 0);
+    --secondary: oklch(0.97 0 0);
+    --secondary-foreground: oklch(0.205 0 0);
+    --muted: oklch(0.97 0 0);
+    --muted-foreground: oklch(0.556 0 0);
+    --accent: oklch(0.97 0 0);
+    --accent-foreground: oklch(0.205 0 0);
+    --destructive: oklch(0.577 0.245 27.325);
+    --border: oklch(0.922 0 0);
+    --input: oklch(0.922 0 0);
+    color-scheme: light;
+  }
+  body {
+    background: #fff !important;
+    color: #000 !important;
+  }
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;
