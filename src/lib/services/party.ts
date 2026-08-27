@@ -13,23 +13,23 @@ type Tx = Prisma.TransactionClient;
 // the moment ANY payment (even a partial one) is recorded on it.
 const OUTSTANDING_STATUSES = new Set(["PENDING", "PARTIALLY_PAID"]);
 
-function orderAmount(order: { grandTotal: unknown; discountedTotal: unknown }) {
+export function orderAmount(order: { grandTotal: unknown; discountedTotal: unknown }) {
   return Number(order.discountedTotal ?? order.grandTotal);
 }
 
-function orderOutstanding(order: { grandTotal: unknown; discountedTotal: unknown; paidAmount: unknown }) {
+export function orderOutstanding(order: { grandTotal: unknown; discountedTotal: unknown; paidAmount: unknown }) {
   return Math.max(0, orderAmount(order) - Number(order.paidAmount ?? 0));
 }
 
-function isOutstandingOrder(order: { status: string; paymentStatus: string | null }) {
+export function isOutstandingOrder(order: { status: string; paymentStatus: string | null }) {
   return order.status !== "CANCELLED" && OUTSTANDING_STATUSES.has(order.paymentStatus ?? "PENDING");
 }
 
-type PaymentWithAllocations = { direction: string; amount: unknown; allocations: unknown[] };
+export type PaymentWithAllocations = { direction: string; amount: unknown; allocations: unknown[] };
 
 // Sums every RECEIVED/PAID payment regardless of whether it settled specific
 // orders — for "how much has this party paid us in total" display figures.
-function sumPayments(payments: PaymentWithAllocations[], direction: "RECEIVED" | "PAID") {
+export function sumPayments(payments: PaymentWithAllocations[], direction: "RECEIVED" | "PAID") {
   return payments.filter((p) => p.direction === direction).reduce((s, p) => s + Number(p.amount), 0);
 }
 
@@ -37,12 +37,12 @@ function sumPayments(payments: PaymentWithAllocations[], direction: "RECEIVED" |
 // outstanding-balance formula, which must not double-subtract a settlement
 // payment whose effect is already reflected in the (paidAmount-netted)
 // unpaidOrderTotal above.
-function paymentsReceivedUnallocated(payments: PaymentWithAllocations[]) {
+export function paymentsReceivedUnallocated(payments: PaymentWithAllocations[]) {
   return payments
     .filter((p) => p.direction === "RECEIVED" && p.allocations.length === 0)
     .reduce((s, p) => s + Number(p.amount), 0);
 }
-function paymentsPaidUnallocated(payments: PaymentWithAllocations[]) {
+export function paymentsPaidUnallocated(payments: PaymentWithAllocations[]) {
   return payments
     .filter((p) => p.direction === "PAID" && p.allocations.length === 0)
     .reduce((s, p) => s + Number(p.amount), 0);
@@ -80,7 +80,7 @@ async function assertOwnedParty(shopId: string, id: string) {
  * This is intentionally a mirror image between the two party types, not an
  * inconsistency — "outstanding" means a different side of the ledger for each.
  */
-function computeOutstanding(
+export function computeOutstanding(
   party: { type: string; openingBalance: unknown },
   unpaidOrderTotal: number,
   received: number,

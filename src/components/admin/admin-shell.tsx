@@ -31,6 +31,8 @@ import {
   Share2,
   ChevronDown,
   Star,
+  BarChart3,
+  ShoppingCart,
   type LucideIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -81,6 +83,7 @@ function buildNavEntries(foodBusiness: boolean, copy: ShellCopy): NavEntry[] {
 
   return [
     { href: "/admin", label: "Dashboard", icon: LayoutDashboard },
+    { href: "/admin/reports", label: "Reports", icon: BarChart3 },
     {
       groupLabel: "Operations",
       icon: ClipboardList,
@@ -100,6 +103,7 @@ function buildNavEntries(foodBusiness: boolean, copy: ShellCopy): NavEntry[] {
       icon: Receipt,
       items: [
         { href: "/admin/expenses", label: "Expenses", icon: Receipt },
+        { href: "/admin/purchases", label: "Purchases", icon: ShoppingCart },
         { href: "/admin/taxes", label: "Taxes", icon: Percent },
       ],
     },

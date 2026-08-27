@@ -58,6 +58,15 @@ export class ReturnError extends Error {
   }
 }
 
+// Purchase-recording validation (supplier isn't type SUPPLIER, payment
+// exceeds the purchase total, etc.) — own class, same reasoning as ReturnError.
+export class PurchaseError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "PurchaseError";
+  }
+}
+
 export function handleApiError(error: unknown) {
   if (error instanceof UnauthorizedError) {
     return NextResponse.json({ error: error.message }, { status: 401 });
@@ -84,6 +93,9 @@ export function handleApiError(error: unknown) {
     return NextResponse.json({ error: error.message }, { status: 400 });
   }
   if (error instanceof ReturnError) {
+    return NextResponse.json({ error: error.message }, { status: 400 });
+  }
+  if (error instanceof PurchaseError) {
     return NextResponse.json({ error: error.message }, { status: 400 });
   }
   if (error instanceof OtpNotFoundError || error instanceof OtpExpiredError || error instanceof OtpProviderError) {
