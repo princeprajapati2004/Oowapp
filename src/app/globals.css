@@ -163,6 +163,34 @@
     background: #fff !important;
     color: #000 !important;
   }
+
+  /*
+   * Report tables (and any other table built on the shared <Table>
+   * primitive) use `whitespace-nowrap` on every header/cell with no
+   * min-width, so on screen the table simply fills its `overflow-x-auto`
+   * container up to the viewport's width. A printed page is far narrower
+   * than a desktop viewport (~700-750px usable width for A4 vs. 1200px+ on
+   * screen), and wide reports (Sales has 12 columns, Item/Stock have 11)
+   * exceed that width — `overflow-x-auto` would silently scroll-clip the
+   * rightmost columns off the printed page with no visual indication data
+   * is missing. Printing can't scroll, so instead let cells wrap onto
+   * multiple lines and shrink the table to the page width, trading taller
+   * rows for zero data loss.
+   */
+  [data-slot="table-container"] {
+    overflow: visible !important;
+  }
+  [data-slot="table"] {
+    width: 100% !important;
+    table-layout: fixed;
+  }
+  [data-slot="table-head"],
+  [data-slot="table-cell"] {
+    white-space: normal !important;
+    word-break: break-word;
+    font-size: 8px !important;
+    padding: 3px !important;
+  }
 }
 
 @layer base {
