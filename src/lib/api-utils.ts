@@ -67,6 +67,18 @@ export class PurchaseError extends Error {
   }
 }
 
+// Item Master business-rule violations that aren't expressible in the static
+// Zod schema because they depend on this shop's ItemSettings (e.g. HSN code
+// required) or on an async DB lookup (duplicate product name) — own class,
+// same reasoning as PurchaseError, so the real message reaches the client
+// instead of being masked as "Something went wrong".
+export class ProductError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ProductError";
+  }
+}
+
 export function handleApiError(error: unknown) {
   if (error instanceof UnauthorizedError) {
     return NextResponse.json({ error: error.message }, { status: 401 });
@@ -96,6 +108,9 @@ export function handleApiError(error: unknown) {
     return NextResponse.json({ error: error.message }, { status: 400 });
   }
   if (error instanceof PurchaseError) {
+    return NextResponse.json({ error: error.message }, { status: 400 });
+  }
+  if (error instanceof ProductError) {
     return NextResponse.json({ error: error.message }, { status: 400 });
   }
   if (error instanceof OtpNotFoundError || error instanceof OtpExpiredError || error instanceof OtpProviderError) {

@@ -9,6 +9,8 @@ import { nextBillNumber } from "@/lib/services/bill-number";
 import { publishOrderEvent, toOrderEvent } from "@/lib/server/order-events";
 import { sendNewOrderNotification } from "@/lib/services/push";
 import { resolveOrderItems } from "@/lib/services/order-items";
+import { getOrCreateItemSettings } from "@/lib/services/item-settings";
+import { decrementStockForSale } from "@/lib/services/stock";
 import { checkRateLimit } from "@/lib/rate-limit";
 import type { Prisma } from "@/generated/prisma/client";
 
@@ -48,7 +50,10 @@ export async function POST(request: Request) {
     const taxes = shop.taxes.map((t) => ({ ...t, value: Number(t.value) }));
 
     // Price, name, and category always come from the DB, never the client.
-    const resolvedItems = await resolveOrderItems(shop.id, input.items);
+    const [resolvedItems, itemSettings] = await Promise.all([
+      resolveOrderItems(shop.id, input.items),
+      getOrCreateItemSettings(shop.id),
+    ]);
     if (resolvedItems.length === 0) {
       return NextResponse.json({ error: "No valid items in this order." }, { status: 400 });
     }
@@ -72,6 +77,16 @@ export async function POST(request: Request) {
       );
       const billNumber = await nextBillNumber(tx, shop.id);
 
+      // Decrement stock the same way every other order-creation path does —
+      // waiter orders previously skipped this entirely, which meant a
+      // product's stock never moved for dine-in orders taken this way.
+      await decrementStockForSale(
+        tx,
+        shop.id,
+        resolvedItems.map((item) => ({ productId: item.productId, quantity: item.quantity })),
+        { allowNegativeStock: itemSettings.allowNegativeStock }
+      );
+
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const created = await (tx.order as any).create({
         data: {
@@ -93,6 +108,9 @@ export async function POST(request: Request) {
               productId: item.productId,
               name: item.name,
               price: item.price,
+              costPrice: item.costPrice,
+              originalPrice: item.originalPrice,
+              offerDiscount: item.offerDiscount,
               quantity: item.quantity,
               lineTotal: item.price * item.quantity,
             })),

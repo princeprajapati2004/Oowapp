@@ -8,6 +8,10 @@ export const purchaseItemSchema = z.object({
   quantity: z.coerce.number().int().positive("Quantity must be at least 1"),
   purchasePrice: z.coerce.number().nonnegative("Purchase price cannot be negative"),
   taxAmount: z.coerce.number().nonnegative().optional(),
+  // Item Master — batch receiving detail, only meaningful when this shop's
+  // ItemSettings.batchNumberEnabled is on (see PurchaseItem's doc comment).
+  batchNumber: z.string().trim().max(60).optional().or(z.literal("")),
+  expiryDate: z.string().trim().min(1).optional().or(z.literal("")), // ISO date string
 });
 
 export const purchaseSchema = z.object({

@@ -12,6 +12,8 @@ import { CUSTOMER_SESSION_COOKIE } from "@/lib/customer-auth";
 import { readPhoneVerifiedCookie } from "@/lib/phone-verify-auth";
 import { resolveOrCreateSession, computeSessionBill } from "@/lib/services/table-session";
 import { resolveOrderItems } from "@/lib/services/order-items";
+import { getOrCreateItemSettings } from "@/lib/services/item-settings";
+import { decrementStockForSale } from "@/lib/services/stock";
 import { computeCouponForOrder, claimCouponForOrder } from "@/lib/services/coupon";
 import { computeCashbackForOrder, claimCashbackForOrder } from "@/lib/services/cashback-campaign";
 import { processOrderPaidRewards } from "@/lib/services/rewards";
@@ -106,8 +108,13 @@ export async function POST(request: Request) {
     const taxes = shop.taxes.map((t) => ({ ...t, value: Number(t.value) }));
 
     // Price, name, and category always come from the DB, never the client —
-    // only productId/quantity from the request are trusted.
-    const resolvedItems = await resolveOrderItems(shop.id, input.items);
+    // only productId/quantity from the request are trusted. Party-specific/
+    // wholesale pricing and offers (Item Master) are resolved server-side
+    // here too, via a read-only Party lookup by customerPhone.
+    const [resolvedItems, itemSettings] = await Promise.all([
+      resolveOrderItems(shop.id, input.items, input.customerPhone),
+      getOrCreateItemSettings(shop.id),
+    ]);
     if (resolvedItems.length === 0) {
       return NextResponse.json({ error: "No valid items in this order." }, { status: 400 });
     }
@@ -204,14 +211,13 @@ export async function POST(request: Request) {
         walletAmountUsed = Math.min(Math.round(walletAmountRequested * 100) / 100, finalTotal);
       }
 
-      // Decrement stock for products that track it (fire-and-forget errors — order still succeeds)
-      await Promise.all(
-        resolvedItems.map((item) =>
-          tx.product.updateMany({
-            where: { id: item.productId, shopId: shop.id, stock: { gt: 0 } },
-            data: { stock: { decrement: item.quantity } },
-          })
-        )
+      // Decrement stock for products that track it — never below zero unless
+      // this shop explicitly allows negative-stock selling (ItemSettings).
+      await decrementStockForSale(
+        tx,
+        shop.id,
+        resolvedItems.map((item) => ({ productId: item.productId, quantity: item.quantity })),
+        { allowNegativeStock: itemSettings.allowNegativeStock }
       );
 
       // Every order (guest or logged-in) rolls up into the owner's Parties
@@ -274,6 +280,8 @@ export async function POST(request: Request) {
               name: item.name,
               price: item.price,
               costPrice: item.costPrice,
+              originalPrice: item.originalPrice,
+              offerDiscount: item.offerDiscount,
               quantity: item.quantity,
               lineTotal: item.price * item.quantity,
             })),

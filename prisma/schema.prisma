@@ -556,8 +556,15 @@ model Shop {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  // Item Master — per-business optional-field visibility (Owner/Admin →
+  // Settings → Item Settings). One row per shop, created lazily on first
+  // read/write (see item-settings.ts) rather than at shop-creation time, so
+  // existing shops never need a backfill migration.
+  itemSettings ItemSettings?
+
   categories            Category[]
   products              Product[]
+  partyProductPrices    PartyProductPrice[]
   taxes                 Tax[]
   coupons               Coupon[]
   walletTransactions    WalletTransaction[]
@@ -657,10 +664,12 @@ model Party {
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
 
-  payments  PartyPayment[]
-  orders    Order[]
-  expenses  Expense[]
-  purchases Purchase[]
+  payments     PartyPayment[]
+  orders       Order[]
+  expenses     Expense[]
+  purchases    Purchase[]
+  // Party/customer-wise item pricing (Item Master) — see PartyProductPrice.
+  productPrices PartyProductPrice[]
 
   @@unique([shopId, phone])
   // Safe on Postgres with an optional field: NULLs are distinct from each
@@ -794,9 +803,49 @@ model Product {
   // just hides itself rather than fabricating a value (see profit.ts).
   costPrice   Decimal? @db.Decimal(10, 2)
   mrp         Decimal? @db.Decimal(10, 2)
+  // Item Master — B2B/bulk selling price, independent of `price` and `mrp`.
+  // Selected over `price` by pricing.ts's resolveSellingPrice only when the
+  // ordering Party's category is WHOLESALE and this is set — never applied
+  // to customer/QR ordering, which has no Party at cart time.
+  wholesalePrice Decimal? @db.Decimal(10, 2)
   imageUrl    String?
   unit        String?
   barcode     String?
+  // Item Master — GST HSN/SAC code, shown on invoices/GST reports. Free text
+  // (not validated as a real HSN registry lookup) so businesses can enter
+  // whatever their accountant expects, same convention as `unit`.
+  hsnCode        String?
+  // Item Master — owner-defined unique code (e.g. "ITEM-001"), independent of
+  // barcode (which is a scannable identifier, not necessarily human-chosen).
+  // Nullable-unique per shop, same NULLs-distinct convention as barcode.
+  productCode    String?
+  // Item Master — free-text catalog classification (e.g. "Product",
+  // "Service", "Raw Material"). Free text like `unit`/`productType` has no
+  // fixed enum precedent elsewhere in this schema, so this follows suit
+  // rather than inventing a closed enum businesses can't extend themselves.
+  productType    String?
+  // Item Master — single serial number for a non-batch-tracked serialized
+  // item (e.g. one high-value electronics unit). Deliberately a simple
+  // scalar, not a per-unit ledger: no test/flow in this feature requires
+  // tracking many independently-sold serials per product.
+  serialNumber   String?
+  // Item Master — batch identifier for the product's current/opening stock.
+  // Purchase-time batch receiving is tracked per PurchaseItem instead (see
+  // PurchaseItem.batchNumber), since a product can restock under many
+  // different batches over time; this field is just the one shown on the
+  // product form's Inventory section.
+  batchNumber    String?
+  // Item Master — stock quantity recorded at product creation, kept
+  // separately from the live, mutable `stock` below so "opening stock" stays
+  // a fixed historical fact even as `stock` moves with sales/purchases/etc.
+  openingStock   Int?
+  // Item Master — structured promotional discount, computed on top of
+  // `price` at cart/order time (see pricing.ts's applyOffer) and NEVER
+  // written back into `price`/`mrp`. Superset of the older free-text
+  // `offerNote` below, which stays as a display-only note for backward
+  // compatibility with existing products.
+  offerType      String? // "PERCENTAGE" | "FLAT" | null
+  offerValue     Decimal? @db.Decimal(10, 2)
   foodType    FoodType @default(NA)
   isCombo     Boolean  @default(false)
   offerNote   String?
@@ -814,15 +863,93 @@ model Product {
   couponProducts    CouponProduct[]
   lossDamageRecords LossDamageRecord[]
   purchaseItems     PurchaseItem[]
+  partyPrices       PartyProductPrice[]
 
   // NULLs are distinct from each other in a unique index (same as Party's
   // gstNumber) — only two products actually sharing the same scanned
   // barcode collide, not the many with none set. Normalized to null (never
   // "") in lib/validation/product.ts.
   @@unique([shopId, barcode])
+  // Same nullable-unique convention as barcode above — see
+  // lib/services/product.ts's assertUniqueProductCode/generateUniqueProductCode.
+  @@unique([shopId, productCode])
   @@index([shopId])
   @@index([categoryId])
+  @@index([hsnCode])
   @@map("products")
+}
+
+// Item Master — per-business Item Settings (Owner/Admin → Settings → Item
+// Settings). Governs which OPTIONAL Product fields are shown/collected in
+// the create/edit UI and elsewhere; the CORE fields (name, price, unit,
+// category, hsnCode-when-required) are never gated by this. One row per
+// shop; see getOrCreateItemSettings in item-settings.ts for the lazy-create
+// pattern (existing shops get sane defaults on first read, no backfill
+// migration needed).
+model ItemSettings {
+  id     String @id @default(cuid())
+  shopId String @unique
+  shop   Shop   @relation(fields: [shopId], references: [id], onDelete: Cascade)
+
+  // Optional-field visibility toggles — default values chosen to match
+  // *current* always-on product-form behavior for fields that already exist
+  // today (description, mrp, purchasePrice, barcode, stock, productImage),
+  // so enabling Item Settings for an existing shop never hides a field that
+  // was already visible. Newly-introduced fields default OFF (opt-in).
+  descriptionEnabled    Boolean @default(true)
+  mrpEnabled            Boolean @default(true)
+  purchasePriceEnabled  Boolean @default(true)
+  wholesalePriceEnabled Boolean @default(false)
+  partyPricingEnabled   Boolean @default(false)
+  serialNumberEnabled   Boolean @default(false)
+  batchNumberEnabled    Boolean @default(false)
+  barcodeEnabled        Boolean @default(true)
+  productTypeEnabled    Boolean @default(false)
+  stockEnabled          Boolean @default(true)
+  productImageEnabled   Boolean @default(true)
+  productCodeEnabled    Boolean @default(false)
+  offerEnabled          Boolean @default(false)
+
+  // Core-but-configurable, per spec section 3 — Category/HSN stay required
+  // by default (matches current always-required category behavior) but the
+  // owner can loosen them for business types that don't need per-item HSN.
+  categoryRequired Boolean @default(true)
+  hsnEnabled       Boolean @default(false)
+  hsnRequired      Boolean @default(false)
+
+  // Stock behavior (section 11) — lives here rather than as a generic Shop
+  // column since it's specifically an Item/Stock concern, and this is the
+  // page the owner configures stock behavior from.
+  allowNegativeStock Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("item_settings")
+}
+
+// Item Master — Party/customer-wise item pricing (spec section "PARTY-WISE
+// PRICE"). One row per (party, product) override; absence means the normal
+// pricing.ts priority (wholesale-if-applicable, then base price) applies.
+// Deliberately its own join table rather than a JSON blob on Product, so it
+// can be queried/edited from either the product side (its own UI section) or
+// the party side, and so uniqueness is enforced at the DB level.
+model PartyProductPrice {
+  id        String   @id @default(cuid())
+  shopId    String
+  shop      Shop     @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  partyId   String
+  party     Party    @relation(fields: [partyId], references: [id], onDelete: Cascade)
+  productId String
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  price     Decimal  @db.Decimal(10, 2)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([partyId, productId])
+  @@index([shopId])
+  @@index([productId])
+  @@map("party_product_prices")
 }
 
 model Tax {
@@ -1360,6 +1487,14 @@ model OrderItem {
   // whenever the product had no cost price set at the time, or the item
   // wasn't tied to a catalog product at all (manual admin-order line).
   costPrice        Decimal? @db.Decimal(10, 2)
+  // Item Master offer snapshot — `price` above already IS the actual net
+  // unit price charged (unchanged contract for every existing reader of
+  // OrderItem.price/lineTotal); these two are purely additive, frozen at
+  // order-creation time, so invoices/order-details can show "Original ₹500,
+  // Offer -₹50" without recomputing from a Product's (possibly since-changed)
+  // offer settings. Both null when no product-level offer applied.
+  originalPrice    Decimal? @db.Decimal(10, 2)
+  offerDiscount    Decimal? @db.Decimal(10, 2)
   quantity         Int
   lineTotal        Decimal  @db.Decimal(10, 2)
   // Reserved (not just physically-returned) quantity against this line —
@@ -1983,6 +2118,14 @@ model PurchaseItem {
   purchasePrice Decimal  @db.Decimal(10, 2)
   taxAmount     Decimal? @db.Decimal(10, 2)
   lineTotal     Decimal  @db.Decimal(10, 2)
+
+  // Item Master — batch receiving detail for this line, only meaningful when
+  // the shop's ItemSettings.batchNumberEnabled is on. A product can be
+  // restocked under many different batches over time, so this lives per
+  // PurchaseItem rather than as a single Product-level field (which only
+  // tracks the current/opening batch — see Product.batchNumber).
+  batchNumber String?
+  expiryDate  DateTime?
 
   @@index([purchaseId])
   @@index([productId])

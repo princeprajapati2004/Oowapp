@@ -1,37 +1,49 @@
 /**
  * Prisma's Decimal fields are class instances that React Server Components
  * cannot pass as props to Client Components. Convert to plain numbers first.
+ *
+ * offerValue is coerced here (not just in the owner-only variant below)
+ * because it's intentionally customer-facing — the discounted price is the
+ * entire point of the Item Master offer feature (see Product model's doc
+ * comment) — so it must survive the RSC boundary on the public menu too.
  */
-export function serializeProduct<T extends { price: unknown }>(product: T) {
-  return { ...product, price: Number(product.price) };
+export function serializeProduct<T extends { price: unknown; offerValue: unknown }>(product: T) {
+  const { price, offerValue, ...rest } = product;
+  return {
+    ...rest,
+    price: Number(price),
+    offerValue: offerValue == null ? null : Number(offerValue),
+  };
 }
 
-export function serializeProducts<T extends { price: unknown }>(products: T[]) {
+export function serializeProducts<T extends { price: unknown; offerValue: unknown }>(products: T[]) {
   return products.map(serializeProduct);
 }
 
 /**
- * Owner-only variant that also coerces costPrice/mrp — kept deliberately
- * separate from serializeProduct/serializeProducts above (which the
- * customer-facing menu also uses) so there is no path by which adding a
+ * Owner-only variant that also coerces costPrice/mrp/wholesalePrice — kept
+ * deliberately separate from serializeProduct/serializeProducts above (which
+ * the customer-facing menu also uses) so there is no path by which adding a
  * field here could ever leak into a customer-facing response. Only call
  * this from admin-only pages/APIs.
  */
-export function serializeProductWithCost<T extends { price: unknown; costPrice: unknown; mrp: unknown }>(
-  product: T
-) {
-  const { price, costPrice, mrp, ...rest } = product;
+export function serializeProductWithCost<
+  T extends { price: unknown; costPrice: unknown; mrp: unknown; wholesalePrice?: unknown; offerValue?: unknown },
+>(product: T) {
+  const { price, costPrice, mrp, wholesalePrice, offerValue, ...rest } = product;
   return {
     ...rest,
     price: Number(price),
     costPrice: costPrice == null ? null : Number(costPrice),
     mrp: mrp == null ? null : Number(mrp),
+    wholesalePrice: wholesalePrice == null ? null : Number(wholesalePrice),
+    offerValue: offerValue == null ? null : Number(offerValue),
   };
 }
 
-export function serializeProductsWithCost<T extends { price: unknown; costPrice: unknown; mrp: unknown }>(
-  products: T[]
-) {
+export function serializeProductsWithCost<
+  T extends { price: unknown; costPrice: unknown; mrp: unknown; wholesalePrice?: unknown; offerValue?: unknown },
+>(products: T[]) {
   return products.map(serializeProductWithCost);
 }
 

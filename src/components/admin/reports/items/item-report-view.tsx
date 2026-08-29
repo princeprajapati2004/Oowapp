@@ -35,6 +35,7 @@ const PAGE_SIZE = 25;
 const COLUMNS: ReportColumn<ItemReportRow>[] = [
   { key: "name", header: "Product", type: "text", value: (r) => r.name, width: 1.6 },
   { key: "barcode", header: "SKU/Barcode", type: "text", value: (r) => r.barcode, width: 1, showInCard: false },
+  { key: "hsnCode", header: "HSN Code", type: "text", value: (r) => r.hsnCode, width: 0.8, showInCard: false },
   { key: "categoryName", header: "Category", type: "text", value: (r) => r.categoryName, width: 1 },
   { key: "costPrice", header: "Purchase Price", type: "currency", value: (r) => r.costPrice, width: 1 },
   { key: "price", header: "Selling Price", type: "currency", value: (r) => r.price, width: 1 },

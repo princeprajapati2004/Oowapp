@@ -12,6 +12,7 @@ import { NotFoundError, PurchaseError } from "@/lib/api-utils";
 import { round2 } from "@/lib/services/billing";
 import { recomputePaymentStatus } from "@/lib/services/order-payment-status";
 import { nextPurchaseNumber } from "@/lib/services/purchase-number";
+import { incrementStock, reverseStockIncrement } from "@/lib/services/stock";
 import type { PurchaseInput, RecordPurchasePaymentInput } from "@/lib/validation/purchase";
 
 const PURCHASE_DETAIL_INCLUDE = {
@@ -105,20 +106,19 @@ export async function createPurchase(shopId: string, createdBy: string | null, i
                 purchasePrice: item.purchasePrice,
                 taxAmount: item.taxAmount ?? null,
                 lineTotal: computeLineTotal(item),
+                batchNumber: item.batchNumber || null,
+                expiryDate: item.expiryDate ? new Date(item.expiryDate) : null,
               };
             }),
           },
         },
       });
 
-      for (const item of input.items) {
-        await tx.product.update({
-          where: { id: item.productId },
-          data: {
-            stock: { increment: item.quantity },
-            ...(updateCostPrice ? { costPrice: item.purchasePrice } : {}),
-          },
-        });
+      await incrementStock(tx, input.items.map((item) => ({ productId: item.productId, quantity: item.quantity })));
+      if (updateCostPrice) {
+        for (const item of input.items) {
+          await tx.product.update({ where: { id: item.productId }, data: { costPrice: item.purchasePrice } });
+        }
       }
 
       if (paidAmount && paidAmount > 0) {
@@ -195,12 +195,7 @@ export async function cancelPurchase(shopId: string, purchaseId: string, cancell
   if (purchase.status === "CANCELLED") throw new PurchaseError("Purchase is already cancelled");
 
   await db.$transaction(async (tx) => {
-    for (const item of purchase.items) {
-      const product = await tx.product.findUnique({ where: { id: item.productId }, select: { stock: true } });
-      if (product?.stock != null) {
-        await tx.product.update({ where: { id: item.productId }, data: { stock: Math.max(0, product.stock - item.quantity) } });
-      }
-    }
+    await reverseStockIncrement(tx, purchase.items.map((item) => ({ productId: item.productId, quantity: item.quantity })));
     await tx.purchase.update({
       where: { id: purchase.id },
       data: { status: "CANCELLED", cancelReason: reason || null, cancelledAt: new Date(), cancelledBy },

@@ -1,11 +1,15 @@
 import type { Product, Category, Tax, Shop } from "@/generated/prisma/client";
 import type { OrderMode } from "@/generated/prisma/client";
 
-// costPrice/mrp are owner-only financial data (see Product model's doc
-// comment in schema.prisma) — omitted here too so nothing customer-facing
-// can even type-check a read of them, matching the omit on the DB query in
-// getPublicShopBundle.
-export type CustomerProduct = Omit<Product, "price" | "costPrice" | "mrp"> & { price: number };
+// costPrice/mrp/wholesalePrice are owner-only financial data (see Product
+// model's doc comment in schema.prisma) — omitted here too so nothing
+// customer-facing can even type-check a read of them, matching the omit on
+// the DB query in getPublicShopBundle. offerValue IS customer-facing (see
+// serializeProduct's doc comment) and is coerced to a plain number there.
+export type CustomerProduct = Omit<Product, "price" | "costPrice" | "mrp" | "wholesalePrice" | "offerValue"> & {
+  price: number;
+  offerValue: number | null;
+};
 export type CustomerTax = Omit<Tax, "value"> & { value: number };
 export type CustomerCategory = Category;
 

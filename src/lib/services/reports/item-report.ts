@@ -1,6 +1,5 @@
 import { db } from "@/lib/db";
 import { caseInsensitive } from "@/lib/db-provider";
-import { computeUnitProfit } from "@/lib/services/profit";
 import type { Prisma } from "@/generated/prisma/client";
 
 export interface ItemReportFilters {
@@ -14,6 +13,7 @@ export interface ItemReportRow {
   id: string;
   name: string;
   barcode: string | null;
+  hsnCode: string | null;
   categoryName: string;
   // Labeled "Purchase Price" in the UI per spec even though the DB/field
   // name is costPrice.
@@ -25,9 +25,10 @@ export interface ItemReportRow {
   unitsSold: number;
   unitsPurchased: number;
   salesAmount: number;
-  // Null (never 0) when the product has no cost price set — computeUnitProfit
-  // (src/lib/services/profit.ts) already encodes this "unknown, not zero"
-  // distinction; it's carried through unchanged rather than defaulted away.
+  // Null (never 0) when the product has no cost price set — "unknown, not
+  // zero", same convention as computeUnitProfit (src/lib/services/profit.ts).
+  // Computed from the actual realized sales amount, not Product.price × qty
+  // — see computeItemReportRows below.
   profit: number | null;
 }
 
@@ -63,7 +64,10 @@ function buildProductWhere(shopId: string, filters: ItemReportFilters): Prisma.P
  * excluding CANCELLED orders) and purchased qty from PurchaseItem
  * (purchase-linked, RECORDED purchases only — best-effort since the
  * Purchase system is new and may have little/no data yet). Per-product
- * profit reuses computeUnitProfit from profit.ts unchanged.
+ * profit is salesAmount − (unitsSold × costPrice) — salesAmount already
+ * reflects whatever was actually charged per line (post Item Master
+ * offer/discount), so this is real realized margin, not a list-price
+ * estimate.
  */
 async function computeItemReportRows(shopId: string, filters: ItemReportFilters): Promise<ItemReportRow[]> {
   const where = buildProductWhere(shopId, filters);
@@ -108,12 +112,20 @@ async function computeItemReportRows(shopId: string, filters: ItemReportFilters)
     const unitsPurchased = purchasedMap.get(p.id) ?? 0;
     const costPrice = p.costPrice != null ? Number(p.costPrice) : null;
     const price = Number(p.price);
-    const { profit: unitProfit } = computeUnitProfit(price, costPrice);
+    // Profit uses the actual realized sales amount (soldMap.amount, summed
+    // from OrderItem.lineTotal — already net of any Item Master offer or
+    // order-level discount), never Product.price × units sold. A product
+    // sitting at ₹500 list with a live 10% offer that actually sold at ₹450
+    // must show ₹150 profit against a ₹300 cost, not ₹200 — see spec
+    // section 7 ("profit must be calculated using the actual net selling
+    // amount after discount", never the list/MRP price).
+    const profit = costPrice != null ? Math.round((salesAmount - unitsSold * costPrice) * 100) / 100 : null;
 
     return {
       id: p.id,
       name: p.name,
       barcode: p.barcode,
+      hsnCode: p.hsnCode,
       categoryName: p.category.name,
       costPrice,
       price,
@@ -123,7 +135,7 @@ async function computeItemReportRows(shopId: string, filters: ItemReportFilters)
       unitsSold,
       unitsPurchased,
       salesAmount,
-      profit: unitProfit != null ? Math.round(unitProfit * unitsSold * 100) / 100 : null,
+      profit,
     };
   });
 }

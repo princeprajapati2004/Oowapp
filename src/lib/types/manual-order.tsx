@@ -16,6 +16,11 @@ export interface Product {
   stock?: number | null;
   barcode?: string | null;
   createdAt?: string;
+  // Item Master — structured offer (see pricing.ts's applyOffer). Decimal
+  // fields serialize as strings over this route's raw JSON — coerce with
+  // Number() before use, same convention as `price` elsewhere in this file.
+  offerType?: "PERCENTAGE" | "FLAT" | null;
+  offerValue?: number | string | null;
 }
 
 // Carries a couple of display-only fields (imageUrl, categoryName) snapshotted
@@ -29,6 +34,12 @@ export interface CartItem {
   categoryId: string;
   categoryName: string;
   imageUrl?: string | null;
+  // Item Master offer snapshot — set when addToCart applied a product-level
+  // offer; cleared the moment staff manually edits the price (see
+  // handlePriceInputChange), since a hand-typed price is no longer the
+  // computed offer and showing a stale discount would be misleading.
+  originalPrice?: number | null;
+  offerDiscount?: number | null;
 }
 
 export interface Tax {

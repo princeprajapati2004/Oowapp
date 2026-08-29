@@ -14,6 +14,7 @@ export interface StockReportRow {
   id: string;
   name: string;
   barcode: string | null;
+  hsnCode: string | null;
   categoryName: string;
   // Derived (not stored) estimate — see computeOpeningStock below. Null only
   // when currentStock itself is null (stock not tracked for this product at
@@ -198,6 +199,7 @@ async function computeStockReportRows(shopId: string, filters: StockReportFilter
       id: p.id,
       name: p.name,
       barcode: p.barcode,
+      hsnCode: p.hsnCode,
       categoryName: p.category.name,
       openingStock,
       purchasedInRange,

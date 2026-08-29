@@ -35,6 +35,7 @@ const PAGE_SIZE = 25;
 const COLUMNS: ReportColumn<StockReportRow>[] = [
   { key: "name", header: "Product", type: "text", value: (r) => r.name, width: 1.6 },
   { key: "barcode", header: "SKU/Barcode", type: "text", value: (r) => r.barcode, width: 1, showInCard: false },
+  { key: "hsnCode", header: "HSN Code", type: "text", value: (r) => r.hsnCode, width: 0.8, showInCard: false },
   { key: "openingStock", header: "Opening Stock*", type: "number", value: (r) => r.openingStock, width: 1 },
   { key: "purchasedInRange", header: "Purchased", type: "number", value: (r) => r.purchasedInRange, width: 0.9, showInCard: false },
   { key: "soldInRange", header: "Sold", type: "number", value: (r) => r.soldInRange, width: 0.9 },
