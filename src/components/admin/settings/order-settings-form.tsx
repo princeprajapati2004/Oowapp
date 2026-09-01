@@ -3,11 +3,22 @@
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "sonner";
-import { orderSettingsSchema, type OrderSettingsInput } from "@/lib/validation/shop-settings";
+import { orderSettingsSchema, RETURN_WINDOW_DAY_PRESETS, type OrderSettingsInput } from "@/lib/validation/shop-settings";
 import { api, ApiError } from "@/lib/api-client";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { ToggleRow } from "@/components/shared/toggle-row";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+
+const CUSTOM_SENTINEL = "custom";
 
 export function OrderSettingsForm({
   defaultValues,
@@ -105,6 +116,59 @@ export function OrderSettingsForm({
         checked={values.enableQrOrdering}
         onCheckedChange={(v) => setValue("enableQrOrdering", v)}
       />
+
+      <div className="space-y-3 rounded-lg border p-3">
+        <p className="text-sm font-semibold">Sales Return Policy</p>
+        <ToggleRow
+          label="Enable customer returns"
+          description="Let customers self-service a return from their order details page."
+          checked={values.returnPolicyEnabled}
+          onCheckedChange={(v) => setValue("returnPolicyEnabled", v)}
+        />
+        {values.returnPolicyEnabled && (
+          <div className="space-y-1.5">
+            <Label className="text-xs">Return allowed within</Label>
+            <Select
+              value={
+                RETURN_WINDOW_DAY_PRESETS.includes(values.returnWindowDays as (typeof RETURN_WINDOW_DAY_PRESETS)[number])
+                  ? String(values.returnWindowDays)
+                  : CUSTOM_SENTINEL
+              }
+              onValueChange={(v) => {
+                if (!v) return;
+                if (v !== CUSTOM_SENTINEL) setValue("returnWindowDays", Number(v));
+              }}
+            >
+              <SelectTrigger className="w-full sm:w-56">
+                <SelectValue>
+                  {RETURN_WINDOW_DAY_PRESETS.includes(values.returnWindowDays as (typeof RETURN_WINDOW_DAY_PRESETS)[number])
+                    ? `${values.returnWindowDays} ${values.returnWindowDays === 1 ? "Day" : "Days"}`
+                    : "Custom Days"}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                {RETURN_WINDOW_DAY_PRESETS.map((d) => (
+                  <SelectItem key={d} value={String(d)}>
+                    {d} {d === 1 ? "Day" : "Days"}
+                  </SelectItem>
+                ))}
+                <SelectItem value={CUSTOM_SENTINEL}>Custom Days</SelectItem>
+              </SelectContent>
+            </Select>
+            {!RETURN_WINDOW_DAY_PRESETS.includes(values.returnWindowDays as (typeof RETURN_WINDOW_DAY_PRESETS)[number]) && (
+              <Input
+                type="number"
+                min={1}
+                max={365}
+                value={values.returnWindowDays}
+                onChange={(e) => setValue("returnWindowDays", Number(e.target.value) || 1)}
+                className="w-full sm:w-56"
+              />
+            )}
+            <p className="text-xs text-muted-foreground">After this period, customers cannot request a return.</p>
+          </div>
+        )}
+      </div>
 
       <Button type="submit" disabled={isSubmitting}>
         {isSubmitting ? "Saving…" : "Save order settings"}

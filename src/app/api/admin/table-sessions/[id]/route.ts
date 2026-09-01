@@ -8,6 +8,7 @@ import { createNotification } from "@/lib/services/notification";
 import { publishOrderEvent, toOrderEvent, toTableSessionEvent } from "@/lib/server/order-events";
 import { OPEN_STATUSES, computeSessionBill } from "@/lib/services/table-session";
 import { processOrderPaidRewards } from "@/lib/services/rewards";
+import { buildReturnPolicySnapshot } from "@/lib/services/return-eligibility";
 import { writeAuditLog, extractRequestMeta } from "@/lib/services/audit-log";
 import type { StaffRole } from "@/generated/prisma/client";
 
@@ -401,9 +402,20 @@ async function closeTable(
       include: { items: true },
     });
 
+    // Fetched once for the whole session close (not per order) — every open
+    // order here transitions to COMPLETED together, so they all snapshot
+    // the same return-policy values.
+    const returnPolicyShop = await tx.shop.findUnique({
+      where: { id: actor.shopId },
+      select: { returnPolicyEnabled: true, returnWindowDays: true },
+    });
+
     const isVoid = paymentMethod === "VOID";
     const orders = await Promise.all(
       openOrders.map(async (o) => {
+        const returnPolicySnapshot = returnPolicyShop
+          ? buildReturnPolicySnapshot(returnPolicyShop, o, "COMPLETED")
+          : null;
         const order = await tx.order.update({
           where: { id: o.id },
           data: {
@@ -412,6 +424,7 @@ async function closeTable(
             paymentMethod: isVoid ? null : paymentMethod,
             paymentConfirmedBy: isVoid ? null : actor.actorId,
             paymentConfirmedAt: isVoid ? null : new Date(),
+            ...returnPolicySnapshot,
           },
           include: { items: true },
         });

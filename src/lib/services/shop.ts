@@ -103,6 +103,8 @@ export type ShopSettingsInput = Partial<{
   isPublished: boolean;
   enableOrderBarcodeLabels: boolean;
   enableQrOrdering: boolean;
+  returnPolicyEnabled: boolean;
+  returnWindowDays: number;
   showProductImages: boolean;
   enableTableQr: boolean;
   tableNames: string | null;

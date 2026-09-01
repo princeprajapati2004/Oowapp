@@ -179,6 +179,18 @@ export function PartyStatement({
 
   const { party } = statement;
 
+  // Arrived from the Quick Actions FAB ("Record Payment" → /admin/parties
+  // picker → /admin/parties/[id]?pay=1) — auto-open the existing Log
+  // Payment dialog below, same `?param=1`-then-strip handoff convention as
+  // expenses-manager.tsx / parties-manager.tsx's `new=1`.
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get("pay") !== "1") return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setLogOpen(true);
+    router.replace(`/admin/parties/${party.id}`, { scroll: false });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Oldest first (FIFO default) — same order the backend allocates in.
   const outstandingOrders = useMemo(
     () =>

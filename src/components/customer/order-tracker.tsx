@@ -744,6 +744,8 @@ export function OrderTracker({
             orderId={order.id}
             billNumber={order.billNumber}
             orderStatus={order.status}
+            returnPolicyEnabledAtCompletion={order.returnPolicyEnabledAtCompletion}
+            returnDeadline={order.returnDeadline}
             items={displayItems}
             subtotal={order.subtotal}
             taxTotal={order.taxTotal}

@@ -68,6 +68,7 @@ export async function POST(request: Request) {
       evidencePhotoUrls: parsed.evidencePhotoUrls,
       initiatedByType: "customer",
       initiatedById: session.customerId,
+      enforceReturnWindow: true,
     });
 
     const { ipAddress, userAgent, requestId } = extractRequestMeta(request);

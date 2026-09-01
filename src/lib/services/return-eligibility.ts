@@ -7,6 +7,55 @@ export function isOrderReturnEligible(order: EligibilityOrderFacts): boolean {
   return order.status === "COMPLETED" || order.status === "DELIVERED";
 }
 
+// ─── Sales Return Policy (Settings -> Order Settings) ─────────────────────
+
+const RETURN_ELIGIBLE_STATUSES: OrderStatus[] = ["DELIVERED", "COMPLETED"];
+
+/**
+ * Freezes the shop's current return policy onto an order the first time it
+ * reaches DELIVERED/COMPLETED — called from every code path that can make
+ * that transition (admin PATCH .../orders/[id] "status" action,
+ * table-sessions closeTable). Returns null (nothing to merge into the
+ * update) when: the order already has a snapshot (never overwrite), or
+ * `newStatus` isn't a fulfillment status. Idempotent by construction — a
+ * retried/duplicate transition is a safe no-op.
+ */
+export function buildReturnPolicySnapshot(
+  shop: { returnPolicyEnabled: boolean; returnWindowDays: number },
+  existingOrder: { returnDeadline: Date | null },
+  newStatus: OrderStatus
+): { returnPolicyEnabledAtCompletion: boolean; returnWindowDaysAtCompletion: number; returnDeadline: Date } | null {
+  if (existingOrder.returnDeadline != null) return null;
+  if (!RETURN_ELIGIBLE_STATUSES.includes(newStatus)) return null;
+  return {
+    returnPolicyEnabledAtCompletion: shop.returnPolicyEnabled,
+    returnWindowDaysAtCompletion: shop.returnWindowDays,
+    returnDeadline: new Date(Date.now() + shop.returnWindowDays * 24 * 60 * 60 * 1000),
+  };
+}
+
+type ReturnWindowOrderFacts = EligibilityOrderFacts & {
+  returnPolicyEnabledAtCompletion: boolean | null;
+  returnDeadline: Date | string | null;
+};
+
+/**
+ * Customer self-service eligibility — stricter than isOrderReturnEligible:
+ * also enforces the policy snapshot frozen at completion time. Orders with
+ * no snapshot (returnDeadline null) are either not yet fulfilled — already
+ * excluded by the base status check — or completed before this feature
+ * shipped, which keep the pre-existing unlimited-window behavior rather
+ * than retroactively losing return eligibility. Owner/staff-initiated
+ * returns are NOT subject to this — see createReturnRequest's
+ * `enforceReturnWindow` flag, only set true by the customer route.
+ */
+export function isOrderReturnEligibleForCustomer(order: ReturnWindowOrderFacts): boolean {
+  if (!isOrderReturnEligible(order)) return false;
+  if (order.returnDeadline == null) return true;
+  if (order.returnPolicyEnabledAtCompletion === false) return false;
+  return Date.now() <= new Date(order.returnDeadline).getTime();
+}
+
 type ReturnableItemFacts = { quantity: number; returnedQuantity: number };
 
 /** `quantity - returnedQuantity` is the authoritative "still returnable" amount. */

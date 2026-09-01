@@ -76,6 +76,13 @@ export type OrderEventOrder = {
   // itself; purely a display figure ("Refund" / "Net Paid" next to Payment
   // Details).
   totalRefunded?: number;
+  // Sales Return Policy snapshot, frozen at DELIVERED/COMPLETED — see
+  // Order.returnDeadline's doc comment in schema.prisma. Both null until the
+  // order actually completes, or forever for a legacy pre-feature order
+  // (see isOrderReturnEligibleForCustomer in return-eligibility.ts for how
+  // that's interpreted). Customer-safe: no internal actor ids involved.
+  returnPolicyEnabledAtCompletion: boolean | null;
+  returnDeadline: string | null;
 };
 
 // Superset of OrderEventOrder used ONLY by admin-facing routes — carries
@@ -312,6 +319,8 @@ type RawOrderForEvent = {
   statusEvents?: { status: string; changedAt: unknown; changedBy: string | null }[];
   review?: { id: string; rating: number; reviewText: string | null } | null;
   returnRequests?: { status: string; requestedRefundAmount: unknown; items: { quantity: number }[] }[];
+  returnPolicyEnabledAtCompletion: boolean | null;
+  returnDeadline: unknown;
 };
 
 // Deliberately takes a concrete (non-generic) shape and builds the result
@@ -383,6 +392,8 @@ export function toOrderEvent(order: RawOrderForEvent): OrderEventOrder {
               requestedRefundAmount: Number(r.requestedRefundAmount),
             }))
           ),
+    returnPolicyEnabledAtCompletion: order.returnPolicyEnabledAtCompletion,
+    returnDeadline: order.returnDeadline ? (order.returnDeadline as Date).toISOString() : null,
   };
 }
 

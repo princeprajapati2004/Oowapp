@@ -126,6 +126,8 @@ export default async function SettingsPage() {
             isPublished: shop.isPublished,
             enableOrderBarcodeLabels: (shopAny.enableOrderBarcodeLabels as boolean) ?? false,
             enableQrOrdering: (shopAny.enableQrOrdering as boolean) ?? true,
+            returnPolicyEnabled: (shopAny.returnPolicyEnabled as boolean) ?? true,
+            returnWindowDays: (shopAny.returnWindowDays as number) ?? 3,
           }}
         />
       ),

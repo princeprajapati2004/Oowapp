@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Plus, ShoppingBag, PackagePlus, Wallet, Users, type LucideIcon } from "lucide-react";
+import { Plus, ShoppingBag, PackagePlus, Wallet, Users, HandCoins, type LucideIcon } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -50,6 +50,12 @@ const ACTIONS: QuickAction[] = [
     description: "Add customer, supplier or business party",
     icon: Users,
     href: "/admin/parties?new=1",
+  },
+  {
+    label: "Record Payment",
+    description: "Log a payment received or paid out against a party",
+    icon: HandCoins,
+    href: "/admin/parties?pay=1",
   },
 ];
 

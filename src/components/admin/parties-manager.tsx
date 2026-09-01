@@ -15,6 +15,8 @@ import {
   SlidersHorizontal,
   MoreVertical,
   Eye,
+  HandCoins,
+  X,
 } from "lucide-react";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -142,15 +144,26 @@ export function PartiesManager({
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<PartyRow | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<PartyRow | null>(null);
+  // Payment-picker mode — entered via the Quick Actions FAB ("Record
+  // Payment" → /admin/parties?pay=1). While active, selecting a party below
+  // carries the intent forward to /admin/parties/[id]?pay=1, which
+  // party-statement.tsx reads to auto-open its existing "Log Payment"
+  // dialog — same handoff convention as the `new=1` add-party flow.
+  const [paymentPickerMode, setPaymentPickerMode] = useState(false);
 
   // Launched from the Quick Actions FAB ("Add Party / Customer" →
-  // /admin/parties?new=1).
+  // /admin/parties?new=1, or "Record Payment" → /admin/parties?pay=1).
   useEffect(() => {
-    if (new URLSearchParams(window.location.search).get("new") !== "1") return;
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setEditing(null);
-    setDialogOpen(true);
-    router.replace("/admin/parties", { scroll: false });
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("new") === "1") {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setEditing(null);
+      setDialogOpen(true);
+      router.replace("/admin/parties", { scroll: false });
+    } else if (params.get("pay") === "1") {
+      setPaymentPickerMode(true);
+      router.replace("/admin/parties", { scroll: false });
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -229,6 +242,21 @@ export function PartiesManager({
           <Plus className="size-4" /> Add Party
         </Button>
       </div>
+
+      {paymentPickerMode && (
+        <div className="flex items-center gap-3 rounded-xl border border-primary/30 bg-primary/5 px-4 py-3">
+          <HandCoins className="size-4.5 shrink-0 text-primary" />
+          <p className="flex-1 text-sm font-medium">Select a party to record a payment for</p>
+          <button
+            type="button"
+            onClick={() => setPaymentPickerMode(false)}
+            aria-label="Cancel"
+            className="flex size-7 shrink-0 items-center justify-center rounded-full text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+          >
+            <X className="size-4" />
+          </button>
+        </div>
+      )}
 
       <div className="flex items-center gap-2">
         <div className="relative flex-1">
@@ -313,7 +341,10 @@ export function PartiesManager({
                 key={party.id}
                 className="group flex items-center gap-3 rounded-[20px] border bg-card p-4 shadow-sm transition-all duration-200 hover:shadow-md hover:-translate-y-0.5 active:scale-[0.99]"
               >
-                <Link href={`/admin/parties/${party.id}`} className="flex flex-1 min-w-0 items-center gap-3">
+                <Link
+                  href={paymentPickerMode ? `/admin/parties/${party.id}?pay=1` : `/admin/parties/${party.id}`}
+                  className="flex flex-1 min-w-0 items-center gap-3"
+                >
                   <Avatar size="lg" className="h-12 w-12 shrink-0">
                     <AvatarFallback className={cn("text-base font-semibold", avatarPalette(party.name))}>
                       {initials(party.name)}
@@ -339,7 +370,9 @@ export function PartiesManager({
                     <MoreVertical className="size-4" />
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end">
-                    <DropdownMenuItem render={<Link href={`/admin/parties/${party.id}`} />}>
+                    <DropdownMenuItem
+                      render={<Link href={paymentPickerMode ? `/admin/parties/${party.id}?pay=1` : `/admin/parties/${party.id}`} />}
+                    >
                       <Eye className="size-4" /> View details
                     </DropdownMenuItem>
                     <DropdownMenuItem render={<a href={`tel:${party.phone}`} />}>

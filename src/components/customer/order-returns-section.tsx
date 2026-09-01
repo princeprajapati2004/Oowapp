@@ -4,7 +4,7 @@ import { useState } from "react";
 import { RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { formatCurrency } from "@/lib/utils/currency";
-import { isOrderReturnEligible, computeReturnableQuantity } from "@/lib/services/return-eligibility";
+import { isOrderReturnEligibleForCustomer, computeReturnableQuantity } from "@/lib/services/return-eligibility";
 import {
   RETURN_STATUS_LABELS,
   RETURN_STATUS_BADGE_CLASS,
@@ -18,10 +18,22 @@ import type { OrderEventItem } from "@/lib/server/order-events";
 import type { CustomerReturnDetailPayload } from "@/lib/services/return-request";
 import { ReturnRequestForm } from "./return-request-form";
 
+function formatDeadline(iso: string): string {
+  return new Date(iso).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
+}
+
+/** "for N more days" / "today" — never negative, matches the eligibility check's own >= boundary. */
+function daysRemaining(deadlineIso: string): number {
+  const ms = new Date(deadlineIso).getTime() - Date.now();
+  return Math.max(0, Math.ceil(ms / (24 * 60 * 60 * 1000)));
+}
+
 export function OrderReturnsSection({
   orderId,
   billNumber,
   orderStatus,
+  returnPolicyEnabledAtCompletion,
+  returnDeadline,
   items,
   subtotal,
   taxTotal,
@@ -34,6 +46,8 @@ export function OrderReturnsSection({
   orderId: string;
   billNumber: string;
   orderStatus: string;
+  returnPolicyEnabledAtCompletion: boolean | null;
+  returnDeadline: string | null;
   items: OrderEventItem[];
   subtotal: number;
   taxTotal: number;
@@ -46,9 +60,23 @@ export function OrderReturnsSection({
   const [formOpen, setFormOpen] = useState(false);
 
   const hasEligibleItems = items.some((item) => computeReturnableQuantity(item) > 0);
-  const canRequestReturn = isOrderReturnEligible({ status: orderStatus as OrderStatus }) && hasEligibleItems;
+  const eligible = isOrderReturnEligibleForCustomer({
+    status: orderStatus as OrderStatus,
+    returnPolicyEnabledAtCompletion,
+    returnDeadline,
+  });
+  const canRequestReturn = eligible && hasEligibleItems;
+  // Distinguishes "fulfilled but the return window itself ran out" from
+  // every other reason the button might be hidden (not yet delivered, no
+  // returnable items, returns disabled by the owner) — only this case gets
+  // its own "period ended" message instead of just disappearing silently.
+  const windowExpired =
+    !eligible &&
+    (orderStatus === "DELIVERED" || orderStatus === "COMPLETED") &&
+    returnPolicyEnabledAtCompletion === true &&
+    returnDeadline != null;
 
-  if (returns.length === 0 && !canRequestReturn) return null;
+  if (returns.length === 0 && !canRequestReturn && !windowExpired) return null;
 
   return (
     <div className="rounded-2xl border bg-card overflow-hidden print:hidden">
@@ -60,6 +88,16 @@ export function OrderReturnsSection({
           </Button>
         )}
       </div>
+
+      {canRequestReturn && returnDeadline && (
+        <p className="px-5 pt-3 text-xs text-muted-foreground">
+          Return available for {daysRemaining(returnDeadline)} more day{daysRemaining(returnDeadline) === 1 ? "" : "s"} (until{" "}
+          {formatDeadline(returnDeadline)})
+        </p>
+      )}
+      {windowExpired && returnDeadline && (
+        <p className="px-5 pt-3 text-xs text-muted-foreground">Return period ended on {formatDeadline(returnDeadline)}</p>
+      )}
 
       {returns.length === 0 ? (
         <p className="px-5 py-3 text-sm text-muted-foreground">No returned items</p>

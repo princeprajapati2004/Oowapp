@@ -72,6 +72,10 @@ export const paymentSettingsSchema = z.object({
 });
 export type PaymentSettingsInput = z.infer<typeof paymentSettingsSchema>;
 
+// 1/2/3/5/7/10/15/30 cover the spec's dropdown; anything else typed in via
+// "Custom" still passes as long as it's a sane positive integer.
+export const RETURN_WINDOW_DAY_PRESETS = [1, 2, 3, 5, 7, 10, 15, 30] as const;
+
 export const orderSettingsSchema = z.object({
   requireCustomerName: z.boolean(),
   requirePhone: z.boolean(),
@@ -84,6 +88,8 @@ export const orderSettingsSchema = z.object({
   isPublished: z.boolean(),
   enableOrderBarcodeLabels: z.boolean(),
   enableQrOrdering: z.boolean(),
+  returnPolicyEnabled: z.boolean(),
+  returnWindowDays: z.number().int().min(1, "Must be at least 1 day").max(365, "Must be 365 days or fewer"),
 });
 export type OrderSettingsInput = z.infer<typeof orderSettingsSchema>;
 

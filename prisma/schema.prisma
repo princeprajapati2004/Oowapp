@@ -514,6 +514,17 @@ model Shop {
   requireDeliveryAddress   Boolean @default(false)
   allowNotes               Boolean @default(true)
   saveOrdersToDb           Boolean @default(false)
+  // Sales Return Policy (Settings -> Order Settings) — whether customers can
+  // self-service a return at all, and the window (from order
+  // DELIVERED/COMPLETED) during which they can. The value in effect at the
+  // moment an order actually completes is frozen onto that order (see
+  // Order.returnPolicyEnabledAtCompletion/returnWindowDaysAtCompletion/
+  // returnDeadline below) — changing this later never retroactively shifts
+  // an already-completed order's deadline. Owner/staff-initiated returns
+  // (src/app/api/admin/returns) are never gated by this window — only the
+  // customer self-service path (src/app/api/customer/returns) is.
+  returnPolicyEnabled      Boolean @default(true)
+  returnWindowDays         Int     @default(3)
   // Shows a "Print Barcode" button on each order (one label per line item).
   enableOrderBarcodeLabels Boolean @default(false)
 
@@ -1232,88 +1243,88 @@ model Referral {
 }
 
 model Order {
-  id                   String        @id @default(cuid())
-  shopId               String
-  shop                 Shop          @relation(fields: [shopId], references: [id], onDelete: Cascade)
-  billNumber           String
+  id                              String        @id @default(cuid())
+  shopId                          String
+  shop                            Shop          @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  billNumber                      String
   // Per-shop-per-day sequential display number, set only for admin-created
   // manual orders (see POST /api/admin/orders) — null for QR/WhatsApp orders.
-  tokenNumber          Int?
-  customerName         String?
-  customerPhone        String?
+  tokenNumber                     Int?
+  customerName                    String?
+  customerPhone                   String?
   // Set when the order was placed by a logged-in customer account — orders
   // from guests (the common case) leave this null.
-  customerId           String?
-  customer             Customer?     @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  customerId                      String?
+  customer                        Customer?     @relation(fields: [customerId], references: [id], onDelete: SetNull)
   // The owner-side khatabook contact this order belongs to (see Party) — set
   // at order-creation time by find-or-create on (shopId, customerPhone).
   // Distinct from customerId above: customer is a storefront login account,
   // party is the CRM ledger entry every order (guest or logged-in) rolls up
   // into. Nullable because a party can be deleted (SetNull) and because
   // orders with no phone at all (rare) have nothing to link.
-  partyId              String?
-  party                Party?        @relation(fields: [partyId], references: [id], onDelete: SetNull)
-  tableNumber          String?
-  deliveryAddress      String?
-  notes                String?
-  subtotal             Decimal       @db.Decimal(10, 2)
-  taxTotal             Decimal       @db.Decimal(10, 2)
-  grandTotal           Decimal       @db.Decimal(10, 2)
-  taxBreakdown         Json
-  status               OrderStatus   @default(PENDING)
-  paymentMethod        String?
+  partyId                         String?
+  party                           Party?        @relation(fields: [partyId], references: [id], onDelete: SetNull)
+  tableNumber                     String?
+  deliveryAddress                 String?
+  notes                           String?
+  subtotal                        Decimal       @db.Decimal(10, 2)
+  taxTotal                        Decimal       @db.Decimal(10, 2)
+  grandTotal                      Decimal       @db.Decimal(10, 2)
+  taxBreakdown                    Json
+  status                          OrderStatus   @default(PENDING)
+  paymentMethod                   String?
   // "qr" = customer-scanned, "waiter" = placed by waiter staff
-  source               String        @default("qr")
+  source                          String        @default("qr")
   // Discount (Feature 3) — staff-applied manual discount on an existing
   // order (see "discount"/"remove_discount" actions in
   // src/app/api/admin/orders/[id]/route.ts). A coupon discount (below)
   // dual-writes into these same four columns at order-creation time so
   // every existing screen reading discountedTotal works unchanged.
-  discountType         String?
-  discountValue        Decimal?      @db.Decimal(10, 2)
-  discountReason       String?
-  discountedTotal      Decimal?      @db.Decimal(10, 2)
+  discountType                    String?
+  discountValue                   Decimal?      @db.Decimal(10, 2)
+  discountReason                  String?
+  discountedTotal                 Decimal?      @db.Decimal(10, 2)
   // Coupon discount — dedicated audit columns, set only at order-creation
   // time (never edited after). Kept separate from the generic discount
   // columns above so a coupon-discounted order can be distinguished from a
   // staff-manual-discounted one (see the Coupon model's doc comment).
-  couponId             String?
-  couponCode           String?
-  couponDiscountAmount Decimal?      @db.Decimal(10, 2)
+  couponId                        String?
+  couponCode                      String?
+  couponDiscountAmount            Decimal?      @db.Decimal(10, 2)
   // Wallet redemption at checkout — unlike a coupon this doesn't change what's
   // owed (grandTotal/discountedTotal stay the sticker price); it's folded into
   // paidAmount/paymentStatus below instead, same as any other payment method,
   // so every existing amount-due screen already accounts for it with no changes.
-  walletAmountUsed     Decimal?      @db.Decimal(10, 2)
+  walletAmountUsed                Decimal?      @db.Decimal(10, 2)
   // Cashback campaign applied at checkout — full price is still charged
   // (unlike a coupon); this is frozen at creation time and only actually
   // lands in the wallet once the order is paid (see CashbackRedemption).
-  cashbackCampaignId   String?
-  cashbackCode         String?
-  cashbackAmount       Decimal?      @db.Decimal(10, 2)
+  cashbackCampaignId              String?
+  cashbackCode                    String?
+  cashbackAmount                  Decimal?      @db.Decimal(10, 2)
   // Table order lifecycle — set only when this order was placed against an
   // active table session (see TableSession); null for pickup/delivery/manual
   // orders, which are unaffected by session grouping or the "no decrease" rule.
-  tableSessionId       String?
-  tableSession         TableSession? @relation(fields: [tableSessionId], references: [id], onDelete: SetNull)
+  tableSessionId                  String?
+  tableSession                    TableSession? @relation(fields: [tableSessionId], references: [id], onDelete: SetNull)
   // Staff member who placed this order (waiter workflow); null for QR orders.
-  staffId              String?
-  staff                StaffMember?  @relation(fields: [staffId], references: [id], onDelete: SetNull)
+  staffId                         String?
+  staff                           StaffMember?  @relation(fields: [staffId], references: [id], onDelete: SetNull)
   // Client-generated idempotency key — dedupes retries/double WhatsApp sends
   // (see resolveOrCreateSession / POST /api/orders).
-  clientRequestId      String?
+  clientRequestId                 String?
   // Manual priority marker for Kitchen Display badges ("VIP" | "RUSH"), set by
   // staff via a quick toggle — not derived from any other data. Null = no marker.
-  priorityFlag         String?
+  priorityFlag                    String?
   // Payment tracking per-order — complements the TableSession-level payment tracking
   // for table orders. For standalone orders (no session), this is the canonical source.
-  paymentStatus        PaymentStatus @default(PENDING)
-  paymentConfirmedBy   String?
-  paymentConfirmedAt   DateTime?
+  paymentStatus                   PaymentStatus @default(PENDING)
+  paymentConfirmedBy              String?
+  paymentConfirmedAt              DateTime?
   // Amount actually collected so far — supports PARTIALLY_PAID; null until a
   // payment is recorded. Distinct from grandTotal/discountedTotal (owed).
-  paidAmount           Decimal?      @db.Decimal(10, 2)
-  transactionReference String?
+  paidAmount                      Decimal?      @db.Decimal(10, 2)
+  transactionReference            String?
   // Customer-initiated "I've paid" claim on a standalone order (no
   // TableSession) — awaiting owner approve/reject. Distinct from
   // paymentStatus: a claim alone never marks the order paid; only the
@@ -1321,18 +1332,32 @@ model Order {
   // {action:"claim_payment"} and admin {action:"reject_payment_claim"}).
   // Cleared back to null whenever mark_paid succeeds, however it was
   // triggered (quick-approve or the full payment modal).
-  paymentClaimStatus   String? // "PENDING" | "REJECTED" | null
-  paymentClaimMethod   String? // "CASH" | "UPI"
-  paymentClaimAt       DateTime?
+  paymentClaimStatus              String? // "PENDING" | "REJECTED" | null
+  paymentClaimMethod              String? // "CASH" | "UPI"
+  paymentClaimAt                  DateTime?
   // Cancellation trail — set only when status becomes CANCELLED via the owner
   // "Cancel Order" flow (customer self-cancel leaves these null).
-  cancelReason         String?
-  cancelledAt          DateTime?
-  cancelledBy          String?
+  cancelReason                    String?
+  cancelledAt                     DateTime?
+  cancelledBy                     String?
   // Owner-only internal note about this order/customer — never shown to the
   // customer, stored separately from status so it survives status changes.
-  ownerNote            String?
-  createdAt            DateTime      @default(now())
+  ownerNote                       String?
+  createdAt                       DateTime      @default(now())
+  // Sales Return Policy snapshot — set exactly once, the first time this
+  // order's status reaches DELIVERED or COMPLETED (see
+  // buildReturnPolicySnapshot in return-eligibility.ts), by freezing
+  // Shop.returnPolicyEnabled/returnWindowDays as they stood at that moment.
+  // Never overwritten on a later status change (e.g. the subsequent
+  // DELIVERED -> COMPLETED step for delivery orders), so an owner changing
+  // the policy afterward can't retroactively shift this order's deadline.
+  // All three stay null until then, and for any order that already reached
+  // DELIVERED/COMPLETED before this feature shipped (no snapshot exists) —
+  // those orders keep the pre-existing unlimited-window behavior rather
+  // than suddenly becoming ineligible.
+  returnPolicyEnabledAtCompletion Boolean?
+  returnWindowDaysAtCompletion    Int?
+  returnDeadline                  DateTime?
 
   items              OrderItem[]
   statusEvents       OrderStatusEvent[]

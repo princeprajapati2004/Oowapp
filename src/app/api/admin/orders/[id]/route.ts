@@ -4,6 +4,7 @@ import { ForbiddenError } from "@/lib/session";
 import { requireShopActor, actorAuditFields, type ShopActor } from "@/lib/shop-actor";
 import { handleApiError, NotFoundError, ConflictError } from "@/lib/api-utils";
 import { processOrderPaidRewards, voidPendingCashbackRedemption, reverseCashbackIfCredited } from "@/lib/services/rewards";
+import { buildReturnPolicySnapshot } from "@/lib/services/return-eligibility";
 import { writeAuditLog, extractRequestMeta } from "@/lib/services/audit-log";
 import { db } from "@/lib/db";
 import { calculateBill } from "@/lib/services/billing";
@@ -18,6 +19,7 @@ import {
   CANCEL_REASONS,
   getNextStatuses,
   canCancel,
+  type OrderStatus,
 } from "@/lib/order-status";
 import type { Prisma, StaffRole } from "@/generated/prisma/client";
 
@@ -209,6 +211,17 @@ export async function PATCH(
         }
         data = { status: parsed.status };
         statusEventStatus = parsed.status;
+
+        if (existing.returnDeadline == null) {
+          const returnPolicyShop = await db.shop.findUnique({
+            where: { id: actor.shopId },
+            select: { returnPolicyEnabled: true, returnWindowDays: true },
+          });
+          const snapshot = returnPolicyShop
+            ? buildReturnPolicySnapshot(returnPolicyShop, existing, parsed.status as OrderStatus)
+            : null;
+          if (snapshot) data = { ...data, ...snapshot };
+        }
       } else if (parsed.action === "cancel") {
         if (!canCancel(existing)) {
           return NextResponse.json(

@@ -10,7 +10,7 @@ import type { ReturnReason } from "@/generated/prisma/enums";
 import { db } from "@/lib/db";
 import { ReturnError, NotFoundError } from "@/lib/api-utils";
 import { round2 } from "@/lib/services/billing";
-import { isOrderReturnEligible } from "@/lib/services/return-eligibility";
+import { isOrderReturnEligible, isOrderReturnEligibleForCustomer } from "@/lib/services/return-eligibility";
 import { calculateItemRefund, assertRefundWithinPaidAmount } from "@/lib/services/refund-calculation";
 import { reserveReturnQuantity } from "@/lib/services/return-reservation";
 import { publishOrderEvent, toReturnEvent } from "@/lib/server/order-events";
@@ -30,6 +30,12 @@ export type CreateReturnRequestInput = {
   evidencePhotoUrls?: string[];
   initiatedByType: "admin" | "staff" | "customer";
   initiatedById: string | null;
+  // Set only by the customer self-service route (POST /api/customer/returns)
+  // — enforces Settings -> Order Settings -> Sales Return Policy (enabled +
+  // within the window frozen on the order at completion time). The
+  // owner/staff route never sets this: an owner can always process a
+  // manual return regardless of the customer-facing window.
+  enforceReturnWindow?: boolean;
 };
 
 export const RETURN_DETAIL_INCLUDE = {
@@ -77,6 +83,9 @@ export async function createReturnRequest(input: CreateReturnRequestInput): Prom
   if (!order) throw new NotFoundError("Order not found");
   if (!isOrderReturnEligible(order)) {
     throw new ReturnError("This order isn't eligible for a return yet");
+  }
+  if (input.enforceReturnWindow && !isOrderReturnEligibleForCustomer(order)) {
+    throw new ReturnError("Return period has expired for this order.");
   }
 
   const orderItemsById = new Map(order.items.map((i) => [i.id, i]));
