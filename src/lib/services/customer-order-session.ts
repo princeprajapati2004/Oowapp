@@ -1,6 +1,5 @@
 import { db } from "@/lib/db";
 import { getCustomerSession } from "@/lib/customer-session";
-import { getVerifiedPhone } from "@/lib/phone-verify-auth";
 import type { ActiveSession } from "@/lib/types/customer";
 
 /**
@@ -21,11 +20,7 @@ export async function resolveCustomerIdentity(shopId: string) {
     customer = row ? { ...row, walletBalance: Number(row.walletBalance) } : null;
   }
 
-  // A phone verified via OTP earlier in the same sitting (see phone-verification.tsx) —
-  // separate from the password-based Customer account above, so guests never need one.
-  const verifiedPhone = await getVerifiedPhone(shopId);
-
-  return { customer, verifiedPhone };
+  return { customer, verifiedPhone: null };
 }
 
 /**

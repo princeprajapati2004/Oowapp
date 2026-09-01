@@ -117,7 +117,6 @@ export default async function SettingsPage() {
           defaultValues={{
             requireCustomerName: shop.requireCustomerName,
             requirePhone: shop.requirePhone,
-            requirePhoneVerification: (shopAny.requirePhoneVerification as boolean) ?? false,
             enableTableNumber: shopAny.enableTableNumber ?? true,
             requireTableNumber: shop.requireTableNumber,
             requireDeliveryAddress: shop.requireDeliveryAddress,

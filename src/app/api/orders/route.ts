@@ -9,7 +9,6 @@ import { sendNewOrderNotification } from "@/lib/services/push";
 import { publishOrderEvent, toOrderEvent } from "@/lib/server/order-events";
 import { getCustomerSession } from "@/lib/customer-session";
 import { CUSTOMER_SESSION_COOKIE } from "@/lib/customer-auth";
-import { readPhoneVerifiedCookie } from "@/lib/phone-verify-auth";
 import { resolveOrCreateSession, computeSessionBill } from "@/lib/services/table-session";
 import { resolveOrderItems } from "@/lib/services/order-items";
 import { getOrCreateItemSettings } from "@/lib/services/item-settings";
@@ -72,23 +71,6 @@ export async function POST(request: Request) {
     const orderMode: string = (shop as any).orderMode ?? "WHATSAPP";
     if (!shop.saveOrdersToDb && orderMode !== "DIRECT") {
       return NextResponse.json({ ok: true, saved: false });
-    }
-
-    // The UI already blocks getting this far without a verified phone (see
-    // phone-verification.tsx) — this is the server-side backstop against a
-    // direct API call skipping that check entirely.
-    if (shop.requirePhone) {
-      const verifiedPhone = await readPhoneVerifiedCookie();
-      if (
-        !verifiedPhone ||
-        verifiedPhone.shopId !== shop.id ||
-        verifiedPhone.phone !== input.customerPhone
-      ) {
-        return NextResponse.json(
-          { error: "Please verify your phone number before placing an order." },
-          { status: 400 }
-        );
-      }
     }
 
     // Table sessions are keyed by tableNumber alone, so an unrecognized

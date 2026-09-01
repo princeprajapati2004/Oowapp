@@ -10,7 +10,7 @@ export async function GET() {
   try {
     const session = await requireAdminSession();
     const [admin, shop] = await Promise.all([
-      db.admin.findUnique({ where: { id: session.adminId }, select: { email: true, phoneVerified: true } }),
+      db.admin.findUnique({ where: { id: session.adminId }, select: { email: true } }),
       db.shop.findUnique({
         where: { id: session.shopId },
         select: {
@@ -35,7 +35,6 @@ export async function GET() {
 
     return NextResponse.json({
       email: admin.email,
-      phoneVerified: admin.phoneVerified,
       onboardingCompleted: shop.onboardingCompleted,
       businessName: shop.businessName,
       whatsappNumber: shop.whatsappNumber,
@@ -59,16 +58,6 @@ export async function GET() {
 export async function POST(request: Request) {
   try {
     const session = await requireAdminSession();
-
-    // Server-side gate — a client can never skip mobile verification by
-    // simply calling this endpoint directly.
-    const admin = await db.admin.findUnique({ where: { id: session.adminId }, select: { phoneVerified: true } });
-    if (!admin) {
-      return NextResponse.json({ error: "Account not found" }, { status: 404 });
-    }
-    if (!admin.phoneVerified) {
-      return NextResponse.json({ error: "Please verify your mobile number first." }, { status: 400 });
-    }
 
     const body = await request.json();
     const input = onboardingProfileSchema.parse(body);

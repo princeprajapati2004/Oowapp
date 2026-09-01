@@ -49,14 +49,6 @@ export function OrderSettingsForm({
         checked={values.requirePhone}
         onCheckedChange={(v) => setValue("requirePhone", v)}
       />
-      {values.requirePhone && (
-        <ToggleRow
-          label="Verify phone number with OTP"
-          description="Customers must confirm their phone number with a one-time code (via MSG91) before placing an order. Off by default — the phone number is still collected either way."
-          checked={values.requirePhoneVerification}
-          onCheckedChange={(v) => setValue("requirePhoneVerification", v)}
-        />
-      )}
       <ToggleRow
         label="Enable table number"
         description="Show a table number field during checkout. Disable for delivery, pickup, or retail businesses."
