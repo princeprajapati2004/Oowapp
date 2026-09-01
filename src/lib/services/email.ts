@@ -33,6 +33,7 @@ export async function sendEmail(
     html,
     text,
     headers: {
+      "X-Mailer": "OOWAPP Mailer",
       Precedence: "transactional",
     },
   });
