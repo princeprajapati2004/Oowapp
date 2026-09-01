@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import type { ReportColumn, ReportSummaryItem } from "@/lib/utils/report-columns";
 import { generateReportPdf, type ReportPdfShopMeta } from "@/lib/utils/report-pdf";
 import { exportReportExcel, exportReportCsv } from "@/lib/utils/report-export";
+import { PdfFieldSelectionDialog } from "@/components/admin/reports/pdf-field-selection-dialog";
 
 export interface ReportExportFetchResult<T> {
   rows: T[];
@@ -39,6 +40,7 @@ export function ReportExportButtons<T>({
   fileBaseName: string;
 }) {
   const [busy, setBusy] = useState<"pdf" | "excel" | "csv" | null>(null);
+  const [fieldPickerOpen, setFieldPickerOpen] = useState(false);
 
   async function withRows(kind: "pdf" | "excel" | "csv", run: (rows: T[]) => void) {
     setBusy(kind);
@@ -55,27 +57,35 @@ export function ReportExportButtons<T>({
     }
   }
 
+  function generatePdfWithFields(selectedKeys: string[]) {
+    setFieldPickerOpen(false);
+    const selectedSet = new Set(selectedKeys);
+    // Filter, never reorder — keeps the PDF's column order identical to the
+    // on-screen table regardless of which fields were dropped.
+    const pdfColumns = columns.filter((c) => selectedSet.has(c.key));
+    withRows("pdf", (rows) =>
+      generateReportPdf({
+        meta: { shop, reportTitle, dateRangeLabel, filterSummary },
+        columns: pdfColumns,
+        rows,
+        summary,
+        fileName: `${fileBaseName}.pdf`,
+      })
+    );
+  }
+
   return (
     <div className="flex flex-wrap gap-2 print:hidden">
-      <Button
-        variant="outline"
-        size="sm"
-        disabled={busy !== null}
-        onClick={() =>
-          withRows("pdf", (rows) =>
-            generateReportPdf({
-              meta: { shop, reportTitle, dateRangeLabel, filterSummary },
-              columns,
-              rows,
-              summary,
-              fileName: `${fileBaseName}.pdf`,
-            })
-          )
-        }
-      >
+      <Button variant="outline" size="sm" disabled={busy !== null} onClick={() => setFieldPickerOpen(true)}>
         {busy === "pdf" ? <Loader2 className="size-3.5 animate-spin" /> : <FileText className="size-3.5" />}
         PDF
       </Button>
+      <PdfFieldSelectionDialog
+        open={fieldPickerOpen}
+        onOpenChange={setFieldPickerOpen}
+        fields={columns.map((c) => ({ key: c.key, header: c.header }))}
+        onGenerate={generatePdfWithFields}
+      />
       <Button
         variant="outline"
         size="sm"

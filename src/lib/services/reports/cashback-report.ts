@@ -2,10 +2,11 @@ import { db } from "@/lib/db";
 import { caseInsensitive } from "@/lib/db-provider";
 import type { Prisma } from "@/generated/prisma/client";
 
-// CashbackRedemptionStatus enum (schema.prisma) is only PENDING | CREDITED |
-// VOIDED — no separate "Expired"/"Used" state exists, so the report's status
-// filter/column is scoped to exactly these three real values.
-export type CashbackReportStatus = "PENDING" | "CREDITED" | "VOIDED";
+// CashbackRedemptionStatus enum (schema.prisma) is PENDING | CREDITED |
+// VOIDED | REVERSED — REVERSED is a CREDITED redemption clawed back after
+// its order was fully refunded (see rewards.ts#reverseCashbackIfCredited);
+// VOIDED is a PENDING redemption that never paid out at all.
+export type CashbackReportStatus = "PENDING" | "CREDITED" | "VOIDED" | "REVERSED";
 
 export interface CashbackReportFilters {
   from: Date;
@@ -38,6 +39,7 @@ export interface CashbackReportSummary {
   totalCredited: number;
   totalPending: number;
   totalVoided: number;
+  totalReversed: number;
 }
 
 function buildWhere(shopId: string, filters: CashbackReportFilters): Prisma.CashbackRedemptionWhereInput {
@@ -60,11 +62,12 @@ function buildWhere(shopId: string, filters: CashbackReportFilters): Prisma.Cash
 export async function getCashbackReportSummary(shopId: string, filters: CashbackReportFilters): Promise<CashbackReportSummary> {
   const where = buildWhere(shopId, filters);
 
-  const [totalAgg, creditedAgg, pendingAgg, voidedAgg] = await Promise.all([
+  const [totalAgg, creditedAgg, pendingAgg, voidedAgg, reversedAgg] = await Promise.all([
     db.cashbackRedemption.aggregate({ where, _sum: { cashbackAmount: true } }),
     db.cashbackRedemption.aggregate({ where: { ...where, status: "CREDITED" }, _sum: { cashbackAmount: true } }),
     db.cashbackRedemption.aggregate({ where: { ...where, status: "PENDING" }, _sum: { cashbackAmount: true } }),
     db.cashbackRedemption.aggregate({ where: { ...where, status: "VOIDED" }, _sum: { cashbackAmount: true } }),
+    db.cashbackRedemption.aggregate({ where: { ...where, status: "REVERSED" }, _sum: { cashbackAmount: true } }),
   ]);
 
   return {
@@ -72,6 +75,7 @@ export async function getCashbackReportSummary(shopId: string, filters: Cashback
     totalCredited: Number(creditedAgg._sum.cashbackAmount ?? 0),
     totalPending: Number(pendingAgg._sum.cashbackAmount ?? 0),
     totalVoided: Number(voidedAgg._sum.cashbackAmount ?? 0),
+    totalReversed: Number(reversedAgg._sum.cashbackAmount ?? 0),
   };
 }
 

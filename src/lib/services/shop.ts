@@ -71,6 +71,9 @@ export type ShopSettingsInput = Partial<{
   gstNumber: string | null;
   currency: string;
   ownerName: string | null;
+  email: string | null;
+  website: string | null;
+  panNumber: string | null;
   city: string | null;
   state: string | null;
   country: string | null;

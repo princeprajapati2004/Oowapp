@@ -55,7 +55,7 @@ export function BusinessInfoForm({
 
   const formContent = (
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-      <FormRow label="logo_1" htmlFor="logoUrl">
+      <FormRow label="Business logo" htmlFor="logoUrl" description="Shown on your menu page, bill, and printed QR.">
         <ImageUploader value={logoUrl} onChange={(url) => setValue("logoUrl", url)} />
       </FormRow>
 
@@ -82,6 +82,10 @@ export function BusinessInfoForm({
           </Select>
         </FormRow>
 
+        <FormRow label="Owner name" htmlFor="ownerName" error={errors.ownerName}>
+          <Input id="ownerName" {...register("ownerName")} />
+        </FormRow>
+
         <FormRow label="Phone number" htmlFor="phone" error={errors.phone}>
           <Input id="phone" {...register("phone")} />
         </FormRow>
@@ -96,8 +100,20 @@ export function BusinessInfoForm({
           <Input id="whatsappNumber" inputMode="numeric" {...register("whatsappNumber")} />
         </FormRow>
 
+        <FormRow label="Email" htmlFor="email" error={errors.email}>
+          <Input id="email" type="email" {...register("email")} />
+        </FormRow>
+
+        <FormRow label="Website" htmlFor="website" error={errors.website}>
+          <Input id="website" placeholder="https://example.com" {...register("website")} />
+        </FormRow>
+
         <FormRow label="GST number" htmlFor="gstNumber" error={errors.gstNumber}>
           <Input id="gstNumber" {...register("gstNumber")} />
+        </FormRow>
+
+        <FormRow label="PAN number" htmlFor="panNumber" error={errors.panNumber}>
+          <Input id="panNumber" className="uppercase" {...register("panNumber")} />
         </FormRow>
 
         <FormRow label="Currency" htmlFor="currency" required>
@@ -119,6 +135,18 @@ export function BusinessInfoForm({
       <FormRow label="Address" htmlFor="address" error={errors.address}>
         <Textarea id="address" rows={2} {...register("address")} />
       </FormRow>
+
+      <FieldGroup className="sm:grid sm:grid-cols-3 sm:gap-4 sm:space-y-0">
+        <FormRow label="City" htmlFor="city" error={errors.city}>
+          <Input id="city" {...register("city")} />
+        </FormRow>
+        <FormRow label="State" htmlFor="state" error={errors.state}>
+          <Input id="state" {...register("state")} />
+        </FormRow>
+        <FormRow label="Pincode" htmlFor="pincode" error={errors.pincode}>
+          <Input id="pincode" inputMode="numeric" {...register("pincode")} />
+        </FormRow>
+      </FieldGroup>
 
       <Button type="submit" disabled={isSubmitting}>
         {isSubmitting ? "Saving…" : "Save business info"}

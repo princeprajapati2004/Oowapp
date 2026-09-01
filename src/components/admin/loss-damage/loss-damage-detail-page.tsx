@@ -43,6 +43,12 @@ export function LossDamageDetailPage({ record, currency }: { record: LossDamageP
         <div className="rounded-xl border bg-card p-4 space-y-1">
           <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Product</p>
           <p className="text-sm font-medium">{record.productName}</p>
+          {record.productCode && (
+            <div className="flex items-center justify-between pt-1 text-sm">
+              <span className="text-muted-foreground">Product Code</span>
+              <span className="font-mono font-medium">{record.productCode}</span>
+            </div>
+          )}
           <div className="flex items-center justify-between pt-1 text-sm">
             <span className="text-muted-foreground">Quantity</span>
             <span className="font-medium">{record.quantity}</span>
@@ -53,18 +59,40 @@ export function LossDamageDetailPage({ record, currency }: { record: LossDamageP
               <span className="font-medium">{DAMAGE_TYPE_LABELS[record.damageType as DamageType]}</span>
             </div>
           )}
+          {record.createdByLabel && (
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-muted-foreground">Recorded By</span>
+              <span className="font-medium">{record.createdByLabel}</span>
+            </div>
+          )}
         </div>
 
         <div className="rounded-xl border bg-card p-4 space-y-2">
-          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Loss Value</p>
+          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Loss / Damage Value</p>
           <div className="flex items-center justify-between text-sm">
-            <span className="text-muted-foreground">Unit Cost</span>
+            <span className="text-muted-foreground">Purchase Price (Unit Cost)</span>
             <span className="font-medium">{record.unitCost != null ? formatCurrency(record.unitCost, currency) : "Not set"}</span>
           </div>
           <div className="flex items-center justify-between text-sm">
-            <span className="text-muted-foreground">Total Loss</span>
-            <span className="font-semibold">{record.totalLossValue != null ? formatCurrency(record.totalLossValue, currency) : "—"}</span>
+            <span className="text-muted-foreground">System Value</span>
+            <span className={record.manualValue != null ? "text-muted-foreground line-through" : "font-semibold"}>
+              {record.totalLossValue != null ? formatCurrency(record.totalLossValue, currency) : "—"}
+            </span>
           </div>
+          {record.manualValue != null && (
+            <>
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-muted-foreground">Adjusted Value</span>
+                <span className="font-semibold">{formatCurrency(record.manualValue, currency)}</span>
+              </div>
+              {record.manualValueReason && (
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-muted-foreground">Reason</span>
+                  <span className="font-medium">{record.manualValueReason}</span>
+                </div>
+              )}
+            </>
+          )}
         </div>
 
         <div className="rounded-xl border bg-card p-4 space-y-2">

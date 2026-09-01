@@ -3,7 +3,7 @@ import { z } from "zod";
 import { ForbiddenError } from "@/lib/session";
 import { requireShopActor, actorAuditFields, type ShopActor } from "@/lib/shop-actor";
 import { handleApiError, NotFoundError, ConflictError } from "@/lib/api-utils";
-import { processOrderPaidRewards, voidPendingCashbackRedemption } from "@/lib/services/rewards";
+import { processOrderPaidRewards, voidPendingCashbackRedemption, reverseCashbackIfCredited } from "@/lib/services/rewards";
 import { writeAuditLog, extractRequestMeta } from "@/lib/services/audit-log";
 import { db } from "@/lib/db";
 import { calculateBill } from "@/lib/services/billing";
@@ -184,6 +184,7 @@ export async function PATCH(
     } | null = null;
     let shouldVoidPendingCashback = false;
     let shouldProcessPaidRewards = false;
+    let shouldReverseCashback = false;
 
     if ("action" in body && body.action === "edit_items") {
       // Parsed separately — a .refine() (needed for the order-type/table
@@ -237,6 +238,7 @@ export async function PATCH(
             ? [existing.ownerNote, `Refunded: ${parsed.note}`].filter(Boolean).join("\n")
             : existing.ownerNote,
         };
+        shouldReverseCashback = true;
       } else if (parsed.action === "note") {
         data = { ownerNote: parsed.ownerNote };
       } else if (parsed.action === "discount") {
@@ -354,6 +356,9 @@ export async function PATCH(
     }
     if (shouldVoidPendingCashback) {
       await db.$transaction((tx) => voidPendingCashbackRedemption(tx, id));
+    }
+    if (shouldReverseCashback) {
+      await db.$transaction((tx) => reverseCashbackIfCredited(tx, id));
     }
 
     if (newPaymentRecord) {

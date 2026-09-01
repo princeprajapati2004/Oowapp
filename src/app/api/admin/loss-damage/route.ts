@@ -37,6 +37,8 @@ const createSchema = z.object({
   date: z.string().optional(),
   evidencePhotoUrls: z.array(z.string().url()).max(6).optional(),
   clientRequestId: z.string().max(100).optional(),
+  manualValue: z.number().nonnegative().optional(),
+  manualValueReason: z.string().trim().max(500).optional(),
 });
 
 export async function GET(request: Request) {
@@ -85,6 +87,9 @@ export async function POST(request: Request) {
       evidencePhotoUrls: parsed.evidencePhotoUrls,
       clientRequestId: parsed.clientRequestId,
       createdBy: actor.actorId,
+      createdByLabel: actor.label,
+      manualValue: parsed.manualValue,
+      manualValueReason: parsed.manualValueReason,
     });
 
     const { ipAddress, userAgent, requestId } = extractRequestMeta(request);
@@ -100,6 +105,8 @@ export async function POST(request: Request) {
         quantity: created.quantity,
         type: created.type,
         totalLossValue: created.totalLossValue != null ? Number(created.totalLossValue) : null,
+        manualValue: created.manualValue != null ? Number(created.manualValue) : null,
+        manualValueReason: created.manualValueReason,
       },
       ipAddress,
       userAgent,

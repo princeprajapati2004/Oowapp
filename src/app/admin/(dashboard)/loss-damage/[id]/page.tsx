@@ -15,7 +15,7 @@ export default async function LossDamageDetailRoute({ params }: { params: Promis
   const record = await db.lossDamageRecord.findFirst({
     where: { id, shopId: session.shopId },
     include: {
-      product: { select: { id: true, name: true, imageUrl: true } },
+      product: { select: { id: true, name: true, imageUrl: true, productCode: true } },
       returnItem: {
         select: {
           id: true,

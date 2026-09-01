@@ -458,6 +458,9 @@ model Shop {
 
   // Owner profile
   ownerName String?
+  email     String?
+  website   String?
+  panNumber String?
   city      String?
   state     String?
   country   String?
@@ -664,10 +667,10 @@ model Party {
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
 
-  payments     PartyPayment[]
-  orders       Order[]
-  expenses     Expense[]
-  purchases    Purchase[]
+  payments      PartyPayment[]
+  orders        Order[]
+  expenses      Expense[]
+  purchases     Purchase[]
   // Party/customer-wise item pricing (Item Master) — see PartyProductPrice.
   productPrices PartyProductPrice[]
 
@@ -789,28 +792,28 @@ model Category {
 }
 
 model Product {
-  id          String   @id @default(cuid())
-  shopId      String
-  shop        Shop     @relation(fields: [shopId], references: [id], onDelete: Cascade)
-  categoryId  String
-  category    Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
-  name        String
-  description String?
-  price       Decimal  @db.Decimal(10, 2)
+  id             String   @id @default(cuid())
+  shopId         String
+  shop           Shop     @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  categoryId     String
+  category       Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  name           String
+  description    String?
+  price          Decimal  @db.Decimal(10, 2)
   // Owner-only cost/pricing fields — never sent to the customer-facing menu
   // (see serializeMenuProduct vs serializeProduct in lib/serialize.ts).
   // Nullable: existing products have neither set, and profit/margin display
   // just hides itself rather than fabricating a value (see profit.ts).
-  costPrice   Decimal? @db.Decimal(10, 2)
-  mrp         Decimal? @db.Decimal(10, 2)
+  costPrice      Decimal? @db.Decimal(10, 2)
+  mrp            Decimal? @db.Decimal(10, 2)
   // Item Master — B2B/bulk selling price, independent of `price` and `mrp`.
   // Selected over `price` by pricing.ts's resolveSellingPrice only when the
   // ordering Party's category is WHOLESALE and this is set — never applied
   // to customer/QR ordering, which has no Party at cart time.
   wholesalePrice Decimal? @db.Decimal(10, 2)
-  imageUrl    String?
-  unit        String?
-  barcode     String?
+  imageUrl       String?
+  unit           String?
+  barcode        String?
   // Item Master — GST HSN/SAC code, shown on invoices/GST reports. Free text
   // (not validated as a real HSN registry lookup) so businesses can enter
   // whatever their accountant expects, same convention as `unit`.
@@ -846,17 +849,17 @@ model Product {
   // compatibility with existing products.
   offerType      String? // "PERCENTAGE" | "FLAT" | null
   offerValue     Decimal? @db.Decimal(10, 2)
-  foodType    FoodType @default(NA)
-  isCombo     Boolean  @default(false)
-  offerNote   String?
-  isAvailable Boolean  @default(true)
-  isVisible   Boolean  @default(true)
-  stock       Int?
-  sortOrder   Int      @default(0)
-  createdBy   String?
-  updatedBy   String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  foodType       FoodType @default(NA)
+  isCombo        Boolean  @default(false)
+  offerNote      String?
+  isAvailable    Boolean  @default(true)
+  isVisible      Boolean  @default(true)
+  stock          Int?
+  sortOrder      Int      @default(0)
+  createdBy      String?
+  updatedBy      String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
   orderItems        OrderItem[]
   kotItems          KotItem[]
@@ -1073,6 +1076,11 @@ enum WalletTransactionType {
   // A ReturnRequest processed with refundMethod: WALLET — see
   // src/lib/services/return-request.ts's process_refund handling.
   REFUND_CREDIT
+  // Compensating debit for a CASHBACK_CREDIT whose order was later fully
+  // refunded — see rewards.ts#reverseCashbackIfCredited. Signed negative,
+  // same (orderId, type) idempotency guard as every other order-triggered
+  // wallet write.
+  CASHBACK_REVERSAL
 }
 
 // The reward-wallet ledger — every change to Customer.walletBalance writes one
@@ -1109,6 +1117,13 @@ enum CashbackRedemptionStatus {
   PENDING
   CREDITED
   VOIDED
+  // Was CREDITED (wallet already paid out) but the qualifying order was
+  // later fully refunded — see rewards.ts#reverseCashbackIfCredited, which
+  // flips CREDITED -> REVERSED and writes a compensating CASHBACK_REVERSAL
+  // WalletTransaction in the same claim. Distinct from VOIDED (which only
+  // ever applies to a PENDING redemption that never paid out) so the report
+  // can tell "never paid" apart from "paid then clawed back".
+  REVERSED
 }
 
 // Admin-created code — unlike Coupon, the customer pays full price at
@@ -1828,6 +1843,17 @@ model LossDamageRecord {
   unitCost       Decimal? @db.Decimal(10, 2)
   totalLossValue Decimal? @db.Decimal(10, 2)
 
+  // Owner-entered override of totalLossValue (e.g. the auto-computed
+  // qty*unitCost doesn't reflect real resale/replacement value, or unitCost
+  // was null because the product had no costPrice). When set, this — not
+  // totalLossValue — is the effective loss/damage value everywhere (see
+  // effectiveLossValue() in lib/services/loss-damage.ts). totalLossValue is
+  // never overwritten, so the original system-computed figure stays visible
+  // for audit alongside the override. updatedBy/updatedAt already capture
+  // who/when set it — no separate audit columns needed.
+  manualValue       Decimal? @db.Decimal(10, 2)
+  manualValueReason String?
+
   // Stock snapshot at the moment of this record — null on both when the
   // product doesn't track stock (Product.stock is null = untracked), so
   // there's nothing to adjust or snapshot.
@@ -1848,10 +1874,15 @@ model LossDamageRecord {
   // second stock deduction.
   clientRequestId String?
 
-  createdBy String?
-  createdAt DateTime @default(now())
-  updatedBy String?
-  updatedAt DateTime @updatedAt
+  createdBy      String?
+  // Frozen display name of whoever recorded this ("owner" or the staff
+  // member's name), same snapshot convention as Purchase.supplierName — a
+  // later admin/staff rename never rewrites this record, and the report can
+  // show "Owner/User" without an N+1 join against Admin/StaffMember.
+  createdByLabel String?
+  createdAt      DateTime @default(now())
+  updatedBy      String?
+  updatedAt      DateTime @updatedAt
 
   @@unique([shopId, clientRequestId])
   @@index([shopId])

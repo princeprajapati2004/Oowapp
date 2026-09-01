@@ -9,7 +9,7 @@ import {
   type CashbackReportStatus,
 } from "@/lib/services/reports/cashback-report";
 
-const VALID_STATUSES: CashbackReportStatus[] = ["PENDING", "CREDITED", "VOIDED"];
+const VALID_STATUSES: CashbackReportStatus[] = ["PENDING", "CREDITED", "VOIDED", "REVERSED"];
 
 export async function GET(request: Request) {
   try {

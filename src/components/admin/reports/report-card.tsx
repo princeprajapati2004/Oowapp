@@ -7,8 +7,8 @@ export function ReportCard({ report }: { report: ReportCatalogEntry }) {
   const Icon = report.icon;
   return (
     <Link href={`/admin/reports/${report.slug}`}>
-      <Card className="h-full transition-shadow hover:shadow-md">
-        <CardContent className="flex h-full flex-col gap-3 px-4 py-4">
+      <Card className="h-full [--card-spacing:--spacing(3)] transition-shadow hover:shadow-md sm:[--card-spacing:--spacing(3.5)] lg:[--card-spacing:--spacing(4)]">
+        <CardContent className="flex h-full flex-col gap-2.5">
           <div className="flex size-9 items-center justify-center rounded-lg bg-primary/10 text-primary">
             <Icon className="size-4.5" />
           </div>

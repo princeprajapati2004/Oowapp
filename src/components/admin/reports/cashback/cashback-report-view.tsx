@@ -31,12 +31,13 @@ interface ReportApiResponse {
 
 const PAGE_SIZE = 25;
 
-// VOIDED is the real CashbackRedemptionStatus enum value (schema.prisma) —
-// only the display label reads "Cancelled", nothing invented.
+// VOIDED/REVERSED are the real CashbackRedemptionStatus enum values
+// (schema.prisma) — only the display labels differ, nothing invented.
 const STATUS_LABELS: Record<CashbackReportStatus, string> = {
   PENDING: "Pending",
   CREDITED: "Credited",
   VOIDED: "Cancelled",
+  REVERSED: "Reversed",
 };
 
 const STATUS_OPTIONS = [
@@ -44,6 +45,7 @@ const STATUS_OPTIONS = [
   { value: "PENDING", label: "Pending" },
   { value: "CREDITED", label: "Credited" },
   { value: "VOIDED", label: "Cancelled" },
+  { value: "REVERSED", label: "Reversed" },
 ];
 
 const COLUMNS: ReportColumn<CashbackReportRow>[] = [
@@ -129,6 +131,7 @@ export function CashbackReportView({ shop }: { shop: ReportPdfShopMeta }) {
     { label: "Total Cashback Credited", value: summary?.totalCredited ?? 0, type: "currency" },
     { label: "Pending Cashback", value: summary?.totalPending ?? 0, type: "currency" },
     { label: "Cancelled / Voided", value: summary?.totalVoided ?? 0, type: "currency" },
+    { label: "Reversed (Refunded Orders)", value: summary?.totalReversed ?? 0, type: "currency" },
   ];
 
   const filterSummaryParts: string[] = [];

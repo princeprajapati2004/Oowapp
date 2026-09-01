@@ -120,7 +120,15 @@ export function PurchasesListView() {
                     </Link>
                   </TableCell>
                   <TableCell>{new Date(p.purchaseDate).toLocaleDateString("en-IN")}</TableCell>
-                  <TableCell>{p.supplier.name}</TableCell>
+                  <TableCell>
+                    <Link
+                      href={`/admin/parties/${p.supplier.id}`}
+                      className="text-primary hover:underline"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      {p.supplier.name}
+                    </Link>
+                  </TableCell>
                   <TableCell>{p.items.length}</TableCell>
                   <TableCell className="text-right">{formatCurrency(p.grandTotal)}</TableCell>
                   <TableCell className="text-right">{formatCurrency(p.paidAmount ?? 0)}</TableCell>

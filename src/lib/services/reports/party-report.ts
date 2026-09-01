@@ -7,6 +7,7 @@ import {
   computeOutstanding,
   paymentsReceivedUnallocated,
   paymentsPaidUnallocated,
+  unpaidPurchaseTotal,
 } from "@/lib/services/party";
 import type { Prisma } from "@/generated/prisma/client";
 
@@ -77,12 +78,12 @@ async function computePartyReportRows(shopId: string, filters: PartyReportFilter
     orderBy: { name: "asc" },
     include: {
       orders: { select: { grandTotal: true, discountedTotal: true, paidAmount: true, status: true, paymentStatus: true, createdAt: true } },
-      payments: { select: { amount: true, direction: true, createdAt: true, allocations: { select: { id: true } } } },
+      payments: { select: { amount: true, direction: true, createdAt: true, purchaseId: true, allocations: { select: { id: true } } } },
       // Suppliers don't place orders in this app (see party.ts) — their
       // "Total Sales/Purchases" column instead comes from real Purchase
       // records against them, never fabricated as 0/dash when the data
       // actually exists.
-      purchases: { select: { grandTotal: true, purchaseDate: true, status: true } },
+      purchases: { select: { grandTotal: true, paidAmount: true, purchaseDate: true, status: true } },
     },
   });
 
@@ -93,7 +94,8 @@ async function computePartyReportRows(shopId: string, filters: PartyReportFilter
     const unpaidOrderTotal = orders.filter(isOutstandingOrder).reduce((sum, o) => sum + orderOutstanding(o), 0);
     const receivedUnallocated = paymentsReceivedUnallocated(payments);
     const paidUnallocated = paymentsPaidUnallocated(payments);
-    const outstanding = computeOutstanding(party, unpaidOrderTotal, receivedUnallocated, paidUnallocated);
+    const unpaidPurchases = unpaidPurchaseTotal(purchases);
+    const outstanding = computeOutstanding(party, unpaidOrderTotal, receivedUnallocated, paidUnallocated, unpaidPurchases);
 
     // Period-scoped activity — filtered from the same fetched arrays.
     const ordersInRange = orders.filter((o) => o.status !== "CANCELLED" && inRange(o.createdAt, filters.from, filters.to));

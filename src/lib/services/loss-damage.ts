@@ -22,10 +22,25 @@ export type CreateLossDamageInput = {
   evidencePhotoUrls?: string[];
   clientRequestId?: string;
   createdBy: string | null;
+  createdByLabel?: string | null;
+  // Owner override of the auto-computed (qty * unitCost) value — see
+  // effectiveLossValue() below for how this takes precedence when set.
+  manualValue?: number | null;
+  manualValueReason?: string | null;
 };
 
+/** The value everywhere else in the app should treat as "the" loss/damage value — the owner's manual override when set, else the auto-computed cost-basis figure. */
+export function effectiveLossValue(record: {
+  totalLossValue: unknown;
+  manualValue: unknown;
+}): number | null {
+  if (record.manualValue != null) return Number(record.manualValue);
+  if (record.totalLossValue != null) return Number(record.totalLossValue);
+  return null;
+}
+
 const LOSS_DAMAGE_DETAIL_INCLUDE = {
-  product: { select: { id: true, name: true, imageUrl: true } },
+  product: { select: { id: true, name: true, imageUrl: true, productCode: true } },
   returnItem: {
     select: {
       id: true,
@@ -47,6 +62,12 @@ export type LossDamageRecordDetail = Prisma.LossDamageRecordGetPayload<{ include
 export async function createLossDamageRecord(input: CreateLossDamageInput): Promise<LossDamageRecordDetail> {
   if (input.quantity <= 0) {
     throw new ReturnError("Quantity must be at least 1");
+  }
+  if (input.manualValue != null && input.manualValue < 0) {
+    throw new ReturnError("Manual value can't be negative");
+  }
+  if (input.manualValue != null && !input.manualValueReason?.trim()) {
+    throw new ReturnError("A reason is required when overriding the loss/damage value");
   }
 
   if (input.clientRequestId) {
@@ -92,6 +113,9 @@ export async function createLossDamageRecord(input: CreateLossDamageInput): Prom
           evidencePhotoUrls: input.evidencePhotoUrls ?? [],
           clientRequestId: input.clientRequestId ?? null,
           createdBy: input.createdBy,
+          createdByLabel: input.createdByLabel ?? null,
+          manualValue: input.manualValue ?? null,
+          manualValueReason: input.manualValue != null ? input.manualValueReason?.trim() || null : null,
         },
         include: LOSS_DAMAGE_DETAIL_INCLUDE,
       });
@@ -246,39 +270,57 @@ export type LossDamageSummary = {
   totalRecords: number;
   totalItemsLost: number;
   totalItemsDamaged: number;
+  // "Lost"-type value only (LOST/WASTED/MISSING/THEFT-like) — see
+  // DAMAGED_LIKE_TYPES below for the split.
   totalLossValue: number;
+  // "Damaged"-type value only (DAMAGED/BROKEN/SPOILED).
+  totalDamageValue: number;
+  totalLossDamageValue: number;
   thisMonthLossValue: number;
 };
 
 const DAMAGED_LIKE_TYPES: LossDamageType[] = ["DAMAGED", "BROKEN", "SPOILED"];
 
+// Manual overrides mean the effective value per record isn't a single
+// column Prisma's aggregate() can sum directly (it'd need COALESCE across
+// two columns) — loss/damage entries are low-volume business events (not
+// order-scale), so a single findMany + in-memory reduce is the simplest
+// correct option rather than raw SQL.
 export async function getLossDamageSummary(shopId: string): Promise<LossDamageSummary> {
   const now = new Date();
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
 
-  const [totalRecords, lostAgg, damagedAgg, totalValueAgg, monthValueAgg] = await Promise.all([
-    db.lossDamageRecord.count({ where: { shopId } }),
-    db.lossDamageRecord.aggregate({
-      where: { shopId, type: { notIn: DAMAGED_LIKE_TYPES } },
-      _sum: { quantity: true },
-    }),
-    db.lossDamageRecord.aggregate({
-      where: { shopId, type: { in: DAMAGED_LIKE_TYPES } },
-      _sum: { quantity: true },
-    }),
-    db.lossDamageRecord.aggregate({ where: { shopId }, _sum: { totalLossValue: true } }),
-    db.lossDamageRecord.aggregate({
-      where: { shopId, date: { gte: monthStart } },
-      _sum: { totalLossValue: true },
-    }),
-  ]);
+  const records = await db.lossDamageRecord.findMany({
+    where: { shopId },
+    select: { type: true, quantity: true, totalLossValue: true, manualValue: true, date: true },
+  });
+
+  let totalItemsLost = 0;
+  let totalItemsDamaged = 0;
+  let totalLossValue = 0;
+  let totalDamageValue = 0;
+  let thisMonthLossValue = 0;
+
+  for (const record of records) {
+    const value = effectiveLossValue(record) ?? 0;
+    if (DAMAGED_LIKE_TYPES.includes(record.type)) {
+      totalItemsDamaged += record.quantity;
+      totalDamageValue += value;
+    } else {
+      totalItemsLost += record.quantity;
+      totalLossValue += value;
+    }
+    if (record.date >= monthStart) thisMonthLossValue += value;
+  }
 
   return {
-    totalRecords,
-    totalItemsLost: lostAgg._sum.quantity ?? 0,
-    totalItemsDamaged: damagedAgg._sum.quantity ?? 0,
-    totalLossValue: Number(totalValueAgg._sum.totalLossValue ?? 0),
-    thisMonthLossValue: Number(monthValueAgg._sum.totalLossValue ?? 0),
+    totalRecords: records.length,
+    totalItemsLost,
+    totalItemsDamaged,
+    totalLossValue: round2(totalLossValue),
+    totalDamageValue: round2(totalDamageValue),
+    totalLossDamageValue: round2(totalLossValue + totalDamageValue),
+    thisMonthLossValue: round2(thisMonthLossValue),
   };
 }
 
@@ -287,6 +329,7 @@ export type LossDamagePayload = {
   shopId: string;
   productId: string;
   productName: string;
+  productCode: string | null;
   productImageUrl: string | null;
   quantity: number;
   type: string;
@@ -295,12 +338,16 @@ export type LossDamagePayload = {
   date: string;
   unitCost: number | null;
   totalLossValue: number | null;
+  manualValue: number | null;
+  manualValueReason: string | null;
+  effectiveValue: number | null;
   inventoryBefore: number | null;
   inventoryAfter: number | null;
   evidencePhotoUrls: string[];
   returnId: string | null;
   returnOrderId: string | null;
   createdBy: string | null;
+  createdByLabel: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -311,6 +358,7 @@ export function toLossDamagePayload(record: LossDamageRecordDetail): LossDamageP
     shopId: record.shopId,
     productId: record.productId,
     productName: record.productName,
+    productCode: record.product?.productCode ?? null,
     productImageUrl: record.product?.imageUrl ?? null,
     quantity: record.quantity,
     type: record.type,
@@ -319,12 +367,16 @@ export function toLossDamagePayload(record: LossDamageRecordDetail): LossDamageP
     date: record.date.toISOString(),
     unitCost: record.unitCost != null ? Number(record.unitCost) : null,
     totalLossValue: record.totalLossValue != null ? Number(record.totalLossValue) : null,
+    manualValue: record.manualValue != null ? Number(record.manualValue) : null,
+    manualValueReason: record.manualValueReason,
+    effectiveValue: effectiveLossValue(record),
     inventoryBefore: record.inventoryBefore,
     inventoryAfter: record.inventoryAfter,
     evidencePhotoUrls: record.evidencePhotoUrls,
     returnId: record.returnItem?.returnId ?? null,
     returnOrderId: record.returnItem?.returnRequest.orderId ?? null,
     createdBy: record.createdBy,
+    createdByLabel: record.createdByLabel,
     createdAt: record.createdAt.toISOString(),
     updatedAt: record.updatedAt.toISOString(),
   };

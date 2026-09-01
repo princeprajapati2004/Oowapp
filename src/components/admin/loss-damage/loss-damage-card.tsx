@@ -32,7 +32,8 @@ export function LossDamageCard({ record, currency }: { record: LossDamagePayload
           {LOSS_DAMAGE_TYPE_LABELS[type]}
         </span>
         <span className="whitespace-nowrap text-sm font-semibold">
-          {record.totalLossValue != null ? formatCurrency(record.totalLossValue, currency) : "—"}
+          {record.effectiveValue != null ? formatCurrency(record.effectiveValue, currency) : "—"}
+          {record.manualValue != null && <span className="ml-1 text-[10px] font-normal text-muted-foreground">(adjusted)</span>}
         </span>
       </div>
     </Link>

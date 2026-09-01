@@ -5,7 +5,7 @@ import { db } from "@/lib/db";
 import { toLossDamagePayload } from "@/lib/services/loss-damage";
 
 const DETAIL_INCLUDE = {
-  product: { select: { id: true, name: true, imageUrl: true } },
+  product: { select: { id: true, name: true, imageUrl: true, productCode: true } },
   returnItem: {
     select: {
       id: true,

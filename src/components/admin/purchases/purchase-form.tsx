@@ -1,15 +1,17 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Plus, Trash2 } from "lucide-react";
+import { Plus, Trash2, Search, ChevronDown, Building2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import { ReportPageHeader } from "@/components/admin/reports/report-page-header";
 import { ReportSelect } from "@/components/admin/reports/report-select";
+import { PartyFormDialog } from "@/components/admin/party-form-dialog";
 import { api, ApiError } from "@/lib/api-client";
 import { formatCurrency } from "@/lib/utils/currency";
 import { PAYMENT_METHODS } from "@/lib/order-status";
@@ -39,9 +41,13 @@ function emptyRow(): ItemRow {
   return { productId: "", quantity: "1", purchasePrice: "", taxAmount: "" };
 }
 
-export function PurchaseForm({ products, suppliers }: { products: Product[]; suppliers: Supplier[] }) {
+export function PurchaseForm({ products, suppliers: initialSuppliers }: { products: Product[]; suppliers: Supplier[] }) {
   const router = useRouter();
+  const [suppliers, setSuppliers] = useState<Supplier[]>(initialSuppliers);
   const [supplierId, setSupplierId] = useState("");
+  const [supplierQuery, setSupplierQuery] = useState("");
+  const [supplierPickerOpen, setSupplierPickerOpen] = useState(false);
+  const [addSupplierOpen, setAddSupplierOpen] = useState(false);
   const [invoiceNumber, setInvoiceNumber] = useState("");
   const [purchaseDate, setPurchaseDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [items, setItems] = useState<ItemRow[]>([emptyRow()]);
@@ -51,7 +57,12 @@ export function PurchaseForm({ products, suppliers }: { products: Product[]; sup
   const [notes, setNotes] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
-  const supplierOptions = suppliers.map((s) => ({ value: s.id, label: `${s.name} (${s.phone})` }));
+  const selectedSupplier = suppliers.find((s) => s.id === supplierId) ?? null;
+  const filteredSuppliers = useMemo(() => {
+    const q = supplierQuery.trim().toLowerCase();
+    if (!q) return suppliers;
+    return suppliers.filter((s) => s.name.toLowerCase().includes(q) || s.phone.includes(q));
+  }, [suppliers, supplierQuery]);
   const productOptions = products.map((p) => ({ value: p.id, label: p.name }));
   const paymentMethodOptions = PAYMENT_METHODS.map((m) => ({ value: m.value, label: m.label }));
 
@@ -124,15 +135,74 @@ export function PurchaseForm({ products, suppliers }: { products: Product[]; sup
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div className="space-y-1.5">
           <Label>Supplier</Label>
-          {suppliers.length === 0 ? (
-            <p className="rounded-lg px-3 py-2.5 text-sm text-muted-foreground ring-1 ring-foreground/10">No suppliers yet — add one under Parties.</p>
-          ) : (
-            <ReportSelect
-              value={supplierId || "__none__"}
-              onValueChange={(v) => setSupplierId(v === "__none__" ? "" : v)}
-              options={[{ value: "__none__", label: "Select supplier" }, ...supplierOptions]}
-            />
-          )}
+          <Popover
+            open={supplierPickerOpen}
+            onOpenChange={(next) => {
+              setSupplierPickerOpen(next);
+              if (!next) setSupplierQuery("");
+            }}
+          >
+            <PopoverTrigger
+              render={<button type="button" className="flex h-10 w-full items-center justify-between rounded-md border bg-transparent px-3 text-sm" />}
+            >
+              <span className="flex min-w-0 items-center gap-1.5">
+                <Building2 className="size-3.5 shrink-0 text-muted-foreground" />
+                <span className={selectedSupplier ? "truncate" : "truncate text-muted-foreground"}>
+                  {selectedSupplier ? `${selectedSupplier.name} (${selectedSupplier.phone})` : "Select supplier"}
+                </span>
+              </span>
+              <ChevronDown className="size-4 shrink-0 text-muted-foreground" />
+            </PopoverTrigger>
+            <PopoverContent className="w-[--anchor-width] min-w-72 p-0" align="start">
+              <div className="p-2">
+                <div className="relative">
+                  <Search className="absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    autoFocus
+                    value={supplierQuery}
+                    onChange={(e) => setSupplierQuery(e.target.value)}
+                    placeholder="Search suppliers…"
+                    className="h-9 pl-8"
+                  />
+                </div>
+              </div>
+              <div className="max-h-56 overflow-y-auto border-t">
+                {filteredSuppliers.length === 0 ? (
+                  <p className="px-3 py-4 text-center text-sm text-muted-foreground">No suppliers found</p>
+                ) : (
+                  filteredSuppliers.map((s) => (
+                    <button
+                      key={s.id}
+                      type="button"
+                      onClick={() => {
+                        setSupplierId(s.id);
+                        setSupplierPickerOpen(false);
+                        setSupplierQuery("");
+                      }}
+                      className="flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-muted/60"
+                    >
+                      <span className="truncate">{s.name}</span>
+                      <span className="shrink-0 text-xs text-muted-foreground">{s.phone}</span>
+                    </button>
+                  ))
+                )}
+              </div>
+              <div className="border-t p-1.5">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="w-full justify-start gap-1.5"
+                  onClick={() => {
+                    setSupplierPickerOpen(false);
+                    setAddSupplierOpen(true);
+                  }}
+                >
+                  <Plus className="size-3.5" /> Add new supplier
+                </Button>
+              </div>
+            </PopoverContent>
+          </Popover>
         </div>
         <div className="space-y-1.5">
           <Label>Purchase Date</Label>
@@ -230,6 +300,18 @@ export function PurchaseForm({ products, suppliers }: { products: Product[]; sup
       <Button className="h-11 w-full" disabled={submitting} onClick={handleSubmit}>
         {submitting ? "Saving..." : "Record Purchase"}
       </Button>
+
+      <PartyFormDialog
+        open={addSupplierOpen}
+        onOpenChange={setAddSupplierOpen}
+        editing={null}
+        defaultType="SUPPLIER"
+        onSaved={(created) => {
+          if (!created) return;
+          setSuppliers((prev) => [...prev, { id: created.id, name: created.name, phone: created.phone, gstNumber: null }]);
+          setSupplierId(created.id);
+        }}
+      />
     </div>
   );
 }

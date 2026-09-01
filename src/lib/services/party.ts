@@ -25,7 +25,7 @@ export function isOutstandingOrder(order: { status: string; paymentStatus: strin
   return order.status !== "CANCELLED" && OUTSTANDING_STATUSES.has(order.paymentStatus ?? "PENDING");
 }
 
-export type PaymentWithAllocations = { direction: string; amount: unknown; allocations: unknown[] };
+export type PaymentWithAllocations = { direction: string; amount: unknown; allocations: unknown[]; purchaseId?: string | null };
 
 // Sums every RECEIVED/PAID payment regardless of whether it settled specific
 // orders — for "how much has this party paid us in total" display figures.
@@ -42,10 +42,26 @@ export function paymentsReceivedUnallocated(payments: PaymentWithAllocations[]) 
     .filter((p) => p.direction === "RECEIVED" && p.allocations.length === 0)
     .reduce((s, p) => s + Number(p.amount), 0);
 }
+// Purchase-linked PAID payments are excluded here — that money is already
+// reflected inside unpaidPurchaseTotal()'s per-purchase (grandTotal -
+// paidAmount) netting, so folding it in again here would double-subtract it
+// from the supplier's outstanding balance. Never affects customer-type
+// parties (they never have a purchaseId-linked payment), so this is a
+// behavior change only for suppliers, and only for the outstanding formula —
+// sumPayments()'s "Total Paid" display figure is untouched.
 export function paymentsPaidUnallocated(payments: PaymentWithAllocations[]) {
   return payments
-    .filter((p) => p.direction === "PAID" && p.allocations.length === 0)
+    .filter((p) => p.direction === "PAID" && p.allocations.length === 0 && !p.purchaseId)
     .reduce((s, p) => s + Number(p.amount), 0);
+}
+
+export type PurchaseForOutstanding = { grandTotal: unknown; paidAmount: unknown; status: string };
+
+/** Sum of (grandTotal - paidAmount) across a supplier's non-cancelled purchases — the goods-received debt computeOutstanding() folds into a SUPPLIER's balance. */
+export function unpaidPurchaseTotal(purchases: PurchaseForOutstanding[]): number {
+  return purchases
+    .filter((p) => p.status !== "CANCELLED")
+    .reduce((sum, p) => sum + Math.max(0, Number(p.grandTotal) - Number(p.paidAmount ?? 0)), 0);
 }
 
 async function assertUniquePhoneAndGst(
@@ -84,11 +100,12 @@ export function computeOutstanding(
   party: { type: string; openingBalance: unknown },
   unpaidOrderTotal: number,
   received: number,
-  paid: number
+  paid: number,
+  unpaidPurchases = 0
 ) {
   const opening = Number(party.openingBalance);
   if (party.type === "SUPPLIER") {
-    return opening - paid + received;
+    return opening - paid + received + unpaidPurchases;
   }
   return opening + unpaidOrderTotal - received + paid;
 }
@@ -104,6 +121,7 @@ export async function listPartiesWithBalances(shopId: string) {
       // now the authoritative source instead of a phone-string join.
       orders: { select: { grandTotal: true, discountedTotal: true, paidAmount: true, status: true, paymentStatus: true } },
       payments: { include: { allocations: { select: { id: true } } } },
+      purchases: { select: { grandTotal: true, paidAmount: true, status: true } },
     },
   });
   if (parties.length === 0) return [];
@@ -112,9 +130,10 @@ export async function listPartiesWithBalances(shopId: string) {
     // Destructuring (not `{ ...party, key: newValue }`) is required here —
     // spreading a naked Prisma result and overriding a key produces an
     // intersection of old and new key types instead of replacing it, so the
-    // raw Decimal-bearing `orders`/`payments` arrays would otherwise leak
-    // into the returned shape as well as the derived summary fields.
-    const { orders, payments, ...party } = partyWithRelations;
+    // raw Decimal-bearing `orders`/`payments`/`purchases` arrays would
+    // otherwise leak into the returned shape as well as the derived summary
+    // fields.
+    const { orders, payments, purchases, ...party } = partyWithRelations;
     const unpaidOrderTotal = orders
       .filter(isOutstandingOrder)
       .reduce((sum, o) => sum + orderOutstanding(o), 0);
@@ -125,6 +144,7 @@ export async function listPartiesWithBalances(shopId: string) {
     // this sum; totalPaid below still reports every payment either way.
     const received = paymentsReceivedUnallocated(payments);
     const paid = paymentsPaidUnallocated(payments);
+    const unpaidPurchases = unpaidPurchaseTotal(purchases);
 
     return {
       ...party,
@@ -133,7 +153,8 @@ export async function listPartiesWithBalances(shopId: string) {
       createdAt: party.createdAt.toISOString(),
       updatedAt: party.updatedAt.toISOString(),
       orderCount: orders.length,
-      outstanding: computeOutstanding(party, unpaidOrderTotal, received, paid),
+      purchaseCount: purchases.length,
+      outstanding: computeOutstanding(party, unpaidOrderTotal, received, paid, unpaidPurchases),
     };
   });
 }
@@ -154,10 +175,11 @@ export async function getPartyStatement(shopId: string, id: string) {
     include: {
       orders: { orderBy: { createdAt: "desc" }, include: { items: true } },
       payments: { orderBy: { createdAt: "desc" }, include: { allocations: { select: { id: true } } } },
+      purchases: { orderBy: { purchaseDate: "desc" }, include: { items: true } },
     },
   });
   if (!partyWithRelations) throw new NotFoundError("Party not found");
-  const { orders, payments, ...party } = partyWithRelations;
+  const { orders, payments, purchases, ...party } = partyWithRelations;
 
   const unpaidOrderTotal = orders
     .filter(isOutstandingOrder)
@@ -167,6 +189,7 @@ export async function getPartyStatement(shopId: string, id: string) {
   // every payment regardless.
   const received = paymentsReceivedUnallocated(payments);
   const paid = paymentsPaidUnallocated(payments);
+  const unpaidPurchases = unpaidPurchaseTotal(purchases);
 
   return {
     party: {
@@ -197,12 +220,26 @@ export async function getPartyStatement(shopId: string, id: string) {
       method: p.method,
       direction: p.direction,
       note: p.note,
+      purchaseId: p.purchaseId,
       createdAt: p.createdAt.toISOString(),
     })),
+    purchases: purchases.map((p) => ({
+      id: p.id,
+      purchaseNumber: p.purchaseNumber,
+      purchaseDate: p.purchaseDate.toISOString(),
+      grandTotal: Number(p.grandTotal),
+      paidAmount: p.paidAmount !== null ? Number(p.paidAmount) : null,
+      paymentStatus: p.paymentStatus,
+      status: p.status,
+      outstanding: p.status === "CANCELLED" ? 0 : Math.max(0, Number(p.grandTotal) - Number(p.paidAmount ?? 0)),
+      itemCount: p.items.length,
+    })),
     summary: {
-      outstanding: computeOutstanding(party, unpaidOrderTotal, received, paid),
+      outstanding: computeOutstanding(party, unpaidOrderTotal, received, paid, unpaidPurchases),
       totalPaid: party.type === "SUPPLIER" ? sumPayments(payments, "PAID") : sumPayments(payments, "RECEIVED"),
       orderCount: orders.length,
+      purchaseCount: purchases.length,
+      totalPurchases: purchases.filter((p) => p.status !== "CANCELLED").reduce((sum, p) => sum + Number(p.grandTotal), 0),
     },
   };
 }

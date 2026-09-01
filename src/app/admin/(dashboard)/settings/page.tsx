@@ -58,7 +58,7 @@ export default async function SettingsPage() {
     {
       id: "business",
       title: "Business information",
-      description: "Name, type, contact details, logo_1 and currency.",
+      description: "Logo, name, type, contact details, address and currency.",
       defaultOpen: true,
       content: (
         <BusinessInfoForm
@@ -67,10 +67,17 @@ export default async function SettingsPage() {
             businessName: shop.businessName,
             businessType: shop.businessType,
             logoUrl: shop.logoUrl,
+            ownerName: shopAny.ownerName ?? "",
             phone: shop.phone ?? "",
             whatsappNumber: shop.whatsappNumber,
+            email: shopAny.email ?? "",
             address: shop.address ?? "",
+            city: shopAny.city ?? "",
+            state: shopAny.state ?? "",
+            pincode: shopAny.pincode ?? "",
             gstNumber: shop.gstNumber ?? "",
+            panNumber: shopAny.panNumber ?? "",
+            website: shopAny.website ?? "",
             currency: shop.currency as BusinessInfoInput["currency"],
           }}
         />

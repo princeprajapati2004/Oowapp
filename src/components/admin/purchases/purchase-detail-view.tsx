@@ -1,8 +1,10 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
+import { Building2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -128,8 +130,15 @@ export function PurchaseDetailView({ purchase: initial }: { purchase: PurchaseDe
     <div className="max-w-3xl space-y-5">
       <ReportPageHeader
         title={purchase.purchaseNumber}
-        description={`${purchase.supplier.name} · ${new Date(purchase.purchaseDate).toLocaleDateString("en-IN")}`}
-      />
+        description={new Date(purchase.purchaseDate).toLocaleDateString("en-IN")}
+      >
+        <Link
+          href={`/admin/parties/${purchase.supplier.id}`}
+          className="inline-flex items-center gap-1.5 text-sm font-medium text-primary hover:underline"
+        >
+          <Building2 className="size-3.5" /> {purchase.supplier.name}
+        </Link>
+      </ReportPageHeader>
 
       <div className="flex flex-wrap items-center gap-2">
         {isCancelled ? (

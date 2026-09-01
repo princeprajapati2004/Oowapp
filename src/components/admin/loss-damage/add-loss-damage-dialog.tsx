@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { EvidencePhotosInput } from "@/components/shared/evidence-photos-input";
 import { api, ApiError } from "@/lib/api-client";
@@ -44,6 +45,9 @@ export function AddLossDamageDialog({
   const [notes, setNotes] = useState("");
   const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [evidenceUrls, setEvidenceUrls] = useState<string[]>([]);
+  const [overrideValue, setOverrideValue] = useState(false);
+  const [manualValue, setManualValue] = useState("");
+  const [manualValueReason, setManualValueReason] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const clientRequestId = useRef<string>("");
 
@@ -72,14 +76,29 @@ export function AddLossDamageDialog({
     setNotes("");
     setDate(new Date().toISOString().slice(0, 10));
     setEvidenceUrls([]);
+    setOverrideValue(false);
+    setManualValue("");
+    setManualValueReason("");
     clientRequestId.current = "";
   }
 
   const estimatedLoss = selectedProduct?.costPrice != null ? Math.round(selectedProduct.costPrice * quantity * 100) / 100 : null;
+  const parsedManualValue = manualValue.trim() ? Number(manualValue) : null;
+  const manualValueInvalid = overrideValue && (parsedManualValue == null || Number.isNaN(parsedManualValue) || parsedManualValue < 0);
+  const manualReasonInvalid = overrideValue && !manualValueReason.trim();
+  const quantityExceedsStock = selectedProduct?.stock != null && quantity > selectedProduct.stock;
 
   async function handleSubmit() {
     if (!selectedProduct) {
       toast.error("Select a product");
+      return;
+    }
+    if (manualValueInvalid) {
+      toast.error("Enter a valid override amount");
+      return;
+    }
+    if (manualReasonInvalid) {
+      toast.error("A reason is required for a manual value override");
       return;
     }
     setSubmitting(true);
@@ -93,6 +112,8 @@ export function AddLossDamageDialog({
         date: new Date(date).toISOString(),
         evidencePhotoUrls: evidenceUrls,
         clientRequestId: clientRequestId.current,
+        manualValue: overrideValue ? parsedManualValue ?? undefined : undefined,
+        manualValueReason: overrideValue ? manualValueReason.trim() : undefined,
       });
       onCreated(created);
       toast.success("Loss / damage recorded");
@@ -175,6 +196,11 @@ export function AddLossDamageDialog({
                     <Plus className="size-3.5" />
                   </Button>
                 </div>
+                {quantityExceedsStock && (
+                  <p className="text-xs text-amber-600 dark:text-amber-400">
+                    Only {selectedProduct?.stock} in stock — stock will be clamped to 0, not negative.
+                  </p>
+                )}
               </div>
 
               <div className="space-y-1.5">
@@ -222,19 +248,55 @@ export function AddLossDamageDialog({
                 <EvidencePhotosInput urls={evidenceUrls} onChange={setEvidenceUrls} endpoint="/api/admin/loss-damage/upload" />
               </div>
 
-              {estimatedLoss != null && (
+              {estimatedLoss != null ? (
                 <div className="flex items-center justify-between rounded-lg border bg-muted/40 px-3 py-2.5">
-                  <span className="text-sm font-medium">Estimated Loss Value</span>
+                  <span className="text-sm font-medium">System Value ({quantity} × {formatCurrency(selectedProduct!.costPrice!, currency)})</span>
                   <span className="text-sm font-semibold">{formatCurrency(estimatedLoss, currency)}</span>
                 </div>
+              ) : (
+                <p className="rounded-lg border bg-muted/40 px-3 py-2.5 text-xs text-muted-foreground">
+                  This product has no purchase/cost price set, so a system value can&apos;t be calculated. Enter a manual value below if you want one recorded.
+                </p>
               )}
+
+              <div className="space-y-2 rounded-lg border px-3 py-2.5">
+                <label className="flex items-center gap-2 text-sm font-medium">
+                  <Checkbox checked={overrideValue} onCheckedChange={(v) => setOverrideValue(v === true)} />
+                  Override value manually
+                </label>
+                {overrideValue && (
+                  <div className="space-y-2 pt-1">
+                    <div className="space-y-1.5">
+                      <Label className="text-xs">Adjusted Value *</Label>
+                      <Input
+                        type="number"
+                        min={0}
+                        step="0.01"
+                        value={manualValue}
+                        onChange={(e) => setManualValue(e.target.value)}
+                        placeholder="0.00"
+                        className="h-10"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs">Reason *</Label>
+                      <Input
+                        value={manualValueReason}
+                        onChange={(e) => setManualValueReason(e.target.value)}
+                        placeholder="e.g. Manual valuation"
+                        className="h-10"
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
             </>
           )}
         </div>
 
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={submitting}>Cancel</Button>
-          <Button onClick={handleSubmit} disabled={submitting || !selectedProduct}>
+          <Button onClick={handleSubmit} disabled={submitting || !selectedProduct || manualValueInvalid || manualReasonInvalid}>
             {submitting ? "Saving…" : "Save Record"}
           </Button>
         </DialogFooter>

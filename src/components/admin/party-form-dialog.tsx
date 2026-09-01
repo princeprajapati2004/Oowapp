@@ -55,6 +55,7 @@ export function PartyFormDialog({
   onOpenChange,
   editing,
   onSaved,
+  defaultType,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -62,7 +63,14 @@ export function PartyFormDialog({
   // Fired after a successful create/update, dialog already closed. The caller
   // refetches from the server rather than trusting this component's payload —
   // outstanding/orderCount are computed server-side and not part of the form.
-  onSaved: () => void | Promise<void>;
+  // On a fresh create (not edit), the newly-created party is also passed —
+  // callers that need to auto-select it (e.g. the "add supplier inline" flow
+  // on the New Purchase page) don't have to re-fetch the list to find it.
+  onSaved: (created?: { id: string; name: string; phone: string; type: "CUSTOMER" | "SUPPLIER" }) => void | Promise<void>;
+  // Pre-selects the Customer/Supplier toggle on a fresh "Add party" open
+  // (e.g. the New Purchase page opens this wanting a supplier, not the
+  // form's normal customer-first default). Ignored while editing.
+  defaultType?: "CUSTOMER" | "SUPPLIER";
 }) {
   const [form, setForm] = useState(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
@@ -84,8 +92,9 @@ export function PartyFormDialog({
         notes: editing.notes ?? "",
       });
     } else {
-      setForm(EMPTY_FORM);
+      setForm({ ...EMPTY_FORM, type: defaultType ?? EMPTY_FORM.type });
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, editing]);
 
   async function handleSave() {
@@ -110,12 +119,17 @@ export function PartyFormDialog({
       if (editing) {
         await api.patch(`/api/admin/parties/${editing.id}`, payload);
         toast.success("Party updated");
+        onOpenChange(false);
+        await onSaved();
       } else {
-        await api.post("/api/admin/parties", payload);
+        const created = await api.post<{ id: string; name: string; phone: string; type: "CUSTOMER" | "SUPPLIER" }>(
+          "/api/admin/parties",
+          payload
+        );
         toast.success("Party added");
+        onOpenChange(false);
+        await onSaved(created);
       }
-      onOpenChange(false);
-      await onSaved();
     } catch (error) {
       toast.error(error instanceof ApiError ? error.message : "Failed to save");
     } finally {

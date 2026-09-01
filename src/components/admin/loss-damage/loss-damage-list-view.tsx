@@ -109,10 +109,12 @@ export function LossDamageListView({
 
       <SummaryStatTiles
         tiles={[
-          { label: "Total Records", value: String(summary.totalRecords) },
           { label: "Items Lost", value: String(summary.totalItemsLost) },
           { label: "Items Damaged", value: String(summary.totalItemsDamaged), accent: "text-red-600 dark:text-red-400" },
-          { label: "This Month Loss", value: formatCurrency(summary.thisMonthLossValue, currency) },
+          { label: "Total Loss Value", value: formatCurrency(summary.totalLossValue, currency) },
+          { label: "Total Damage Value", value: formatCurrency(summary.totalDamageValue, currency), accent: "text-red-600 dark:text-red-400" },
+          { label: "Total Loss/Damage Value", value: formatCurrency(summary.totalLossDamageValue, currency) },
+          { label: "This Month", value: formatCurrency(summary.thisMonthLossValue, currency) },
         ]}
       />
 
@@ -154,12 +156,16 @@ export function LossDamageListView({
         currency={currency}
         onCreated={(created) => {
           setRecords((prev) => [created, ...prev]);
+          const isDamagedType = created.type === "DAMAGED" || created.type === "BROKEN" || created.type === "SPOILED";
+          const value = created.effectiveValue ?? 0;
           setSummary((prev) => ({
             totalRecords: prev.totalRecords + 1,
-            totalItemsLost: prev.totalItemsLost + (created.type !== "DAMAGED" && created.type !== "BROKEN" && created.type !== "SPOILED" ? created.quantity : 0),
-            totalItemsDamaged: prev.totalItemsDamaged + (created.type === "DAMAGED" || created.type === "BROKEN" || created.type === "SPOILED" ? created.quantity : 0),
-            totalLossValue: prev.totalLossValue + (created.totalLossValue ?? 0),
-            thisMonthLossValue: prev.thisMonthLossValue + (created.totalLossValue ?? 0),
+            totalItemsLost: prev.totalItemsLost + (!isDamagedType ? created.quantity : 0),
+            totalItemsDamaged: prev.totalItemsDamaged + (isDamagedType ? created.quantity : 0),
+            totalLossValue: prev.totalLossValue + (!isDamagedType ? value : 0),
+            totalDamageValue: prev.totalDamageValue + (isDamagedType ? value : 0),
+            totalLossDamageValue: prev.totalLossDamageValue + value,
+            thisMonthLossValue: prev.thisMonthLossValue + value,
           }));
         }}
       />

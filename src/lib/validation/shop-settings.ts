@@ -19,6 +19,7 @@ export const businessInfoSchema = z.object({
   businessName: z.string().trim().min(2, "Business name is too short").max(100),
   businessType: z.enum(BUSINESS_TYPES),
   logoUrl: z.string().nullable().optional(),
+  ownerName: z.string().trim().max(100).optional().or(z.literal("")),
   phone: z.string().trim().max(20).optional().or(z.literal("")),
   whatsappNumber: z
     .string()
@@ -26,8 +27,25 @@ export const businessInfoSchema = z.object({
     .min(8, "Enter a valid WhatsApp number with country code")
     .max(20)
     .regex(/^[0-9+]+$/, "Digits only, include country code"),
+  email: z.string().trim().max(150).email("Enter a valid email").optional().or(z.literal("")),
   address: z.string().trim().max(300).optional().or(z.literal("")),
+  city: z.string().trim().max(100).optional().or(z.literal("")),
+  state: z.string().trim().max(100).optional().or(z.literal("")),
+  pincode: z
+    .string()
+    .trim()
+    .regex(/^[0-9]{4,10}$/, "Enter a valid pincode")
+    .optional()
+    .or(z.literal("")),
   gstNumber: z.string().trim().max(20).optional().or(z.literal("")),
+  panNumber: z
+    .string()
+    .trim()
+    .toUpperCase()
+    .regex(/^[A-Z]{5}[0-9]{4}[A-Z]$/, "Enter a valid PAN (e.g. ABCDE1234F)")
+    .optional()
+    .or(z.literal("")),
+  website: z.string().trim().max(200).url("Enter a valid URL (e.g. https://example.com)").optional().or(z.literal("")),
   currency: z.enum(CURRENCIES),
 });
 export type BusinessInfoInput = z.infer<typeof businessInfoSchema>;

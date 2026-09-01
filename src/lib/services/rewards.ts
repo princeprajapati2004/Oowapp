@@ -1,4 +1,4 @@
-import { creditWallet } from "@/lib/services/wallet";
+import { creditWallet, reverseWalletCredit } from "@/lib/services/wallet";
 import type { Prisma } from "@/generated/prisma/client";
 
 type Tx = Prisma.TransactionClient;
@@ -97,4 +97,32 @@ export async function voidPendingCashbackRedemption(tx: Tx, orderId: string): Pr
     where: { orderId, status: "PENDING" },
     data: { status: "VOIDED" },
   });
+}
+
+/**
+ * A cashback-eligible order that already paid out (CREDITED) is later marked
+ * REFUNDED (see PATCH .../orders/[id] mark_refunded action, only reachable
+ * from a cancelled, previously-paid order) — the customer must not keep
+ * cashback earned on money that was given back. Claim-then-act (CAS on
+ * status) so a retried mark_refunded call is a safe no-op, matching every
+ * other order-triggered wallet write in this file.
+ */
+export async function reverseCashbackIfCredited(tx: Tx, orderId: string): Promise<void> {
+  const redemption = await tx.cashbackRedemption.findUnique({ where: { orderId } });
+  if (!redemption || redemption.status !== "CREDITED") return;
+
+  const claimed = await tx.cashbackRedemption.updateMany({
+    where: { id: redemption.id, status: "CREDITED" },
+    data: { status: "REVERSED" },
+  });
+  if (claimed.count > 0) {
+    await reverseWalletCredit(tx, {
+      shopId: redemption.shopId,
+      customerId: redemption.customerId,
+      type: "CASHBACK_REVERSAL",
+      amount: Number(redemption.cashbackAmount),
+      orderId,
+      description: "Cashback reversed — order refunded",
+    });
+  }
 }
