@@ -94,7 +94,6 @@ export type ShopSettingsInput = Partial<{
   bhimUpi: string | null;
   requireCustomerName: boolean;
   requirePhone: boolean;
-  requirePhoneVerification: boolean;
   enableTableNumber: boolean;
   requireTableNumber: boolean;
   requireDeliveryAddress: boolean;
@@ -137,7 +136,6 @@ export async function getPublicShopBundle(slug: string) {
       // Checkout form requirements
       requireCustomerName: true,
       requirePhone: true,
-      requirePhoneVerification: true,
       enableTableNumber: true,
       requireTableNumber: true,
       requireDeliveryAddress: true,

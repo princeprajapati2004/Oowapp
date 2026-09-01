@@ -79,7 +79,6 @@ export const RETURN_WINDOW_DAY_PRESETS = [1, 2, 3, 5, 7, 10, 15, 30] as const;
 export const orderSettingsSchema = z.object({
   requireCustomerName: z.boolean(),
   requirePhone: z.boolean(),
-  requirePhoneVerification: z.boolean(),
   enableTableNumber: z.boolean(),
   requireTableNumber: z.boolean(),
   requireDeliveryAddress: z.boolean(),

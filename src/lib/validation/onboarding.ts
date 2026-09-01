@@ -1,10 +1,6 @@
 import { z } from "zod";
 import { CURRENCIES } from "@/lib/currencies";
 
-export const verifyAdminPhoneOtpSchema = z.object({
-  otp: z.string().length(6).regex(/^\d{6}$/, "Enter the 6-digit code"),
-});
-
 // Owner-profile fields collected during onboarding, on top of what
 // signupSchema already collected (businessName/businessType/email/whatsappNumber).
 // These map onto pre-existing (previously unused) Shop columns — see the

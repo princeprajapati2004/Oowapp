@@ -393,14 +393,10 @@ model Admin {
   emailVerified Boolean  @default(false)
   // Verifies Shop.whatsappNumber (collected at signup) — kept on Admin, not
   // Shop, to mirror emailVerified's placement as an owner-identity flag.
-  // Defaults true so already-existing admins are never retroactively gated;
-  // the signup route explicitly sets this false for genuinely new accounts.
-  phoneVerified Boolean  @default(true)
-  createdAt     DateTime @default(now())
-  shop          Shop?
+  createdAt DateTime @default(now())
+  shop      Shop?
 
   emailVerifications EmailVerification[]
-  phoneVerifications PhoneVerification[]
 
   @@map("admins")
 }
@@ -418,28 +414,6 @@ model EmailVerification {
 
   @@index([adminId])
   @@map("email_verifications")
-}
-
-// Owner mobile-number verification during onboarding — mirrors EmailVerification's
-// shape/lifecycle, but for the Admin's phone (Shop.whatsappNumber) instead of
-// email. Reuses the same MSG91 adapter (src/lib/services/sms-provider.ts) the
-// customer-facing PhoneOtp flow already uses, so there is exactly one SMS/OTP
-// provider integration in the app, not two. Kept as its own model (rather than
-// reusing PhoneOtp) because PhoneOtp is shopId-scoped for customer verification,
-// while this verifies the owner before/independent of shop-level concerns.
-model PhoneVerification {
-  id         String    @id @default(cuid())
-  adminId    String
-  admin      Admin     @relation(fields: [adminId], references: [id], onDelete: Cascade)
-  phone      String
-  codeHash   String
-  attempts   Int       @default(0)
-  expiresAt  DateTime
-  verifiedAt DateTime?
-  createdAt  DateTime  @default(now())
-
-  @@index([adminId])
-  @@map("phone_verifications")
 }
 
 model Shop {
@@ -506,9 +480,6 @@ model Shop {
   requirePhone             Boolean @default(false)
   // Separate from requirePhone (which only controls whether the phone field
   // is collected at all): whether that phone number must also be confirmed
-  // via OTP before the order can be placed. Off by default — collecting a
-  // phone number shouldn't force an OTP round unless the owner opts in.
-  requirePhoneVerification Boolean @default(false)
   enableTableNumber        Boolean @default(true)
   requireTableNumber       Boolean @default(true)
   requireDeliveryAddress   Boolean @default(false)
@@ -593,7 +564,6 @@ model Shop {
   subscriptions         Subscription[]
   pushSubscriptions     PushSubscription[]
   featurePermissions    BusinessFeaturePermission[]
-  phoneOtps             PhoneOtp[]
   staffMembers          StaffMember[]
   parties               Party[]
   partyPayments         PartyPayment[]
@@ -1492,25 +1462,6 @@ model StaffMember {
   @@unique([shopId, email])
   @@index([shopId])
   @@map("staff_members")
-}
-
-// Phone verification for guest checkout (Customer Ordering module). Codes are
-// bcrypt-hashed — never stored in plaintext — with a short expiry and a
-// capped attempt count. Not related to the password-based Customer login
-// system; this only gates the checkout phone field itself.
-model PhoneOtp {
-  id         String    @id @default(cuid())
-  shopId     String
-  shop       Shop      @relation(fields: [shopId], references: [id], onDelete: Cascade)
-  phone      String
-  codeHash   String
-  attempts   Int       @default(0)
-  expiresAt  DateTime
-  verifiedAt DateTime?
-  createdAt  DateTime  @default(now())
-
-  @@index([shopId, phone])
-  @@map("phone_otps")
 }
 
 model OrderItem {

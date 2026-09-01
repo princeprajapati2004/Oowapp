@@ -13,7 +13,6 @@ function getTransporter() {
       user: process.env.NO_REPLY_EMAIL,
       pass: process.env.NO_REPLY_EMAIL_PASSWORD,
     },
-    tls: { rejectUnauthorized: false },
   });
   return _transporter;
 }
@@ -34,6 +33,7 @@ export async function sendEmail(
     html,
     text,
     headers: {
+      "X-Mailer": "OOWAPP Mailer",
       Precedence: "transactional",
     },
   });

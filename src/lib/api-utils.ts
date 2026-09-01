@@ -2,8 +2,6 @@ import { NextResponse } from "next/server";
 import { ZodError } from "zod";
 import { UnauthorizedError, ForbiddenError } from "@/lib/session";
 import { BillAlreadyRequestedError } from "@/lib/services/table-session";
-import { OtpNotFoundError, OtpExpiredError, OtpIncorrectError } from "@/lib/services/phone-otp";
-import { OtpProviderError } from "@/lib/services/sms-provider";
 
 export class NotFoundError extends Error {
   constructor(message = "Not found") {
@@ -112,15 +110,6 @@ export function handleApiError(error: unknown) {
   }
   if (error instanceof ProductError) {
     return NextResponse.json({ error: error.message }, { status: 400 });
-  }
-  if (error instanceof OtpNotFoundError || error instanceof OtpExpiredError || error instanceof OtpProviderError) {
-    return NextResponse.json({ error: error.message }, { status: 400 });
-  }
-  if (error instanceof OtpIncorrectError) {
-    return NextResponse.json(
-      { error: error.message, attemptsLeft: error.attemptsLeft },
-      { status: 400 }
-    );
   }
   if (error instanceof ZodError) {
     return NextResponse.json(

@@ -37,7 +37,7 @@ export async function POST(request: Request) {
     }
 
     const admin = await db.admin.create({
-      data: { email: input.email, phone: input.phone, emailVerified: false, phoneVerified: false },
+      data: { email: input.email, phone: input.phone, emailVerified: false },
     });
 
     await writeAuditLog({

@@ -59,7 +59,6 @@ export type CustomerShop = Pick<
   | "whatsappNumber"
   | "requireCustomerName"
   | "requirePhone"
-  | "requirePhoneVerification"
   | "enableTableNumber"
   | "requireTableNumber"
   | "requireDeliveryAddress"

@@ -34,7 +34,6 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { FormRow } from "@/components/shared/form-row";
 import { EmptyState } from "@/components/shared/empty-state";
 import { ThemeToggle } from "@/components/shared/theme-toggle";
-import { PhoneVerification } from "@/components/customer/phone-verification";
 import { PaymentOptions } from "@/components/customer/payment-options";
 import { ItemStatusBadge, sessionItemStatus } from "@/components/customer/item-status-badge";
 import { tableSessionKey } from "@/components/customer/customer-menu";
@@ -319,9 +318,6 @@ export function CurrentOrderPage({
   });
 
   const phoneValue = watch("customerPhone") ?? "";
-  const [phoneVerified, setPhoneVerified] = useState(
-    !!customer || (!!verifiedPhone && verifiedPhone === phoneValue)
-  );
 
   const [couponCode, setCouponCode] = useState("");
   const [appliedCoupon, setAppliedCoupon] = useState<{
@@ -626,11 +622,6 @@ export function CurrentOrderPage({
       toast.error("Bill already requested for this table — please check with staff before ordering more.");
       return;
     }
-    if (shop.requirePhoneVerification && !phoneVerified) {
-      toast.error("Please verify your phone number before continuing.");
-      return;
-    }
-
     const resolvedValues: CheckoutInput = {
       ...values,
       tableNumber: shop.enableTableNumber ? (values.tableNumber || prefilledTable || "") : "",
@@ -1094,15 +1085,6 @@ export function CurrentOrderPage({
                           />
                         </div>
                       </FormRow>
-                    ) : shop.requirePhoneVerification ? (
-                      <PhoneVerification
-                        shopSlug={shop.slug}
-                        phone={phoneValue}
-                        onPhoneChange={(value) => setValue("customerPhone", value, { shouldValidate: true })}
-                        verified={phoneVerified}
-                        onVerifiedChange={setPhoneVerified}
-                        error={errors.customerPhone?.message}
-                      />
                     ) : (
                       <FormRow label="Phone number" htmlFor="customerPhone" required error={errors.customerPhone}>
                         <Input
