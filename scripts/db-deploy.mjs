@@ -10,9 +10,5 @@ import { detectDbProvider } from "./detect-db-provider.mjs";
 
 const provider = detectDbProvider(process.env.DATABASE_URL);
 
-if (provider === "postgresql") {
-  execSync("prisma migrate deploy", { stdio: "inherit" });
-} else {
-  console.log("[db-deploy] MySQL/MariaDB target — no migration history for this provider, running `prisma db push`.");
-  execSync("prisma db push", { stdio: "inherit" });
-}
+console.log(`[db-deploy] Syncing schema for provider "${provider}" using db push…`);
+execSync("node_modules/.bin/prisma db push --accept-data-loss", { stdio: "inherit" });
