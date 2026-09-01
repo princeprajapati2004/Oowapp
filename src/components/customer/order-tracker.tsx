@@ -35,6 +35,8 @@ import { cn } from "@/lib/utils";
 import { api, ApiError } from "@/lib/api-client";
 import { useOrderEvents, type OrderEventOrder, type TableSessionEventPayload } from "@/lib/hooks/use-order-events";
 import type { BillTotals } from "@/lib/services/billing";
+import type { CustomerReturnDetailPayload } from "@/lib/services/return-request";
+import { OrderReturnsSection } from "@/components/customer/order-returns-section";
 
 type TaxLine = { id: string; name: string; amount: number };
 
@@ -98,12 +100,14 @@ export function OrderTracker({
   session: initialSession,
   sessionBill: initialSessionBill,
   sessionItems: initialSessionItems,
+  returns: initialReturns,
 }: {
   order: OrderEventOrder;
   shop: Shop;
   session?: TableSessionEventPayload | null;
   sessionBill?: BillTotals | null;
   sessionItems?: InvoicePdfItem[] | null;
+  returns?: CustomerReturnDetailPayload[];
 }) {
   const [order, setOrder] = useState(initialOrder);
   const [displayItems, setDisplayItems] = useState(initialOrder.items);
@@ -124,6 +128,7 @@ export function OrderTracker({
   const [requestingBill, setRequestingBill] = useState(false);
   const [downloadingPdf, setDownloadingPdf] = useState(false);
   const [sharing, setSharing] = useState(false);
+  const [returns, setReturns] = useState<CustomerReturnDetailPayload[]>(initialReturns ?? []);
 
   const pendingChangesRef = useRef<Map<string, number>>(new Map());
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -137,6 +142,28 @@ export function OrderTracker({
     onUpdated: (updated) => {
       setOrder(updated);
       setDisplayItems(updated.items);
+    },
+    onReturnCreated: (r) => {
+      api.get<CustomerReturnDetailPayload>(`/api/customer/returns/${r.id}`).then((full) => {
+        setReturns((prev) => (prev.some((x) => x.id === full.id) ? prev : [full, ...prev]));
+      }).catch(() => {});
+      // A return reserves quantity against OrderItem.returnedQuantity —
+      // refetch the order too, or the item picker's "available" count goes
+      // stale until a manual reload (order.* events never fire for this,
+      // only return.* ones).
+      api.get<{ order: OrderEventOrder }>(`/api/orders/${initialOrder.id}`).then((res) => {
+        setOrder(res.order);
+        setDisplayItems(res.order.items);
+      }).catch(() => {});
+    },
+    onReturnUpdated: (r) => {
+      api.get<CustomerReturnDetailPayload>(`/api/customer/returns/${r.id}`).then((full) => {
+        setReturns((prev) => prev.map((x) => (x.id === full.id ? full : x)));
+      }).catch(() => {});
+      api.get<{ order: OrderEventOrder }>(`/api/orders/${initialOrder.id}`).then((res) => {
+        setOrder(res.order);
+        setDisplayItems(res.order.items);
+      }).catch(() => {});
     },
   });
 
@@ -655,6 +682,18 @@ export function OrderTracker({
                     {formatCurrency(remainingAmount, shop.currency)}
                   </span>
                 </div>
+                {!!order.totalRefunded && order.totalRefunded > 0 && (
+                  <>
+                    <div className="flex justify-between text-muted-foreground">
+                      <span>Refund</span>
+                      <span className="font-medium text-foreground">{formatCurrency(order.totalRefunded, shop.currency)}</span>
+                    </div>
+                    <div className="flex justify-between font-semibold">
+                      <span>Net Paid</span>
+                      <span>{formatCurrency((order.paidAmount ?? 0) - order.totalRefunded, shop.currency)}</span>
+                    </div>
+                  </>
+                )}
               </div>
             )}
             {ownerApprovalStatus && (
@@ -698,6 +737,22 @@ export function OrderTracker({
               </div>
             </div>
           </div>
+        )}
+
+        {!isTableOrder && (
+          <OrderReturnsSection
+            orderId={order.id}
+            billNumber={order.billNumber}
+            orderStatus={order.status}
+            items={displayItems}
+            subtotal={order.subtotal}
+            taxTotal={order.taxTotal}
+            grandTotal={order.grandTotal}
+            discountedTotal={order.discountedTotal}
+            currency={shop.currency}
+            returns={returns}
+            onReturnsChange={setReturns}
+          />
         )}
 
         {order.status === "COMPLETED" && (

@@ -4,6 +4,8 @@ import { toOrderEvent, toTableSessionEvent } from "@/lib/server/order-events";
 import { computeSessionBill, mergeSessionItems } from "@/lib/services/table-session";
 import { OrderTracker } from "@/components/customer/order-tracker";
 import { getCustomerSession } from "@/lib/customer-session";
+import { RETURN_DETAIL_INCLUDE, toCustomerReturnDetailPayload } from "@/lib/services/return-request";
+import { computeOrderReturnBadge, computeOrderTotalRefunded } from "@/lib/services/return-eligibility";
 
 export default async function TrackOrderPage({
   params,
@@ -55,6 +57,24 @@ export default async function TrackOrderPage({
   const { shop, ...orderFields } = order;
   const trackedOrder = toOrderEvent(orderFields);
 
+  const returnRequests = await db.returnRequest.findMany({
+    where: { orderId: order.id, shopId: order.shopId },
+    orderBy: { createdAt: "desc" },
+    include: RETURN_DETAIL_INCLUDE,
+  });
+  // Already have the full return list from the query above — derive these
+  // two display fields from it directly rather than adding a redundant
+  // returnRequests include to the order query itself (order-search.ts and
+  // /api/customer/orders do that instead, since they don't otherwise fetch
+  // full return detail).
+  trackedOrder.returnBadge = computeOrderReturnBadge(
+    order.items.map((i) => ({ quantity: i.quantity })),
+    returnRequests.map((r) => ({ status: r.status, items: r.items }))
+  );
+  trackedOrder.totalRefunded = computeOrderTotalRefunded(
+    returnRequests.map((r) => ({ status: r.status, requestedRefundAmount: Number(r.requestedRefundAmount) }))
+  );
+
   let session: ReturnType<typeof toTableSessionEvent> | null = null;
   let sessionBill: ReturnType<typeof computeSessionBill> | null = null;
   // The full accumulated item list across every round of this table session —
@@ -94,6 +114,7 @@ export default async function TrackOrderPage({
       session={session}
       sessionBill={sessionBill}
       sessionItems={sessionItems}
+      returns={returnRequests.map(toCustomerReturnDetailPayload)}
     />
   );
 }

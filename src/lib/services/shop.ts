@@ -71,6 +71,9 @@ export type ShopSettingsInput = Partial<{
   gstNumber: string | null;
   currency: string;
   ownerName: string | null;
+  email: string | null;
+  website: string | null;
+  panNumber: string | null;
   city: string | null;
   state: string | null;
   country: string | null;
@@ -162,12 +165,14 @@ export async function getPublicShopBundle(slug: string) {
         orderBy: { sortOrder: "asc" },
       },
       // isAvailable: true hides sold-out products from the customer menu entirely.
-      // omit: costPrice/mrp are owner-only financial data (see Product model's
-      // doc comment) and must never reach the customer-facing bundle.
+      // omit: costPrice/mrp/wholesalePrice are owner-only financial data (see
+      // Product model's doc comment) and must never reach the customer-facing
+      // bundle. offerType/offerValue are intentionally NOT omitted — the
+      // customer-facing discount is the entire point of the offer feature.
       products: {
         where: { isVisible: true, isAvailable: true },
         orderBy: { sortOrder: "asc" },
-        omit: { costPrice: true, mrp: true },
+        omit: { costPrice: true, mrp: true, wholesalePrice: true },
       },
       taxes: {
         where: { isEnabled: true },

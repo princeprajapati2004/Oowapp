@@ -146,6 +146,81 @@ enum PaymentStatus {
   REFUNDED
 }
 
+// Lifecycle of an itemized ReturnRequest — deliberately separate from
+// OrderStatus and PaymentStatus (see ReturnRequest's doc comment). Never
+// written back onto Order.paymentStatus, even at REFUNDED.
+enum ReturnStatus {
+  RETURN_REQUESTED
+  RETURN_APPROVED
+  RETURN_REJECTED
+  ITEM_RETURNED
+  REFUND_PENDING
+  REFUND_PROCESSING
+  REFUNDED
+  REFUND_FAILED
+  CANCELLED
+}
+
+enum ReturnReason {
+  WRONG_ITEM
+  MISSING_ITEM
+  DAMAGED_ITEM
+  QUALITY_ISSUE
+  CHANGED_MIND
+  DUPLICATE_ORDER
+  OTHER
+}
+
+// There is no payment gateway integration (see Shop's payment settings) —
+// every refund is a manual record of how the owner actually paid the
+// customer back, mirroring PartyPaymentMethod.
+enum RefundMethod {
+  ORIGINAL_PAYMENT_METHOD
+  UPI
+  CASH
+  BANK_TRANSFER
+  // Credits the customer's real reward-wallet balance (WalletTransaction
+  // type REFUND_CREDIT) — only valid when the return's order has a
+  // logged-in customerId; guests have no wallet to credit.
+  WALLET
+  OTHER
+}
+
+// Physical disposition of a returned item, set by the owner when marking it
+// physically returned — drives whether stock is restored to sellable
+// inventory or a linked LossDamageRecord is created instead. See ReturnItem
+// .condition and src/lib/services/return-request.ts's inventory-impact logic.
+enum ReturnItemCondition {
+  RESELLABLE
+  DAMAGED
+  WASTE
+  NOT_RESELLABLE
+}
+
+// Independent of customer returns — tracks stock lost to the business
+// itself (breakage, spoilage, theft, miscount, etc.), see LossDamageRecord.
+enum LossDamageType {
+  LOST
+  DAMAGED
+  BROKEN
+  SPOILED
+  WASTED
+  MISSING
+  OTHER
+}
+
+// Finer-grained sub-classification shown only when LossDamageType === DAMAGED.
+enum DamageType {
+  BROKEN
+  PACKAGING_DAMAGE
+  FOOD_DAMAGE
+  WATER_DAMAGE
+  ELECTRICAL_DAMAGE
+  EXPIRED
+  QUALITY_ISSUE
+  OTHER
+}
+
 enum TableSessionStatus {
   ACTIVE
   AWAITING_PAYMENT
@@ -199,6 +274,11 @@ enum PartyPaymentMethod {
 enum PartyPaymentDirection {
   RECEIVED
   PAID
+}
+
+enum PurchaseStatus {
+  RECORDED
+  CANCELLED
 }
 
 enum ReviewStatus {
@@ -280,6 +360,16 @@ enum AuditAction {
   TABLE_SESSION_RELEASED
   TABLE_SESSION_TRANSFERRED
   TABLE_SESSION_MERGED
+  // Returns & Refunds
+  RETURN_REQUESTED
+  RETURN_APPROVED
+  RETURN_REJECTED
+  RETURN_ITEM_RETURNED
+  RETURN_REFUND_PROCESSED
+  RETURN_REFUND_FAILED
+  RETURN_CANCELLED
+  // Loss & Damage
+  LOSS_DAMAGE_CREATED
   // Platform
   PLATFORM_SETTINGS_UPDATED
   SUBSCRIPTION_CHANGED
@@ -288,26 +378,26 @@ enum AuditAction {
 // ─── Core Models ──────────────────────────────────────────────────────────────
 
 model Admin {
-  id             String   @id @default(cuid())
-  email          String   @unique
+  id            String   @id @default(cuid())
+  email         String   @unique
   // Collected at registration step 1, before a Shop exists — copied onto
   // Shop.whatsappNumber once the Shop is created (step 2). Nullable because
   // it's only meaningful during/around registration, not a Shop concern.
-  phone          String?
+  phone         String?
   // Business-owner auth is now OTP-only (see complete-registration /
   // send-login-otp / verify-login-otp) — nullable because new admins never
   // get one. Existing admins keep their old hash inertly; nothing reads it
   // anymore. (SuperAdmin/StaffMember have their own separate, still-required
   // passwordHash columns — unaffected by this.)
-  passwordHash   String?
-  emailVerified  Boolean  @default(false)
+  passwordHash  String?
+  emailVerified Boolean  @default(false)
   // Verifies Shop.whatsappNumber (collected at signup) — kept on Admin, not
   // Shop, to mirror emailVerified's placement as an owner-identity flag.
   // Defaults true so already-existing admins are never retroactively gated;
   // the signup route explicitly sets this false for genuinely new accounts.
-  phoneVerified  Boolean  @default(true)
-  createdAt      DateTime @default(now())
-  shop           Shop?
+  phoneVerified Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  shop          Shop?
 
   emailVerifications EmailVerification[]
   phoneVerifications PhoneVerification[]
@@ -368,6 +458,9 @@ model Shop {
 
   // Owner profile
   ownerName String?
+  email     String?
+  website   String?
+  panNumber String?
   city      String?
   state     String?
   country   String?
@@ -389,13 +482,13 @@ model Shop {
   deletedAt       DateTime?
 
   // Payment settings
-  upiId             String?
-  acceptCash        Boolean @default(true)
-  bankAccountName   String?
-  bankAccountNumber String?
-  bankIfsc          String?
-  bankName          String?
-  paymentQrImageUrl String?
+  upiId              String?
+  acceptCash         Boolean @default(true)
+  bankAccountName    String?
+  bankAccountNumber  String?
+  bankIfsc           String?
+  bankName           String?
+  paymentQrImageUrl  String?
   // Display name shown on the customer-facing bill/QR ("Pay to ..."); falls
   // back to businessName when unset. The UPI payment QR itself is always
   // generated from upiId — these per-app fields are informational only,
@@ -431,14 +524,19 @@ model Shop {
   billNumberPrefix String @default("")
   billNumberNext   Int    @default(1)
 
+  // Purchase/supplier-receiving numbering — same atomic-counter convention
+  // as billNumberNext above (see nextPurchaseNumber in purchase-number.ts).
+  purchaseNumberPrefix String @default("PO-")
+  purchaseNumberNext   Int    @default(1)
+
   // Default receipt/invoice layout for every "Print Bill" action — see
   // src/components/printing/bill-document.tsx.
-  printFormat PrintFormat @default(A4_STYLE_1)
+  printFormat            PrintFormat @default(A4_STYLE_1)
   // OFF by default (print spec §28) — when on, completing payment on an
   // order automatically queues a bill print on the default printer.
-  autoPrintCompletedBill Boolean @default(false)
+  autoPrintCompletedBill Boolean     @default(false)
 
-  isPublished Boolean  @default(true)
+  isPublished Boolean @default(true)
 
   // QR ordering — when false customers see a "staff only" message
   enableQrOrdering Boolean @default(true)
@@ -461,35 +559,45 @@ model Shop {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  categories         Category[]
-  products           Product[]
-  taxes              Tax[]
-  coupons            Coupon[]
-  walletTransactions WalletTransaction[]
-  cashbackCampaigns  CashbackCampaign[]
+  // Item Master — per-business optional-field visibility (Owner/Admin →
+  // Settings → Item Settings). One row per shop, created lazily on first
+  // read/write (see item-settings.ts) rather than at shop-creation time, so
+  // existing shops never need a backfill migration.
+  itemSettings ItemSettings?
+
+  categories            Category[]
+  products              Product[]
+  partyProductPrices    PartyProductPrice[]
+  taxes                 Tax[]
+  coupons               Coupon[]
+  walletTransactions    WalletTransaction[]
+  cashbackCampaigns     CashbackCampaign[]
   referralProgramConfig ReferralProgramConfig?
-  referrals          Referral[]
-  orders             Order[]
-  paymentRecords     PaymentRecord[]
-  customers          Customer[]
-  tableSessions      TableSession[]
-  tableStates        TableState[]
-  subscriptions      Subscription[]
-  pushSubscriptions  PushSubscription[]
-  featurePermissions BusinessFeaturePermission[]
-  phoneOtps          PhoneOtp[]
-  staffMembers       StaffMember[]
-  parties            Party[]
-  partyPayments      PartyPayment[]
-  paymentAllocations PaymentAllocation[]
-  reviews            Review[]
-  notifications      Notification[]
-  menuImages         MenuImage[]
-  menuImports        MenuImport[]
-  expenses           Expense[]
-  kitchenTickets     KitchenTicket[]
-  printerProfiles    PrinterProfile[]
-  printJobs          PrintJob[]
+  referrals             Referral[]
+  orders                Order[]
+  paymentRecords        PaymentRecord[]
+  customers             Customer[]
+  tableSessions         TableSession[]
+  tableStates           TableState[]
+  subscriptions         Subscription[]
+  pushSubscriptions     PushSubscription[]
+  featurePermissions    BusinessFeaturePermission[]
+  phoneOtps             PhoneOtp[]
+  staffMembers          StaffMember[]
+  parties               Party[]
+  partyPayments         PartyPayment[]
+  paymentAllocations    PaymentAllocation[]
+  reviews               Review[]
+  notifications         Notification[]
+  menuImages            MenuImage[]
+  menuImports           MenuImport[]
+  expenses              Expense[]
+  kitchenTickets        KitchenTicket[]
+  printerProfiles       PrinterProfile[]
+  printJobs             PrintJob[]
+  returnRequests        ReturnRequest[]
+  lossDamageRecords     LossDamageRecord[]
+  purchases             Purchase[]
 
   @@map("shops")
 }
@@ -498,36 +606,37 @@ model Shop {
 // every other entity here belongs to a single shop rather than a global
 // platform-wide identity.
 model Customer {
-  id           String   @id @default(cuid())
-  shopId       String
-  shop         Shop     @relation(fields: [shopId], references: [id], onDelete: Cascade)
-  name         String
-  phone        String
-  passwordHash String
+  id            String   @id @default(cuid())
+  shopId        String
+  shop          Shop     @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  name          String
+  phone         String
+  passwordHash  String
   // Set once this account has logged in via Firebase Phone Auth OTP —
   // Customer.id (not this) stays the actual identity everywhere (Order
   // .customerId, sessions, ownership checks); this is only a link so a
   // repeat OTP login finds the same account instead of creating a new
   // one, and so a password-signup account can also log in via OTP later.
-  firebaseUid  String?  @unique
+  firebaseUid   String?  @unique
   // Reward wallet balance — see WalletTransaction below for the ledger this
   // is kept in sync with (every credit/debit writes both, in the same
   // transaction, so this is always the sum of that ledger).
-  walletBalance Decimal @default(0) @db.Decimal(10, 2)
+  walletBalance Decimal  @default(0) @db.Decimal(10, 2)
   // Lazily generated the first time this customer opens their "Refer & Earn"
   // page (see referral-attribution.ts) — null until then, so a customer who
   // never shares a code simply can't be referred-to yet.
-  referralCode String?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  referralCode  String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
-  orders               Order[]
-  tableSessions        TableSession[]
-  walletTransactions   WalletTransaction[]
-  cashbackRedemptions  CashbackRedemption[]
-  referralsMade        Referral[] @relation("ReferralsMade")
-  referralReceived     Referral?  @relation("ReferralReceived")
-  reviews              Review[]
+  orders              Order[]
+  tableSessions       TableSession[]
+  walletTransactions  WalletTransaction[]
+  cashbackRedemptions CashbackRedemption[]
+  referralsMade       Referral[]           @relation("ReferralsMade")
+  referralReceived    Referral?            @relation("ReferralReceived")
+  reviews             Review[]
+  returnRequests      ReturnRequest[]
 
   @@unique([shopId, phone])
   @@unique([shopId, referralCode])
@@ -558,9 +667,12 @@ model Party {
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
 
-  payments PartyPayment[]
-  orders   Order[]
-  expenses Expense[]
+  payments      PartyPayment[]
+  orders        Order[]
+  expenses      Expense[]
+  purchases     Purchase[]
+  // Party/customer-wise item pricing (Item Master) — see PartyProductPrice.
+  productPrices PartyProductPrice[]
 
   @@unique([shopId, phone])
   // Safe on Postgres with an optional field: NULLs are distinct from each
@@ -594,10 +706,19 @@ model PartyPayment {
   createdBy      String
   createdAt      DateTime              @default(now())
 
+  // Set when this PAID payment settles a Purchase — purely for traceability
+  // (Party Statement / Cashbook can show which PO a payment was for). No
+  // PaymentAllocation row is created for purchase payments; the existing
+  // "unallocated PAID payments" sum in party.ts already folds this into the
+  // supplier's outstanding balance with zero changes to that ledger math.
+  purchaseId String?
+  purchase   Purchase? @relation(fields: [purchaseId], references: [id], onDelete: SetNull)
+
   allocations PaymentAllocation[]
 
   @@index([shopId])
   @@index([partyId])
+  @@index([purchaseId])
   @@map("party_payments")
 }
 
@@ -662,8 +783,8 @@ model Category {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  products Product[]
-  taxes    Tax[]
+  products         Product[]
+  taxes            Tax[]
   couponCategories CouponCategory[]
 
   @@index([shopId])
@@ -671,47 +792,167 @@ model Category {
 }
 
 model Product {
-  id          String   @id @default(cuid())
-  shopId      String
-  shop        Shop     @relation(fields: [shopId], references: [id], onDelete: Cascade)
-  categoryId  String
-  category    Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
-  name        String
-  description String?
-  price       Decimal  @db.Decimal(10, 2)
+  id             String   @id @default(cuid())
+  shopId         String
+  shop           Shop     @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  categoryId     String
+  category       Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  name           String
+  description    String?
+  price          Decimal  @db.Decimal(10, 2)
   // Owner-only cost/pricing fields — never sent to the customer-facing menu
   // (see serializeMenuProduct vs serializeProduct in lib/serialize.ts).
   // Nullable: existing products have neither set, and profit/margin display
   // just hides itself rather than fabricating a value (see profit.ts).
-  costPrice   Decimal? @db.Decimal(10, 2)
-  mrp         Decimal? @db.Decimal(10, 2)
-  imageUrl    String?
-  unit        String?
-  barcode     String?
-  foodType    FoodType @default(NA)
-  isCombo     Boolean  @default(false)
-  offerNote   String?
-  isAvailable Boolean  @default(true)
-  isVisible   Boolean  @default(true)
-  stock       Int?
-  sortOrder   Int      @default(0)
-  createdBy   String?
-  updatedBy   String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  costPrice      Decimal? @db.Decimal(10, 2)
+  mrp            Decimal? @db.Decimal(10, 2)
+  // Item Master — B2B/bulk selling price, independent of `price` and `mrp`.
+  // Selected over `price` by pricing.ts's resolveSellingPrice only when the
+  // ordering Party's category is WHOLESALE and this is set — never applied
+  // to customer/QR ordering, which has no Party at cart time.
+  wholesalePrice Decimal? @db.Decimal(10, 2)
+  imageUrl       String?
+  unit           String?
+  barcode        String?
+  // Item Master — GST HSN/SAC code, shown on invoices/GST reports. Free text
+  // (not validated as a real HSN registry lookup) so businesses can enter
+  // whatever their accountant expects, same convention as `unit`.
+  hsnCode        String?
+  // Item Master — owner-defined unique code (e.g. "ITEM-001"), independent of
+  // barcode (which is a scannable identifier, not necessarily human-chosen).
+  // Nullable-unique per shop, same NULLs-distinct convention as barcode.
+  productCode    String?
+  // Item Master — free-text catalog classification (e.g. "Product",
+  // "Service", "Raw Material"). Free text like `unit`/`productType` has no
+  // fixed enum precedent elsewhere in this schema, so this follows suit
+  // rather than inventing a closed enum businesses can't extend themselves.
+  productType    String?
+  // Item Master — single serial number for a non-batch-tracked serialized
+  // item (e.g. one high-value electronics unit). Deliberately a simple
+  // scalar, not a per-unit ledger: no test/flow in this feature requires
+  // tracking many independently-sold serials per product.
+  serialNumber   String?
+  // Item Master — batch identifier for the product's current/opening stock.
+  // Purchase-time batch receiving is tracked per PurchaseItem instead (see
+  // PurchaseItem.batchNumber), since a product can restock under many
+  // different batches over time; this field is just the one shown on the
+  // product form's Inventory section.
+  batchNumber    String?
+  // Item Master — stock quantity recorded at product creation, kept
+  // separately from the live, mutable `stock` below so "opening stock" stays
+  // a fixed historical fact even as `stock` moves with sales/purchases/etc.
+  openingStock   Int?
+  // Item Master — structured promotional discount, computed on top of
+  // `price` at cart/order time (see pricing.ts's applyOffer) and NEVER
+  // written back into `price`/`mrp`. Superset of the older free-text
+  // `offerNote` below, which stays as a display-only note for backward
+  // compatibility with existing products.
+  offerType      String? // "PERCENTAGE" | "FLAT" | null
+  offerValue     Decimal? @db.Decimal(10, 2)
+  foodType       FoodType @default(NA)
+  isCombo        Boolean  @default(false)
+  offerNote      String?
+  isAvailable    Boolean  @default(true)
+  isVisible      Boolean  @default(true)
+  stock          Int?
+  sortOrder      Int      @default(0)
+  createdBy      String?
+  updatedBy      String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
-  orderItems OrderItem[]
-  kotItems   KotItem[]
-  couponProducts CouponProduct[]
+  orderItems        OrderItem[]
+  kotItems          KotItem[]
+  couponProducts    CouponProduct[]
+  lossDamageRecords LossDamageRecord[]
+  purchaseItems     PurchaseItem[]
+  partyPrices       PartyProductPrice[]
 
-  @@index([shopId])
-  @@index([categoryId])
   // NULLs are distinct from each other in a unique index (same as Party's
   // gstNumber) — only two products actually sharing the same scanned
   // barcode collide, not the many with none set. Normalized to null (never
   // "") in lib/validation/product.ts.
   @@unique([shopId, barcode])
+  // Same nullable-unique convention as barcode above — see
+  // lib/services/product.ts's assertUniqueProductCode/generateUniqueProductCode.
+  @@unique([shopId, productCode])
+  @@index([shopId])
+  @@index([categoryId])
+  @@index([hsnCode])
   @@map("products")
+}
+
+// Item Master — per-business Item Settings (Owner/Admin → Settings → Item
+// Settings). Governs which OPTIONAL Product fields are shown/collected in
+// the create/edit UI and elsewhere; the CORE fields (name, price, unit,
+// category, hsnCode-when-required) are never gated by this. One row per
+// shop; see getOrCreateItemSettings in item-settings.ts for the lazy-create
+// pattern (existing shops get sane defaults on first read, no backfill
+// migration needed).
+model ItemSettings {
+  id     String @id @default(cuid())
+  shopId String @unique
+  shop   Shop   @relation(fields: [shopId], references: [id], onDelete: Cascade)
+
+  // Optional-field visibility toggles — default values chosen to match
+  // *current* always-on product-form behavior for fields that already exist
+  // today (description, mrp, purchasePrice, barcode, stock, productImage),
+  // so enabling Item Settings for an existing shop never hides a field that
+  // was already visible. Newly-introduced fields default OFF (opt-in).
+  descriptionEnabled    Boolean @default(true)
+  mrpEnabled            Boolean @default(true)
+  purchasePriceEnabled  Boolean @default(true)
+  wholesalePriceEnabled Boolean @default(false)
+  partyPricingEnabled   Boolean @default(false)
+  serialNumberEnabled   Boolean @default(false)
+  batchNumberEnabled    Boolean @default(false)
+  barcodeEnabled        Boolean @default(true)
+  productTypeEnabled    Boolean @default(false)
+  stockEnabled          Boolean @default(true)
+  productImageEnabled   Boolean @default(true)
+  productCodeEnabled    Boolean @default(false)
+  offerEnabled          Boolean @default(false)
+
+  // Core-but-configurable, per spec section 3 — Category/HSN stay required
+  // by default (matches current always-required category behavior) but the
+  // owner can loosen them for business types that don't need per-item HSN.
+  categoryRequired Boolean @default(true)
+  hsnEnabled       Boolean @default(false)
+  hsnRequired      Boolean @default(false)
+
+  // Stock behavior (section 11) — lives here rather than as a generic Shop
+  // column since it's specifically an Item/Stock concern, and this is the
+  // page the owner configures stock behavior from.
+  allowNegativeStock Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("item_settings")
+}
+
+// Item Master — Party/customer-wise item pricing (spec section "PARTY-WISE
+// PRICE"). One row per (party, product) override; absence means the normal
+// pricing.ts priority (wholesale-if-applicable, then base price) applies.
+// Deliberately its own join table rather than a JSON blob on Product, so it
+// can be queried/edited from either the product side (its own UI section) or
+// the party side, and so uniqueness is enforced at the DB level.
+model PartyProductPrice {
+  id        String   @id @default(cuid())
+  shopId    String
+  shop      Shop     @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  partyId   String
+  party     Party    @relation(fields: [partyId], references: [id], onDelete: Cascade)
+  productId String
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  price     Decimal  @db.Decimal(10, 2)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([partyId, productId])
+  @@index([shopId])
+  @@index([productId])
+  @@map("party_product_prices")
 }
 
 model Tax {
@@ -832,6 +1073,14 @@ enum WalletTransactionType {
   REFERRAL_CREDIT
   REDEMPTION_DEBIT
   ADMIN_ADJUSTMENT
+  // A ReturnRequest processed with refundMethod: WALLET — see
+  // src/lib/services/return-request.ts's process_refund handling.
+  REFUND_CREDIT
+  // Compensating debit for a CASHBACK_CREDIT whose order was later fully
+  // refunded — see rewards.ts#reverseCashbackIfCredited. Signed negative,
+  // same (orderId, type) idempotency guard as every other order-triggered
+  // wallet write.
+  CASHBACK_REVERSAL
 }
 
 // The reward-wallet ledger — every change to Customer.walletBalance writes one
@@ -839,20 +1088,20 @@ enum WalletTransactionType {
 // sum of this table (used as an audit trail / admin-visible history, not
 // re-summed on every read — the denormalized balance is authoritative).
 model WalletTransaction {
-  id         String   @id @default(cuid())
-  shopId     String
-  shop       Shop     @relation(fields: [shopId], references: [id], onDelete: Cascade)
-  customerId String
-  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
-  type       WalletTransactionType
+  id           String                @id @default(cuid())
+  shopId       String
+  shop         Shop                  @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  customerId   String
+  customer     Customer              @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  type         WalletTransactionType
   // Signed: positive = credit, negative = debit. Simpler than deriving sign
   // from `type` (ADMIN_ADJUSTMENT alone can go either way).
-  amount       Decimal  @db.Decimal(10, 2)
-  balanceAfter Decimal  @db.Decimal(10, 2)
+  amount       Decimal               @db.Decimal(10, 2)
+  balanceAfter Decimal               @db.Decimal(10, 2)
   orderId      String?
-  order        Order?   @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  order        Order?                @relation(fields: [orderId], references: [id], onDelete: SetNull)
   description  String?
-  createdAt    DateTime @default(now())
+  createdAt    DateTime              @default(now())
 
   // Idempotency: a retry of the same order-triggered credit/debit is a
   // no-op rather than a double-write. Doesn't constrain ADMIN_ADJUSTMENT
@@ -868,6 +1117,13 @@ enum CashbackRedemptionStatus {
   PENDING
   CREDITED
   VOIDED
+  // Was CREDITED (wallet already paid out) but the qualifying order was
+  // later fully refunded — see rewards.ts#reverseCashbackIfCredited, which
+  // flips CREDITED -> REVERSED and writes a compensating CASHBACK_REVERSAL
+  // WalletTransaction in the same claim. Distinct from VOIDED (which only
+  // ever applies to a PENDING redemption that never paid out) so the report
+  // can tell "never paid" apart from "paid then clawed back".
+  REVERSED
 }
 
 // Admin-created code — unlike Coupon, the customer pays full price at
@@ -976,87 +1232,87 @@ model Referral {
 }
 
 model Order {
-  id              String   @id @default(cuid())
-  shopId          String
-  shop            Shop     @relation(fields: [shopId], references: [id], onDelete: Cascade)
-  billNumber      String
+  id                   String        @id @default(cuid())
+  shopId               String
+  shop                 Shop          @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  billNumber           String
   // Per-shop-per-day sequential display number, set only for admin-created
   // manual orders (see POST /api/admin/orders) — null for QR/WhatsApp orders.
-  tokenNumber     Int?
-  customerName    String?
-  customerPhone   String?
+  tokenNumber          Int?
+  customerName         String?
+  customerPhone        String?
   // Set when the order was placed by a logged-in customer account — orders
   // from guests (the common case) leave this null.
-  customerId      String?
-  customer        Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  customerId           String?
+  customer             Customer?     @relation(fields: [customerId], references: [id], onDelete: SetNull)
   // The owner-side khatabook contact this order belongs to (see Party) — set
   // at order-creation time by find-or-create on (shopId, customerPhone).
   // Distinct from customerId above: customer is a storefront login account,
   // party is the CRM ledger entry every order (guest or logged-in) rolls up
   // into. Nullable because a party can be deleted (SetNull) and because
   // orders with no phone at all (rare) have nothing to link.
-  partyId         String?
-  party           Party?    @relation(fields: [partyId], references: [id], onDelete: SetNull)
-  tableNumber     String?
-  deliveryAddress String?
-  notes           String?
-  subtotal        Decimal     @db.Decimal(10, 2)
-  taxTotal        Decimal     @db.Decimal(10, 2)
-  grandTotal      Decimal     @db.Decimal(10, 2)
-  taxBreakdown    Json
-  status          OrderStatus @default(PENDING)
-  paymentMethod   String?
+  partyId              String?
+  party                Party?        @relation(fields: [partyId], references: [id], onDelete: SetNull)
+  tableNumber          String?
+  deliveryAddress      String?
+  notes                String?
+  subtotal             Decimal       @db.Decimal(10, 2)
+  taxTotal             Decimal       @db.Decimal(10, 2)
+  grandTotal           Decimal       @db.Decimal(10, 2)
+  taxBreakdown         Json
+  status               OrderStatus   @default(PENDING)
+  paymentMethod        String?
   // "qr" = customer-scanned, "waiter" = placed by waiter staff
-  source          String      @default("qr")
+  source               String        @default("qr")
   // Discount (Feature 3) — staff-applied manual discount on an existing
   // order (see "discount"/"remove_discount" actions in
   // src/app/api/admin/orders/[id]/route.ts). A coupon discount (below)
   // dual-writes into these same four columns at order-creation time so
   // every existing screen reading discountedTotal works unchanged.
-  discountType    String?
-  discountValue   Decimal?    @db.Decimal(10, 2)
-  discountReason  String?
-  discountedTotal Decimal?    @db.Decimal(10, 2)
+  discountType         String?
+  discountValue        Decimal?      @db.Decimal(10, 2)
+  discountReason       String?
+  discountedTotal      Decimal?      @db.Decimal(10, 2)
   // Coupon discount — dedicated audit columns, set only at order-creation
   // time (never edited after). Kept separate from the generic discount
   // columns above so a coupon-discounted order can be distinguished from a
   // staff-manual-discounted one (see the Coupon model's doc comment).
   couponId             String?
   couponCode           String?
-  couponDiscountAmount Decimal? @db.Decimal(10, 2)
+  couponDiscountAmount Decimal?      @db.Decimal(10, 2)
   // Wallet redemption at checkout — unlike a coupon this doesn't change what's
   // owed (grandTotal/discountedTotal stay the sticker price); it's folded into
   // paidAmount/paymentStatus below instead, same as any other payment method,
   // so every existing amount-due screen already accounts for it with no changes.
-  walletAmountUsed     Decimal? @db.Decimal(10, 2)
+  walletAmountUsed     Decimal?      @db.Decimal(10, 2)
   // Cashback campaign applied at checkout — full price is still charged
   // (unlike a coupon); this is frozen at creation time and only actually
   // lands in the wallet once the order is paid (see CashbackRedemption).
-  cashbackCampaignId String?
-  cashbackCode       String?
-  cashbackAmount     Decimal? @db.Decimal(10, 2)
+  cashbackCampaignId   String?
+  cashbackCode         String?
+  cashbackAmount       Decimal?      @db.Decimal(10, 2)
   // Table order lifecycle — set only when this order was placed against an
   // active table session (see TableSession); null for pickup/delivery/manual
   // orders, which are unaffected by session grouping or the "no decrease" rule.
-  tableSessionId  String?
-  tableSession    TableSession? @relation(fields: [tableSessionId], references: [id], onDelete: SetNull)
+  tableSessionId       String?
+  tableSession         TableSession? @relation(fields: [tableSessionId], references: [id], onDelete: SetNull)
   // Staff member who placed this order (waiter workflow); null for QR orders.
-  staffId         String?
-  staff           StaffMember? @relation(fields: [staffId], references: [id], onDelete: SetNull)
+  staffId              String?
+  staff                StaffMember?  @relation(fields: [staffId], references: [id], onDelete: SetNull)
   // Client-generated idempotency key — dedupes retries/double WhatsApp sends
   // (see resolveOrCreateSession / POST /api/orders).
-  clientRequestId String?
+  clientRequestId      String?
   // Manual priority marker for Kitchen Display badges ("VIP" | "RUSH"), set by
   // staff via a quick toggle — not derived from any other data. Null = no marker.
-  priorityFlag    String?
+  priorityFlag         String?
   // Payment tracking per-order — complements the TableSession-level payment tracking
   // for table orders. For standalone orders (no session), this is the canonical source.
-  paymentStatus      PaymentStatus @default(PENDING)
-  paymentConfirmedBy String?
-  paymentConfirmedAt DateTime?
+  paymentStatus        PaymentStatus @default(PENDING)
+  paymentConfirmedBy   String?
+  paymentConfirmedAt   DateTime?
   // Amount actually collected so far — supports PARTIALLY_PAID; null until a
   // payment is recorded. Distinct from grandTotal/discountedTotal (owed).
-  paidAmount          Decimal? @db.Decimal(10, 2)
+  paidAmount           Decimal?      @db.Decimal(10, 2)
   transactionReference String?
   // Customer-initiated "I've paid" claim on a standalone order (no
   // TableSession) — awaiting owner approve/reject. Distinct from
@@ -1065,27 +1321,28 @@ model Order {
   // {action:"claim_payment"} and admin {action:"reject_payment_claim"}).
   // Cleared back to null whenever mark_paid succeeds, however it was
   // triggered (quick-approve or the full payment modal).
-  paymentClaimStatus String?   // "PENDING" | "REJECTED" | null
-  paymentClaimMethod String?   // "CASH" | "UPI"
-  paymentClaimAt     DateTime?
+  paymentClaimStatus   String? // "PENDING" | "REJECTED" | null
+  paymentClaimMethod   String? // "CASH" | "UPI"
+  paymentClaimAt       DateTime?
   // Cancellation trail — set only when status becomes CANCELLED via the owner
   // "Cancel Order" flow (customer self-cancel leaves these null).
-  cancelReason  String?
-  cancelledAt   DateTime?
-  cancelledBy   String?
+  cancelReason         String?
+  cancelledAt          DateTime?
+  cancelledBy          String?
   // Owner-only internal note about this order/customer — never shown to the
   // customer, stored separately from status so it survives status changes.
-  ownerNote     String?
-  createdAt       DateTime    @default(now())
+  ownerNote            String?
+  createdAt            DateTime      @default(now())
 
-  items         OrderItem[]
-  statusEvents  OrderStatusEvent[]
-  paymentRecords PaymentRecord[]
-  couponRedemption CouponRedemption?
+  items              OrderItem[]
+  statusEvents       OrderStatusEvent[]
+  paymentRecords     PaymentRecord[]
+  couponRedemption   CouponRedemption?
   walletTransactions WalletTransaction[]
   cashbackRedemption CashbackRedemption?
   paymentAllocations PaymentAllocation[]
   review             Review?
+  returnRequests     ReturnRequest[]
 
   @@unique([shopId, clientRequestId])
   @@unique([shopId, billNumber])
@@ -1103,15 +1360,15 @@ model Order {
 // generated migration (Prisma has no partial-unique-index syntax) — see
 // prisma/migrations/*_add_table_sessions/migration.sql.
 model TableSession {
-  id              String              @id @default(cuid())
+  id              String             @id @default(cuid())
   shopId          String
-  shop            Shop                @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  shop            Shop               @relation(fields: [shopId], references: [id], onDelete: Cascade)
   tableNumber     String
-  status          TableSessionStatus  @default(ACTIVE)
+  status          TableSessionStatus @default(ACTIVE)
   customerName    String?
   customerPhone   String?
   customerId      String?
-  customer        Customer?           @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  customer        Customer?          @relation(fields: [customerId], references: [id], onDelete: SetNull)
   guestCount      Int?
   billRequestedAt DateTime?
   // Informational only — there is no payment gateway integration. Admin
@@ -1126,9 +1383,9 @@ model TableSession {
   // (not PAID) while this is less than the computed grand total — see
   // closeTable() in api/admin/table-sessions/[id]/route.ts, which is the only
   // place this is written.
-  paidAmount      Decimal?            @db.Decimal(10, 2)
-  createdAt       DateTime            @default(now())
-  updatedAt       DateTime            @updatedAt
+  paidAmount      Decimal?           @db.Decimal(10, 2)
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
 
   orders         Order[]
   kitchenTickets KitchenTicket[]
@@ -1148,21 +1405,21 @@ model TableSession {
 // of orderId/tableSessionId is set, matching whichever mark_paid path wrote
 // the transaction.
 model PaymentRecord {
-  id                   String   @id @default(cuid())
+  id                   String        @id @default(cuid())
   shopId               String
-  shop                 Shop     @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  shop                 Shop          @relation(fields: [shopId], references: [id], onDelete: Cascade)
   orderId              String?
-  order                Order?   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  order                Order?        @relation(fields: [orderId], references: [id], onDelete: Cascade)
   tableSessionId       String?
   tableSession         TableSession? @relation(fields: [tableSessionId], references: [id], onDelete: Cascade)
-  amount               Decimal  @db.Decimal(10, 2)
+  amount               Decimal       @db.Decimal(10, 2)
   method               String
   transactionReference String?
   note                 String?
   // adminId/staffId of whoever recorded it — same actor-id convention as
   // OrderStatusEvent.changedBy.
   recordedBy           String?
-  createdAt            DateTime @default(now())
+  createdAt            DateTime      @default(now())
 
   @@index([shopId])
   @@index([orderId])
@@ -1232,21 +1489,38 @@ model PhoneOtp {
 }
 
 model OrderItem {
-  id        String   @id @default(cuid())
-  orderId   String
-  order     Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  productId String?
-  product   Product? @relation(fields: [productId], references: [id])
-  name      String
-  price     Decimal  @db.Decimal(10, 2)
+  id               String   @id @default(cuid())
+  orderId          String
+  order            Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  productId        String?
+  product          Product? @relation(fields: [productId], references: [id])
+  name             String
+  price            Decimal  @db.Decimal(10, 2)
   // Frozen from Product.costPrice at order-creation time, same convention as
   // `price` — so a later change to a product's cost never retroactively
   // rewrites a historical order's profit (see lib/services/profit.ts). Null
   // whenever the product had no cost price set at the time, or the item
   // wasn't tied to a catalog product at all (manual admin-order line).
-  costPrice Decimal? @db.Decimal(10, 2)
-  quantity  Int
-  lineTotal Decimal  @db.Decimal(10, 2)
+  costPrice        Decimal? @db.Decimal(10, 2)
+  // Item Master offer snapshot — `price` above already IS the actual net
+  // unit price charged (unchanged contract for every existing reader of
+  // OrderItem.price/lineTotal); these two are purely additive, frozen at
+  // order-creation time, so invoices/order-details can show "Original ₹500,
+  // Offer -₹50" without recomputing from a Product's (possibly since-changed)
+  // offer settings. Both null when no product-level offer applied.
+  originalPrice    Decimal? @db.Decimal(10, 2)
+  offerDiscount    Decimal? @db.Decimal(10, 2)
+  quantity         Int
+  lineTotal        Decimal  @db.Decimal(10, 2)
+  // Reserved (not just physically-returned) quantity against this line —
+  // incremented transactionally the moment a ReturnRequest is created (before
+  // owner approval), so `quantity - returnedQuantity` is always the
+  // authoritative "still returnable" amount and two concurrent return
+  // requests can never both claim the same units. Rolled back on
+  // RETURN_REJECTED/CANCELLED. See src/lib/services/return-reservation.ts.
+  returnedQuantity Int      @default(0)
+
+  returnItems ReturnItem[]
 
   @@index([orderId])
   @@map("order_items")
@@ -1257,19 +1531,19 @@ model OrderItem {
 // The final Order (bill) is generated from KOT items when the guest requests
 // their bill; QR/WhatsApp orders never go through this flow.
 model KitchenTicket {
-  id             String        @id @default(cuid())
+  id             String       @id @default(cuid())
   shopId         String
-  shop           Shop          @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  shop           Shop         @relation(fields: [shopId], references: [id], onDelete: Cascade)
   tableSessionId String
-  tableSession   TableSession  @relation(fields: [tableSessionId], references: [id], onDelete: Cascade)
+  tableSession   TableSession @relation(fields: [tableSessionId], references: [id], onDelete: Cascade)
   // Sequential number within the session: KOT #1, KOT #2...
   kotNumber      Int
-  status         KotStatus     @default(PENDING)
+  status         KotStatus    @default(PENDING)
   staffId        String?
-  staff          StaffMember?  @relation(fields: [staffId], references: [id], onDelete: SetNull)
+  staff          StaffMember? @relation(fields: [staffId], references: [id], onDelete: SetNull)
   notes          String?
-  createdAt      DateTime      @default(now())
-  updatedAt      DateTime      @updatedAt
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
 
   items KotItem[]
 
@@ -1303,15 +1577,15 @@ model KotItem {
 // rest in the database; this stores the last known-good state and the
 // bluetoothDeviceId used to skip the chooser on a same-browser reconnect).
 model PrinterProfile {
-  id             String                  @id @default(cuid())
+  id             String                @id @default(cuid())
   shopId         String
-  shop           Shop                    @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  shop           Shop                  @relation(fields: [shopId], references: [id], onDelete: Cascade)
   name           String
   connectionType PrinterConnectionType
   paperSize      PrintFormat
   purpose        String? // "Kitchen" | "Counter" | "Billing" | free text — informational routing hint
-  isDefault      Boolean                 @default(false)
-  isActive       Boolean                 @default(true)
+  isDefault      Boolean               @default(false)
+  isActive       Boolean               @default(true)
 
   // WIFI
   ipAddress String?
@@ -1328,13 +1602,13 @@ model PrinterProfile {
   usbVendorId  Int?
   usbProductId Int?
 
-  status           PrinterConnectionStatus @default(DISCONNECTED)
-  statusMessage    String?
-  lastConnectedAt  DateTime?
-  lastTestAt       DateTime?
-  lastTestSuccess  Boolean?
-  createdAt        DateTime                @default(now())
-  updatedAt        DateTime                @updatedAt
+  status          PrinterConnectionStatus @default(DISCONNECTED)
+  statusMessage   String?
+  lastConnectedAt DateTime?
+  lastTestAt      DateTime?
+  lastTestSuccess Boolean?
+  createdAt       DateTime                @default(now())
+  updatedAt       DateTime                @updatedAt
 
   printJobs PrintJob[]
 
@@ -1346,19 +1620,19 @@ model PrinterProfile {
 // duplicate Order/Payment records (print spec's own "printing is read-only"
 // rule), so this is entirely separate from Order/OrderStatusEvent.
 model PrintJob {
-  id           String                @id @default(cuid())
+  id           String               @id @default(cuid())
   shopId       String
-  shop         Shop                  @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  shop         Shop                 @relation(fields: [shopId], references: [id], onDelete: Cascade)
   printerId    String?
-  printer      PrinterProfile?       @relation(fields: [printerId], references: [id], onDelete: SetNull)
+  printer      PrinterProfile?      @relation(fields: [printerId], references: [id], onDelete: SetNull)
   documentType PrintJobDocumentType
   orderId      String?
   format       PrintFormat
-  status       PrintJobStatus        @default(PENDING)
-  attempts     Int                   @default(0)
+  status       PrintJobStatus       @default(PENDING)
+  attempts     Int                  @default(0)
   errorMessage String?
-  createdAt    DateTime              @default(now())
-  updatedAt    DateTime              @updatedAt
+  createdAt    DateTime             @default(now())
+  updatedAt    DateTime             @updatedAt
 
   @@index([shopId])
   @@index([printerId])
@@ -1380,6 +1654,241 @@ model OrderStatusEvent {
 
   @@index([orderId])
   @@map("order_status_events")
+}
+
+// ─── Returns & Refunds ─────────────────────────────────────────────────────────
+
+// One itemized return/refund case against an Order. Deliberately independent
+// of Order.status and Order.paymentStatus — a return's lifecycle (requested →
+// approved → item returned → refund pending/processing → refunded, or
+// rejected/cancelled/failed at various points) is tracked entirely on `status`
+// here and never written back onto the parent Order, so "what the customer
+// paid" and "what's been returned/refunded" stay two clearly separate facts
+// (the legacy whole-order Order.paymentStatus = REFUNDED via the "mark_refunded"
+// action in src/app/api/admin/orders/[id]/route.ts is untouched by this model
+// and remains its own separate, CANCELLED-order-only manual override).
+// requestedRefundAmount is computed server-side once at creation (see
+// src/lib/services/refund-calculation.ts) and frozen — never recomputed off
+// mutable Order/OrderItem state later.
+model ReturnRequest {
+  id     String @id @default(cuid())
+  shopId String
+  shop   Shop   @relation(fields: [shopId], references: [id], onDelete: Cascade)
+
+  orderId String
+  order   Order  @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  // Null when owner/staff-initiated on behalf of a guest order.
+  customerId String?
+  customer   Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
+
+  status ReturnStatus @default(RETURN_REQUESTED)
+
+  reason          ReturnReason
+  // Required (Zod-enforced at the API layer) when reason === OTHER.
+  reasonOtherText String?
+  notes           String?
+
+  // "admin" | "staff" | "customer" — same loose actor-id convention as
+  // OrderStatusEvent.changedBy / PaymentRecord.recordedBy, no FK.
+  initiatedByType String
+  initiatedById   String?
+
+  requestedRefundAmount Decimal @db.Decimal(10, 2)
+
+  approvedById    String?
+  approvedAt      DateTime?
+  rejectedById    String?
+  rejectedAt      DateTime?
+  rejectionReason String?
+
+  itemReturnedById String?
+  itemReturnedAt   DateTime?
+
+  refundMethod        RefundMethod?
+  refundReference     String?
+  refundProcessedById String?
+  refundProcessedAt   DateTime?
+  refundFailedReason  String?
+  refundFailedAt      DateTime?
+  // Set only when refundMethod === WALLET — the WalletTransaction (type
+  // REFUND_CREDIT) that actually credited the customer. Not enforced via
+  // WalletTransaction's own @@unique([orderId, type]) constraint, since a
+  // single order can have multiple independent ReturnRequests each
+  // wallet-refunded; this direct link plus the CAS-guarded REFUND_PENDING ->
+  // REFUNDED transition is what prevents a double-credit instead.
+  walletTransactionId String?
+
+  cancelledById String?
+  cancelledAt   DateTime?
+  cancelReason  String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  items          ReturnItem[]
+  statusEvents   ReturnStatusEvent[]
+  evidencePhotos ReturnEvidencePhoto[]
+
+  @@index([shopId])
+  @@index([shopId, status])
+  @@index([orderId])
+  @@index([customerId])
+  @@map("return_requests")
+}
+
+// One returned line within a ReturnRequest — quantity/unitPrice/discount
+// allocation are frozen snapshots at request time (the parent OrderItem line
+// becomes immutable to edits once it has any returnItems — see the
+// edit_items guard in src/app/api/admin/orders/[id]/route.ts), so a later
+// price/discount change on the order can never retroactively alter a
+// historical refund figure.
+model ReturnItem {
+  id            String        @id @default(cuid())
+  returnId      String
+  returnRequest ReturnRequest @relation(fields: [returnId], references: [id], onDelete: Cascade)
+
+  orderItemId String
+  orderItem   OrderItem @relation(fields: [orderItemId], references: [id], onDelete: Restrict)
+
+  productName              String
+  quantity                 Int
+  unitPrice                Decimal @db.Decimal(10, 2)
+  allocatedDiscountPerUnit Decimal @default(0) @db.Decimal(10, 2)
+  refundableAmount         Decimal @db.Decimal(10, 2)
+
+  // Physical disposition, set once by the owner in the same transaction as
+  // the RETURN_APPROVED -> REFUND_PENDING transition ("Mark Item Returned")
+  // — null beforehand. RESELLABLE restocks Product.stock; the other three
+  // values create a linked LossDamageRecord instead (see lossDamageRecord
+  // below) and never restock. Set exactly once — presence of a non-null
+  // value IS the guard against reprocessing inventory impact twice.
+  condition ReturnItemCondition?
+
+  lossDamageRecord LossDamageRecord?
+
+  @@index([returnId])
+  @@index([orderItemId])
+  @@map("return_items")
+}
+
+// Append-only status-change log for a ReturnRequest — mirrors
+// OrderStatusEvent's shape/purpose exactly, the finer-grained audit trail
+// underneath the coarser AuditLog rows written for owner-menu actions.
+model ReturnStatusEvent {
+  id            String        @id @default(cuid())
+  returnId      String
+  returnRequest ReturnRequest @relation(fields: [returnId], references: [id], onDelete: Cascade)
+
+  status    ReturnStatus
+  changedAt DateTime     @default(now())
+  // adminId, staffId, customerId, or null (system).
+  changedBy String?
+  note      String?
+
+  @@index([returnId])
+  @@map("return_status_events")
+}
+
+// Customer- or owner-submitted evidence photos (e.g. a damaged/wrong item) —
+// reuses the same Cloudinary upload pipeline as everything else in the app
+// (see src/app/api/upload/route.ts), just a different destination folder.
+model ReturnEvidencePhoto {
+  id            String        @id @default(cuid())
+  returnId      String
+  returnRequest ReturnRequest @relation(fields: [returnId], references: [id], onDelete: Cascade)
+
+  url            String
+  // "admin" | "staff" | "customer"
+  uploadedByType String
+  uploadedById   String?
+  createdAt      DateTime @default(now())
+
+  @@index([returnId])
+  @@map("return_evidence_photos")
+}
+
+// Business-side stock loss — independent of customer returns (breakage,
+// spoilage, theft, stocktake miscount, etc.). Two ways a row gets created:
+// (1) directly by the owner via "+ Add Loss / Damage", or (2) automatically
+// when a ReturnItem is marked with a non-RESELLABLE condition (returnItemId
+// set in that case — see ReturnItem.condition). Deliberately its own model
+// rather than reusing Expense: Expense is a flat business-expense line with
+// no product/quantity/inventory shape, and this needs both. Kept fully
+// separate from Expense (no auto-mirrored expense row) so the owner's
+// existing expense totals never change shape without their own action —
+// this record's own totals (see the search/summary service) are the source
+// of truth for loss reporting instead.
+model LossDamageRecord {
+  id     String @id @default(cuid())
+  shopId String
+  shop   Shop   @relation(fields: [shopId], references: [id], onDelete: Cascade)
+
+  productId   String
+  product     Product @relation(fields: [productId], references: [id], onDelete: Restrict)
+  productName String // frozen at creation, same convention as ReturnItem.productName
+
+  quantity   Int
+  type       LossDamageType
+  // Only meaningful when type === DAMAGED — a finer sub-classification.
+  damageType DamageType?
+  notes      String?
+  date       DateTime       @default(now())
+
+  // Frozen cost-basis snapshot — never recomputed from a later
+  // Product.costPrice change (same convention as OrderItem.costPrice /
+  // profit.ts). Both null together when the product had no costPrice set at
+  // creation time — never fabricated, matches computeUnitProfit's
+  // null-hides-rather-than-estimates rule.
+  unitCost       Decimal? @db.Decimal(10, 2)
+  totalLossValue Decimal? @db.Decimal(10, 2)
+
+  // Owner-entered override of totalLossValue (e.g. the auto-computed
+  // qty*unitCost doesn't reflect real resale/replacement value, or unitCost
+  // was null because the product had no costPrice). When set, this — not
+  // totalLossValue — is the effective loss/damage value everywhere (see
+  // effectiveLossValue() in lib/services/loss-damage.ts). totalLossValue is
+  // never overwritten, so the original system-computed figure stays visible
+  // for audit alongside the override. updatedBy/updatedAt already capture
+  // who/when set it — no separate audit columns needed.
+  manualValue       Decimal? @db.Decimal(10, 2)
+  manualValueReason String?
+
+  // Stock snapshot at the moment of this record — null on both when the
+  // product doesn't track stock (Product.stock is null = untracked), so
+  // there's nothing to adjust or snapshot.
+  inventoryBefore Int?
+  inventoryAfter  Int?
+
+  evidencePhotoUrls String[] @default([])
+
+  // Set only when this record was auto-created from a returned item's
+  // non-RESELLABLE condition — @unique so a given ReturnItem can only ever
+  // produce one LossDamageRecord (the same guard, from the other side, as
+  // ReturnItem.condition being set exactly once).
+  returnItemId String?     @unique
+  returnItem   ReturnItem? @relation(fields: [returnItemId], references: [id], onDelete: SetNull)
+
+  // Client-generated idempotency key (same pattern as Order.clientRequestId)
+  // — a double-submitted "+ Add Loss / Damage" form is a no-op retry, not a
+  // second stock deduction.
+  clientRequestId String?
+
+  createdBy      String?
+  // Frozen display name of whoever recorded this ("owner" or the staff
+  // member's name), same snapshot convention as Purchase.supplierName — a
+  // later admin/staff rename never rewrites this record, and the report can
+  // show "Owner/User" without an N+1 join against Admin/StaffMember.
+  createdByLabel String?
+  createdAt      DateTime @default(now())
+  updatedBy      String?
+  updatedAt      DateTime @updatedAt
+
+  @@unique([shopId, clientRequestId])
+  @@index([shopId])
+  @@index([shopId, date])
+  @@index([productId])
+  @@map("loss_damage_records")
 }
 
 // ─── SaaS Platform Models ─────────────────────────────────────────────────────
@@ -1546,7 +2055,7 @@ model Expense {
   category             String
   amount               Decimal  @db.Decimal(10, 2)
   date                 DateTime
-  paymentMethod        String   // CASH | UPI | GPAY | PHONEPE | BANK_TRANSFER | DEBIT_CARD | CREDIT_CARD | CARD | BANK | CHEQUE | OTHER
+  paymentMethod        String // CASH | UPI | GPAY | PHONEPE | BANK_TRANSFER | DEBIT_CARD | CREDIT_CARD | CARD | BANK | CHEQUE | OTHER
   // UPI/bank txn id, cheque number, etc. Optional — never required for CASH.
   transactionReference String?
   // Optional vendor/supplier link — reuses the existing Party model rather
@@ -1562,6 +2071,96 @@ model Expense {
   @@index([shopId, date])
   @@index([partyId])
   @@map("expenses")
+}
+
+// A supplier stock-in record (Reports Center — Purchase Report). Creating one
+// increments Product.stock for each line item; cancelling reverses that
+// increment (clamped at 0, same convention as LossDamageRecord, since stock
+// received may have already partially sold through by cancel time). Supplier
+// name/GST are frozen snapshots (same convention as OrderItem.name/price and
+// ReturnItem.productName) so a later edit to the Party never rewrites a
+// historical purchase document. Payment is recorded as a plain PartyPayment
+// (direction: PAID, purchaseId set) rather than teaching PaymentAllocation to
+// be polymorphic — see PartyPayment.purchaseId doc comment.
+model Purchase {
+  id             String   @id @default(cuid())
+  shopId         String
+  shop           Shop     @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  purchaseNumber String
+  purchaseDate   DateTime @default(now())
+
+  supplierId        String
+  supplier          Party   @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+  supplierName      String
+  supplierGstNumber String?
+
+  // The supplier's own invoice/bill number for this delivery, if any.
+  invoiceNumber String?
+
+  subtotal       Decimal  @db.Decimal(10, 2)
+  taxTotal       Decimal  @default(0) @db.Decimal(10, 2)
+  discountAmount Decimal? @db.Decimal(10, 2)
+  grandTotal     Decimal  @db.Decimal(10, 2)
+
+  paidAmount    Decimal?      @db.Decimal(10, 2)
+  paymentStatus PaymentStatus @default(PENDING)
+  // Free string, same convention as Order.paymentMethod/Expense.paymentMethod
+  // (see PAYMENT_METHODS in lib/order-status.ts) — display only; recording an
+  // actual payment writes a PartyPayment whose `method` is the narrower
+  // PartyPaymentMethod enum (mapped via toPartyPaymentMethod in purchase.ts).
+  paymentMethod String?
+
+  status       PurchaseStatus @default(RECORDED)
+  cancelReason String?
+  cancelledAt  DateTime?
+  cancelledBy  String?
+
+  notes           String?
+  clientRequestId String?
+  createdBy       String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  items         PurchaseItem[]
+  partyPayments PartyPayment[]
+
+  @@unique([shopId, purchaseNumber])
+  @@unique([shopId, clientRequestId])
+  @@index([shopId])
+  @@index([shopId, purchaseDate])
+  @@index([supplierId])
+  @@map("purchases")
+}
+
+model PurchaseItem {
+  id         String   @id @default(cuid())
+  purchaseId String
+  purchase   Purchase @relation(fields: [purchaseId], references: [id], onDelete: Cascade)
+
+  // Required and Restrict-deleted (same guard as LossDamageRecord.productId)
+  // — a purchase line exists specifically to receive stock against a real
+  // catalog product, unlike OrderItem.productId which is nullable for
+  // freeform admin-order lines.
+  productId   String
+  product     Product @relation(fields: [productId], references: [id], onDelete: Restrict)
+  productName String
+
+  quantity      Int
+  purchasePrice Decimal  @db.Decimal(10, 2)
+  taxAmount     Decimal? @db.Decimal(10, 2)
+  lineTotal     Decimal  @db.Decimal(10, 2)
+
+  // Item Master — batch receiving detail for this line, only meaningful when
+  // the shop's ItemSettings.batchNumberEnabled is on. A product can be
+  // restocked under many different batches over time, so this lives per
+  // PurchaseItem rather than as a single Product-level field (which only
+  // tracks the current/opening batch — see Product.batchNumber).
+  batchNumber String?
+  expiryDate  DateTime?
+
+  @@index([purchaseId])
+  @@index([productId])
+  @@map("purchase_items")
 }
 
 // unconditional — not gated by the notifyNewOrders/notifyOrderUpdates push

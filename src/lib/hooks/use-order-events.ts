@@ -1,15 +1,17 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import type { OrderEventOrder, TableSessionEventPayload, NotificationEventPayload } from "@/lib/server/order-events";
+import type { OrderEventOrder, TableSessionEventPayload, NotificationEventPayload, ReturnEventPayload } from "@/lib/server/order-events";
 
-export type { OrderEventOrder, TableSessionEventPayload, NotificationEventPayload };
+export type { OrderEventOrder, TableSessionEventPayload, NotificationEventPayload, ReturnEventPayload };
 
 type OrderEventHandlers = {
   onCreated?: (order: OrderEventOrder) => void;
   onUpdated?: (order: OrderEventOrder) => void;
   onSessionUpdated?: (session: TableSessionEventPayload) => void;
   onNotification?: (notification: NotificationEventPayload) => void;
+  onReturnCreated?: (returnRequest: ReturnEventPayload) => void;
+  onReturnUpdated?: (returnRequest: ReturnEventPayload) => void;
 };
 
 type HandlerKind = keyof OrderEventHandlers;
@@ -98,6 +100,16 @@ function getOrCreateConnection(endpoint: string): SharedConnection {
       if (notification) broadcast("onNotification", notification);
     });
 
+    source.addEventListener("return.created", (event) => {
+      const returnRequest = parseField<ReturnEventPayload>(event, "return");
+      if (returnRequest) broadcast("onReturnCreated", returnRequest);
+    });
+
+    source.addEventListener("return.updated", (event) => {
+      const returnRequest = parseField<ReturnEventPayload>(event, "return");
+      if (returnRequest) broadcast("onReturnUpdated", returnRequest);
+    });
+
     source.onerror = () => {
       source.close();
       if (conn.stopped) return;
@@ -127,11 +139,16 @@ function releaseConnection(endpoint: string) {
  * reconnects with backoff on drop. EventSource's own auto-reconnect is
  * disabled once we call close(), so backoff is manual.
  */
-export function useOrderEvents(endpoint: string, { onCreated, onUpdated, onSessionUpdated, onNotification }: OrderEventHandlers) {
+export function useOrderEvents(
+  endpoint: string,
+  { onCreated, onUpdated, onSessionUpdated, onNotification, onReturnCreated, onReturnUpdated }: OrderEventHandlers
+) {
   const onCreatedRef = useRef(onCreated);
   const onUpdatedRef = useRef(onUpdated);
   const onSessionUpdatedRef = useRef(onSessionUpdated);
   const onNotificationRef = useRef(onNotification);
+  const onReturnCreatedRef = useRef(onReturnCreated);
+  const onReturnUpdatedRef = useRef(onReturnUpdated);
 
   // Runs after every render (no deps) so the refs never go stale, without
   // reconnecting the EventSource whenever the caller passes new inline
@@ -141,6 +158,8 @@ export function useOrderEvents(endpoint: string, { onCreated, onUpdated, onSessi
     onUpdatedRef.current = onUpdated;
     onSessionUpdatedRef.current = onSessionUpdated;
     onNotificationRef.current = onNotification;
+    onReturnCreatedRef.current = onReturnCreated;
+    onReturnUpdatedRef.current = onReturnUpdated;
   });
 
   useEffect(() => {
@@ -162,6 +181,12 @@ export function useOrderEvents(endpoint: string, { onCreated, onUpdated, onSessi
           break;
         case "onNotification":
           onNotificationRef.current?.(payload as NotificationEventPayload);
+          break;
+        case "onReturnCreated":
+          onReturnCreatedRef.current?.(payload as ReturnEventPayload);
+          break;
+        case "onReturnUpdated":
+          onReturnUpdatedRef.current?.(payload as ReturnEventPayload);
           break;
       }
     };

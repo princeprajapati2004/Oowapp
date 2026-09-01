@@ -12,6 +12,7 @@ type WalletTransactionRow = {
   balanceAfter: number;
   description: string | null;
   createdAt: string;
+  order: { billNumber: string } | null;
 };
 
 const TYPE_LABELS: Record<string, string> = {
@@ -19,6 +20,16 @@ const TYPE_LABELS: Record<string, string> = {
   REFERRAL_CREDIT: "Referral reward",
   REDEMPTION_DEBIT: "Redeemed at checkout",
   ADMIN_ADJUSTMENT: "Adjustment",
+  REFUND_CREDIT: "Refund",
+  CASHBACK_REVERSAL: "Cashback reversed",
+};
+
+// Every WalletTransaction row is a settled ledger entry — a reversal (clawed
+// back after a refund) is its own row, not a mutation of the original
+// credit — so the status shown is just which kind of settled entry this is.
+const STATUS_LABELS: Record<string, string> = {
+  CASHBACK_REVERSAL: "Reversed",
+  REDEMPTION_DEBIT: "Used",
 };
 
 export function WalletPage({
@@ -77,8 +88,22 @@ export function WalletPage({
                     <ArrowUpCircle className="size-5 shrink-0 text-muted-foreground" />
                   )}
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium">{TYPE_LABELS[t.type] ?? t.type}</p>
+                    <div className="flex items-center gap-1.5">
+                      <p className="text-sm font-medium">{TYPE_LABELS[t.type] ?? t.type}</p>
+                      {STATUS_LABELS[t.type] && (
+                        <span
+                          className={`rounded-full px-1.5 py-0.5 text-[10px] font-medium ${
+                            t.type === "CASHBACK_REVERSAL"
+                              ? "bg-red-500/10 text-red-600 dark:text-red-400"
+                              : "bg-muted text-muted-foreground"
+                          }`}
+                        >
+                          {STATUS_LABELS[t.type]}
+                        </span>
+                      )}
+                    </div>
                     <p className="text-xs text-muted-foreground">
+                      {t.order ? `Order #${t.order.billNumber} · ` : ""}
                       {new Date(t.createdAt).toLocaleString(undefined, {
                         month: "short",
                         day: "numeric",

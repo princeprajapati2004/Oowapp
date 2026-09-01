@@ -26,7 +26,7 @@ export async function GET(
     if (event.type === "session.created" || event.type === "session.updated") {
       return event.session.id === id;
     }
-    if (event.type === "notification.created") {
+    if (event.type === "notification.created" || event.type === "return.created" || event.type === "return.updated") {
       return false;
     }
     return event.order.tableSessionId === id;

@@ -12,9 +12,12 @@ interface ImageUploaderProps {
   onChange: (url: string | null) => void;
   shape?: "square" | "wide";
   label?: string;
+  // Owner-only by default (/api/upload). The customer-facing return-evidence
+  // flow points this at /api/customer/upload instead.
+  endpoint?: string;
 }
 
-export function ImageUploader({ value, onChange, shape = "square", label }: ImageUploaderProps) {
+export function ImageUploader({ value, onChange, shape = "square", label, endpoint = "/api/upload" }: ImageUploaderProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
 
@@ -23,7 +26,7 @@ export function ImageUploader({ value, onChange, shape = "square", label }: Imag
     try {
       const formData = new FormData();
       formData.append("file", file);
-      const res = await fetch("/api/upload", { method: "POST", body: formData });
+      const res = await fetch(endpoint, { method: "POST", body: formData });
       const body = await res.json().catch(() => null);
       if (!res.ok) throw new Error(body?.error ?? "Upload failed");
       onChange(body.url);

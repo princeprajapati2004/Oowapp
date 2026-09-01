@@ -13,6 +13,8 @@ import { formatCurrency } from "@/lib/utils/currency";
 import { searchOrders, type OrderSourceFilter, type OrderTypeFilter } from "@/lib/services/order-search";
 import { writeAuditLog, extractRequestMeta } from "@/lib/services/audit-log";
 import { findOrCreatePartyForOrder } from "@/lib/services/party";
+import { getOrCreateItemSettings } from "@/lib/services/item-settings";
+import { decrementStockForSale } from "@/lib/services/stock";
 import type { Prisma } from "@/generated/prisma/client";
 
 // GET — the owner order management list (brief §2/§12–§18): server-side
@@ -49,6 +51,12 @@ const orderItemSchema = z.object({
   price: z.number().min(0),
   quantity: z.number().int().positive(),
   categoryId: z.string().default(""),
+  // Item Master offer snapshot — set by the Create Order UI when a
+  // product-level offer applied to this line (see pricing.ts's applyOffer).
+  // Trusted the same way `price` already is (staff can freely edit price),
+  // never recomputed server-side for this manual-order path.
+  originalPrice: z.number().min(0).optional(),
+  offerDiscount: z.number().min(0).optional(),
 });
 
 const createManualOrderSchema = z.object({
@@ -135,6 +143,8 @@ export async function POST(request: Request) {
         : []
     );
 
+    const itemSettings = await getOrCreateItemSettings(shop.id);
+
     // Per-shop-per-day sequential display number for admin-created orders
     // only (see prisma schema comment on Order.tokenNumber) — separate from
     // billNumber (now an atomic per-shop sequence, see nextBillNumber), this
@@ -177,18 +187,16 @@ export async function POST(request: Request) {
       // order route (see findOrCreatePartyForOrder's own doc comment).
       const partyId = await findOrCreatePartyForOrder(tx, shop.id, input.customerName, input.customerPhone);
 
-      // Decrement stock for products that track it (stock === null means untracked)
+      // Decrement stock for products that track it (stock === null means
+      // untracked) — never below zero unless this shop explicitly allows
+      // negative-stock selling (ItemSettings).
       const itemsWithProduct = input.items.filter((i) => i.productId);
-      if (itemsWithProduct.length > 0) {
-        await Promise.all(
-          itemsWithProduct.map((i) =>
-            tx.product.updateMany({
-              where: { id: i.productId!, shopId: shop.id, stock: { gt: 0 } },
-              data: { stock: { decrement: i.quantity } },
-            })
-          )
-        );
-      }
+      await decrementStockForSale(
+        tx,
+        shop.id,
+        itemsWithProduct.map((i) => ({ productId: i.productId!, quantity: i.quantity })),
+        { allowNegativeStock: itemSettings.allowNegativeStock }
+      );
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       return (tx.order as any).create({
@@ -219,6 +227,8 @@ export async function POST(request: Request) {
               name: item.name,
               price: item.price,
               costPrice: item.productId ? (costPriceById.get(item.productId) ?? null) : null,
+              originalPrice: item.originalPrice ?? null,
+              offerDiscount: item.offerDiscount ?? null,
               quantity: item.quantity,
               lineTotal: item.price * item.quantity,
             })),

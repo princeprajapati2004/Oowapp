@@ -29,6 +29,7 @@ import { AddItemsPanel } from "@/components/admin/add-items-panel";
 import { ScanItemsPanel } from "@/components/admin/scan-items-panel";
 import { api, ApiError } from "@/lib/api-client";
 import { calculateBill } from "@/lib/services/billing";
+import { applyOffer } from "@/lib/services/pricing";
 import { formatCurrency } from "@/lib/utils/currency";
 import { cn } from "@/lib/utils";
 import { readLocalStore, writeLocalStore, clearLocalStore } from "@/lib/utils/local-store";
@@ -465,16 +466,22 @@ export function CreateOrderPage({
       if (existing) {
         return prev.map((i) => (i.productId === product.id ? { ...i, quantity: i.quantity + 1 } : i));
       }
+      // Item Master — apply the product's offer (if any) as the default
+      // line price; staff can still freely override it (handlePriceInputChange
+      // clears this snapshot the moment they do).
+      const offer = applyOffer(Number(product.price), product.offerType, product.offerValue != null ? Number(product.offerValue) : null);
       return [
         ...prev,
         {
           productId: product.id,
           name: product.name,
-          price: Number(product.price),
+          price: offer.finalPrice,
           quantity: 1,
           categoryId: product.category.id,
           categoryName: product.category.name,
           imageUrl: product.imageUrl,
+          originalPrice: offer.discountAmount > 0 ? offer.originalPrice : null,
+          offerDiscount: offer.discountAmount > 0 ? offer.discountAmount : null,
         },
       ];
     });
@@ -518,7 +525,11 @@ export function CreateOrderPage({
     setPriceInputs((prev) => ({ ...prev, [productId]: raw }));
     const parsed = Number(raw);
     if (raw !== "" && !Number.isNaN(parsed) && parsed >= 0) {
-      setCart((prev) => prev.map((i) => (i.productId === productId ? { ...i, price: parsed } : i)));
+      // A hand-typed price replaces whatever the automatic offer computed —
+      // clear the snapshot so the invoice never shows a stale discount.
+      setCart((prev) =>
+        prev.map((i) => (i.productId === productId ? { ...i, price: parsed, originalPrice: null, offerDiscount: null } : i))
+      );
     }
   }
 
@@ -581,7 +592,15 @@ export function CreateOrderPage({
     setSubmitting(true);
     try {
       const body: Record<string, unknown> = {
-        items: cart.map(({ productId, name, price, quantity, categoryId }) => ({ productId, name, price, quantity, categoryId })),
+        items: cart.map(({ productId, name, price, quantity, categoryId, originalPrice, offerDiscount }) => ({
+          productId,
+          name,
+          price,
+          quantity,
+          categoryId,
+          ...(originalPrice != null ? { originalPrice } : {}),
+          ...(offerDiscount != null ? { offerDiscount } : {}),
+        })),
         paymentMethod,
         customerName: customerName.trim() || undefined,
         customerPhone: customerPhone.trim() || undefined,
@@ -730,7 +749,14 @@ export function CreateOrderPage({
                     <div className="flex items-center justify-between gap-2">
                       <div className="min-w-0">
                         <p className="truncate text-sm font-medium">{item.name}</p>
-                        <p className="text-xs text-muted-foreground">{item.categoryName}</p>
+                        <p className="text-xs text-muted-foreground flex items-center gap-1.5">
+                          {item.categoryName}
+                          {item.offerDiscount != null && item.offerDiscount > 0 && (
+                            <span className="text-emerald-600 dark:text-emerald-400 font-medium">
+                              Offer -{formatCurrency(item.offerDiscount, currency)}
+                            </span>
+                          )}
+                        </p>
                       </div>
                       <button
                         onClick={() => removeFromCart(item.productId)}

@@ -12,6 +12,8 @@ import {
   Percent,
   QrCode,
   ClipboardList,
+  RotateCcw,
+  PackageX,
   Menu,
   LogOut,
   ExternalLink,
@@ -29,6 +31,8 @@ import {
   Share2,
   ChevronDown,
   Star,
+  BarChart3,
+  ShoppingCart,
   type LucideIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -70,6 +74,8 @@ export type ShellCopy = {
 function buildNavEntries(foodBusiness: boolean, copy: ShellCopy): NavEntry[] {
   const operationsItems: NavItem[] = [
     { href: "/admin/orders", label: "Orders", icon: ClipboardList },
+    { href: "/admin/returns", label: "Returns & Refunds", icon: RotateCcw },
+    { href: "/admin/loss-damage", label: "Loss & Damage", icon: PackageX },
   ];
   if (foodBusiness) {
     operationsItems.push({ href: "/admin/tables", label: "Tables", icon: Table2 });
@@ -77,6 +83,7 @@ function buildNavEntries(foodBusiness: boolean, copy: ShellCopy): NavEntry[] {
 
   return [
     { href: "/admin", label: "Dashboard", icon: LayoutDashboard },
+    { href: "/admin/reports", label: "Reports", icon: BarChart3 },
     {
       groupLabel: "Operations",
       icon: ClipboardList,
@@ -96,6 +103,7 @@ function buildNavEntries(foodBusiness: boolean, copy: ShellCopy): NavEntry[] {
       icon: Receipt,
       items: [
         { href: "/admin/expenses", label: "Expenses", icon: Receipt },
+        { href: "/admin/purchases", label: "Purchases", icon: ShoppingCart },
         { href: "/admin/taxes", label: "Taxes", icon: Percent },
       ],
     },

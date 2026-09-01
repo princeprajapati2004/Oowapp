@@ -20,6 +20,7 @@ import {
   Plus,
   SquarePen,
   MessageCircle,
+  RotateCcw,
 } from "lucide-react";
 import { Button, buttonVariants } from "@/components/ui/button";
 import {
@@ -53,8 +54,10 @@ import {
   type OrderStatus,
   type PaymentStatus,
 } from "@/lib/order-status";
+import { isOrderReturnEligible } from "@/lib/services/return-eligibility";
 import type { AdminOrderEventOrder } from "@/lib/server/order-events";
 import { OrderItemsSummary } from "./order-items-summary";
+import { OrderReturnsSection } from "./order-returns-section";
 import { OrderCancelDialog } from "./order-cancel-dialog";
 import { OrderPaymentModal } from "./order-payment-modal";
 import { OrderEditModal } from "./order-edit-modal";
@@ -117,6 +120,7 @@ export function OrderDetailPage({
   const [deletingOrder, setDeletingOrder] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [cancelOpen, setCancelOpen] = useState(false);
+  const [returnDialogOpen, setReturnDialogOpen] = useState(false);
   // Manual Order creation auto-confirms the order and lands here with
   // openPayment=true so staff go straight to Payment instead of an extra
   // Confirm Order click — see create-order-page.tsx's handleSubmit.
@@ -203,6 +207,18 @@ export function OrderDetailPage({
   useOrderEvents("/api/admin/orders/stream", {
     onUpdated: (updated) => {
       if (updated.id !== order.id) return;
+      api.get<AdminOrderEventOrder>(`/api/admin/orders/${order.id}`).then(setOrder).catch(() => {});
+    },
+    // A return reserves quantity against OrderItem.returnedQuantity — refetch
+    // the order too, or the item picker's "available" count in
+    // ReturnRequestDialog goes stale until a manual reload (order.* events
+    // never fire for this, only return.* ones).
+    onReturnCreated: (r) => {
+      if (r.orderId !== order.id) return;
+      api.get<AdminOrderEventOrder>(`/api/admin/orders/${order.id}`).then(setOrder).catch(() => {});
+    },
+    onReturnUpdated: (r) => {
+      if (r.orderId !== order.id) return;
       api.get<AdminOrderEventOrder>(`/api/admin/orders/${order.id}`).then(setOrder).catch(() => {});
     },
   });
@@ -404,6 +420,11 @@ export function OrderDetailPage({
                     <DropdownMenuItem onClick={() => openEditModal("items")}>
                       <Pencil className="size-4" /> Edit Items
                     </DropdownMenuItem>
+                    {isOrderReturnEligible({ status }) && (
+                      <DropdownMenuItem onClick={() => setReturnDialogOpen(true)}>
+                        <RotateCcw className="size-4" /> Return / Refund Items
+                      </DropdownMenuItem>
+                    )}
                     <DropdownMenuSeparator />
                   </>
                 )}
@@ -510,6 +531,7 @@ export function OrderDetailPage({
             paidAmount={order.paidAmount ?? null}
             amountDue={amountDue}
             currency={currency}
+            totalRefunded={order.totalRefunded}
           />
 
           <PaymentHistorySection records={order.paymentRecords} currency={currency} />
@@ -526,6 +548,13 @@ export function OrderDetailPage({
             discountedTotal={order.discountedTotal}
             discountReason={order.discountReason}
             currency={currency}
+          />
+
+          <OrderReturnsSection
+            order={order}
+            currency={currency}
+            dialogOpen={returnDialogOpen}
+            onDialogOpenChange={setReturnDialogOpen}
           />
 
           <PaymentMethodsCard

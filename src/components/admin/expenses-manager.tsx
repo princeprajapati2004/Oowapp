@@ -10,7 +10,6 @@ import {
   Receipt,
   TrendingDown,
   CalendarDays,
-  ChevronDown,
   X,
   BarChart3,
   Calendar,
@@ -60,80 +59,15 @@ import { formatCurrency } from "@/lib/utils/currency";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { EXPENSE_CATEGORIES, EXPENSE_PAYMENT_METHODS, type ExpenseInput } from "@/lib/validation/expense";
-
-// ─── Types ────────────────────────────────────────────────────────────────────
-
-type Period = "today" | "yesterday" | "week" | "month" | "lastMonth" | "year" | "custom";
+import { presetToDateStrings, resolveDateRange } from "@/lib/utils/date-range";
+import { ExpenseDateFilter, type ExpenseDateFilterValue } from "@/components/admin/expenses/expense-date-filter";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function currentMonthKey() {
-  const now = new Date();
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
-}
-
-function getPeriodRange(
-  period: Period,
-  month: string,
-  customFrom: string,
-  customTo: string
-): { from: Date; to: Date } {
-  const now = new Date();
-  now.setSeconds(59, 999);
-
-  if (period === "today") {
-    const from = new Date(now);
-    from.setHours(0, 0, 0, 0);
-    return { from, to: now };
-  }
-  if (period === "yesterday") {
-    const from = new Date(now);
-    from.setDate(from.getDate() - 1);
-    from.setHours(0, 0, 0, 0);
-    const to = new Date(from);
-    to.setHours(23, 59, 59, 999);
-    return { from, to };
-  }
-  if (period === "week") {
-    const from = new Date(now);
-    from.setDate(from.getDate() - from.getDay());
-    from.setHours(0, 0, 0, 0);
-    return { from, to: now };
-  }
-  if (period === "year") {
-    const from = new Date(now.getFullYear(), 0, 1, 0, 0, 0, 0);
-    const to = new Date(now.getFullYear(), 11, 31, 23, 59, 59, 999);
-    return { from, to };
-  }
-  if (period === "lastMonth") {
-    const from = new Date(now.getFullYear(), now.getMonth() - 1, 1, 0, 0, 0, 0);
-    const to = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59, 999);
-    return { from, to };
-  }
-  if (period === "custom") {
-    const from = customFrom ? new Date(`${customFrom}T00:00:00`) : new Date(0);
-    const to = customTo ? new Date(`${customTo}T23:59:59.999`) : now;
-    return { from, to };
-  }
-  // month
-  const [y, m] = month.split("-").map(Number);
-  return {
-    from: new Date(y, m - 1, 1, 0, 0, 0, 0),
-    to: new Date(y, m, 0, 23, 59, 59, 999),
-  };
-}
-
-const PERIOD_LABELS: Record<Period, string> = {
-  today: "Today",
-  yesterday: "Yesterday",
-  week: "This Week",
-  month: "Month",
-  lastMonth: "Last Month",
-  year: "This Year",
-  custom: "Custom",
-};
+const THIS_MONTH_FILTER: ExpenseDateFilterValue = { preset: "this_month", ...presetToDateStrings("this_month") };
 
 const ALL_SENTINEL = "__all__";
+const PAGE_SIZE = 50;
 
 // ─── Inline Add Form ──────────────────────────────────────────────────────────
 
@@ -304,22 +238,42 @@ function CategoryBreakdown({
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 
+type ExpenseSearchResponse = {
+  expenses: Expense[];
+  total: number;
+  totalAmount: number;
+  page: number;
+  pageSize: number;
+  range: { from: string; to: string; label: string } | null;
+};
+
 export function ExpensesManager({
   initialExpenses,
+  initialTotal,
+  initialTotalAmount,
+  initialQuickTotals,
   parties,
   currency,
 }: {
   initialExpenses: Expense[];
+  initialTotal: number;
+  initialTotalAmount: number;
+  initialQuickTotals: { today: number; week: number; month: number; year: number };
   parties: Vendor[];
   currency: string;
 }) {
   const router = useRouter();
   const [expenses, setExpenses] = useState<Expense[]>(initialExpenses);
+  const [total, setTotal] = useState(initialTotal);
+  const [totalAmount, setTotalAmount] = useState(initialTotalAmount);
+  const [quickTotals, setQuickTotals] = useState(initialQuickTotals);
+  const [page, setPage] = useState(1);
+  const [loading, setLoading] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+
   const [search, setSearch] = useState("");
-  const [period, setPeriod] = useState<Period>("month");
-  const [month, setMonth] = useState(currentMonthKey());
-  const [customFrom, setCustomFrom] = useState("");
-  const [customTo, setCustomTo] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [dateFilter, setDateFilter] = useState<ExpenseDateFilterValue>(THIS_MONTH_FILTER);
   const [categoryFilter, setCategoryFilter] = useState(ALL_SENTINEL);
   const [paymentFilter, setPaymentFilter] = useState(ALL_SENTINEL);
   const [vendorFilter, setVendorFilter] = useState(ALL_SENTINEL);
@@ -337,101 +291,99 @@ export function ExpensesManager({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ── Period label for display ───────────────────────────────────────────────
-  const periodLabel = useMemo(() => {
-    if (period !== "month") return PERIOD_LABELS[period];
-    const [y, m] = month.split("-").map(Number);
-    return new Date(y, m - 1, 1).toLocaleDateString("en-IN", {
-      month: "long",
-      year: "numeric",
-    });
-  }, [period, month]);
+  // Debounce the search box only — filter buttons/date presets apply immediately.
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearch(search), 300);
+    return () => clearTimeout(timer);
+  }, [search]);
 
   const activeExtraFilterCount =
     (categoryFilter !== ALL_SENTINEL ? 1 : 0) +
     (paymentFilter !== ALL_SENTINEL ? 1 : 0) +
     (vendorFilter !== ALL_SENTINEL ? 1 : 0);
 
-  // ── Filtered view ──────────────────────────────────────────────────────────
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    const { from, to } = getPeriodRange(period, month, customFrom, customTo);
-    return expenses.filter((e) => {
-      const expDate = new Date(e.date);
-      const inPeriod = expDate >= from && expDate <= to;
-      const matchesSearch =
-        !q ||
-        e.name.toLowerCase().includes(q) ||
-        e.category.toLowerCase().includes(q) ||
-        (e.transactionReference ?? "").toLowerCase().includes(q) ||
-        (e.party?.name ?? "").toLowerCase().includes(q) ||
-        (e.notes ?? "").toLowerCase().includes(q);
-      const matchesCategory = categoryFilter === ALL_SENTINEL || e.category === categoryFilter;
-      const matchesPayment = paymentFilter === ALL_SENTINEL || e.paymentMethod === paymentFilter;
-      const matchesVendor = vendorFilter === ALL_SENTINEL || e.partyId === vendorFilter;
-      return inPeriod && matchesSearch && matchesCategory && matchesPayment && matchesVendor;
-    });
-  }, [expenses, search, period, month, customFrom, customTo, categoryFilter, paymentFilter, vendorFilter]);
+  const periodLabel = useMemo(() => {
+    if (dateFilter.preset === "all" || !dateFilter.from || !dateFilter.to) return "All Time";
+    return resolveDateRange(dateFilter.from, dateFilter.to).label;
+  }, [dateFilter]);
 
-  // ── Summary stats ──────────────────────────────────────────────────────────
-  const todayTotal = useMemo(() => {
-    const { from, to } = getPeriodRange("today", month, customFrom, customTo);
-    return expenses.filter((e) => {
-      const d = new Date(e.date);
-      return d >= from && d <= to;
-    }).reduce((s, e) => s + e.amount, 0);
-  }, [expenses, month, customFrom, customTo]);
-
-  const weekTotal = useMemo(() => {
-    const { from, to } = getPeriodRange("week", month, customFrom, customTo);
-    return expenses.filter((e) => {
-      const d = new Date(e.date);
-      return d >= from && d <= to;
-    }).reduce((s, e) => s + e.amount, 0);
-  }, [expenses, month, customFrom, customTo]);
-
-  const monthTotal = useMemo(() => {
-    const { from, to } = getPeriodRange("month", currentMonthKey(), customFrom, customTo);
-    return expenses.filter((e) => {
-      const d = new Date(e.date);
-      return d >= from && d <= to;
-    }).reduce((s, e) => s + e.amount, 0);
-  }, [expenses, customFrom, customTo]);
-
-  const yearTotal = useMemo(() => {
-    const { from, to } = getPeriodRange("year", month, customFrom, customTo);
-    return expenses.filter((e) => {
-      const d = new Date(e.date);
-      return d >= from && d <= to;
-    }).reduce((s, e) => s + e.amount, 0);
-  }, [expenses, month, customFrom, customTo]);
-
-  const topCategory = useMemo(() => {
-    const { from, to } = getPeriodRange(period, month, customFrom, customTo);
-    const map = new Map<string, number>();
-    for (const e of expenses.filter((e) => {
-      const d = new Date(e.date);
-      return d >= from && d <= to;
-    })) {
-      map.set(e.category, (map.get(e.category) ?? 0) + e.amount);
+  function buildQueryParams(targetPage: number): URLSearchParams {
+    const params = new URLSearchParams();
+    if (dateFilter.preset !== "all" && dateFilter.from && dateFilter.to) {
+      params.set("from", dateFilter.from);
+      params.set("to", dateFilter.to);
     }
-    if (map.size === 0) return null;
-    return [...map.entries()].sort((a, b) => b[1] - a[1])[0][0];
-  }, [expenses, period, month, customFrom, customTo]);
-
-  // ── Month navigation ───────────────────────────────────────────────────────
-  function shiftMonth(delta: number) {
-    const [y, m] = month.split("-").map(Number);
-    const d = new Date(y, m - 1 + delta, 1);
-    setMonth(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`);
+    if (debouncedSearch) params.set("search", debouncedSearch);
+    if (categoryFilter !== ALL_SENTINEL) params.set("category", categoryFilter);
+    if (paymentFilter !== ALL_SENTINEL) params.set("paymentMethod", paymentFilter);
+    if (vendorFilter !== ALL_SENTINEL) params.set("partyId", vendorFilter);
+    params.set("page", String(targetPage));
+    params.set("pageSize", String(PAGE_SIZE));
+    return params;
   }
 
+  async function runSearch() {
+    setLoading(true);
+    try {
+      const result = await api.get<ExpenseSearchResponse>(`/api/admin/expenses?${buildQueryParams(1).toString()}`);
+      setExpenses(result.expenses);
+      setTotal(result.total);
+      setTotalAmount(result.totalAmount);
+      setPage(1);
+    } catch {
+      toast.error("Couldn't load expenses");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function loadMore() {
+    setLoadingMore(true);
+    try {
+      const nextPage = page + 1;
+      const result = await api.get<ExpenseSearchResponse>(`/api/admin/expenses?${buildQueryParams(nextPage).toString()}`);
+      setExpenses((prev) => [...prev, ...result.expenses]);
+      setTotal(result.total);
+      setTotalAmount(result.totalAmount);
+      setPage(nextPage);
+    } catch {
+      toast.error("Couldn't load more expenses");
+    } finally {
+      setLoadingMore(false);
+    }
+  }
+
+  async function refreshQuickTotals() {
+    try {
+      const totals = await api.get<{ today: number; week: number; month: number; year: number }>(
+        "/api/admin/expenses/quick-totals"
+      );
+      setQuickTotals(totals);
+    } catch {
+      // Non-critical — the fixed summary cards just keep showing the last-known figures.
+    }
+  }
+
+  // Server round-trip on every filter change — first paint already matches
+  // THIS_MONTH_FILTER via SSR, so this intentionally re-fires once on mount
+  // too (a cheap, harmless no-op refetch) rather than adding a fragile
+  // "skip the first run" guard across two independent effects.
+  useEffect(() => {
+    runSearch();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dateFilter, debouncedSearch, categoryFilter, paymentFilter, vendorFilter]);
+
   // ── CRUD handlers ──────────────────────────────────────────────────────────
+  // Each mutation re-runs the current server search + quick-totals rather
+  // than patching the local page in place — the new/edited/deleted row may
+  // no longer belong on the active filtered page (e.g. it moved outside the
+  // selected date range), so a full refetch is the only way to keep the
+  // list, total, and totalAmount consistent with what the server actually has.
   async function handleSave(data: ExpenseInput) {
     try {
-      const created = await api.post<Expense>("/api/admin/expenses", data);
-      setExpenses((prev) => [created, ...prev]);
+      await api.post<Expense>("/api/admin/expenses", data);
       toast.success("Expense added");
+      await Promise.all([runSearch(), refreshQuickTotals()]);
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : "Failed to add");
       throw err;
@@ -441,9 +393,9 @@ export function ExpensesManager({
   async function handleEdit(data: ExpenseInput) {
     if (!editing) return;
     try {
-      const updated = await api.patch<Expense>(`/api/admin/expenses/${editing.id}`, data);
-      setExpenses((prev) => prev.map((e) => (e.id === updated.id ? updated : e)));
+      await api.patch<Expense>(`/api/admin/expenses/${editing.id}`, data);
       toast.success("Expense updated");
+      await Promise.all([runSearch(), refreshQuickTotals()]);
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : "Failed to update");
       throw err;
@@ -454,8 +406,8 @@ export function ExpensesManager({
     if (!deleteTarget) return;
     try {
       await api.delete(`/api/admin/expenses/${deleteTarget.id}`);
-      setExpenses((prev) => prev.filter((e) => e.id !== deleteTarget.id));
       toast.success("Expense deleted");
+      await Promise.all([runSearch(), refreshQuickTotals()]);
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : "Failed to delete");
     } finally {
@@ -490,76 +442,67 @@ export function ExpensesManager({
         />
       )}
 
-      {/* Summary cards — always show fixed period stats */}
+      {/* Summary cards — always show fixed period stats, independent of the active filter */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <SummaryCard
           label="Today"
-          value={formatCurrency(todayTotal, currency)}
+          value={formatCurrency(quickTotals.today, currency)}
           icon={CalendarDays}
           accent="bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400"
-          active={period === "today"}
-          onClick={() => setPeriod("today")}
+          active={dateFilter.preset === "today"}
+          onClick={() => setDateFilter({ preset: "today", ...presetToDateStrings("today") })}
         />
         <SummaryCard
           label="This Week"
-          value={formatCurrency(weekTotal, currency)}
+          value={formatCurrency(quickTotals.week, currency)}
           icon={BarChart3}
           accent="bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-400"
-          active={period === "week"}
-          onClick={() => setPeriod("week")}
+          active={dateFilter.preset === "this_week"}
+          onClick={() => setDateFilter({ preset: "this_week", ...presetToDateStrings("this_week") })}
         />
         <SummaryCard
           label="This Month"
-          value={formatCurrency(monthTotal, currency)}
+          value={formatCurrency(quickTotals.month, currency)}
           icon={TrendingDown}
           accent="bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
-          active={period === "month" && month === currentMonthKey()}
-          onClick={() => { setPeriod("month"); setMonth(currentMonthKey()); }}
+          active={dateFilter.preset === "this_month"}
+          onClick={() => setDateFilter({ preset: "this_month", ...presetToDateStrings("this_month") })}
         />
         <SummaryCard
           label="This Year"
-          value={formatCurrency(yearTotal, currency)}
+          value={formatCurrency(quickTotals.year, currency)}
           icon={Calendar}
           accent="bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400"
-          active={period === "year"}
-          onClick={() => setPeriod("year")}
+          active={dateFilter.preset === "year"}
+          onClick={() => setDateFilter({ preset: "year", ...presetToDateStrings("this_year") })}
         />
       </div>
 
-      {/* Period filter + search */}
+      {/* Filter bar: [ Search ] [ 📅 date filter ] [ Filters ] */}
       <div className="space-y-2.5">
-        {/* Quick period pills */}
-        <div className="flex flex-wrap gap-1.5 items-center">
-          {(["today", "yesterday", "week", "month", "lastMonth", "year", "custom"] as Period[]).map((p) => (
-            <button
-              key={p}
-              type="button"
-              onClick={() => { setPeriod(p); if (p === "month") setMonth(currentMonthKey()); }}
-              className={cn(
-                "rounded-full px-3 py-1 text-xs font-medium transition-all duration-150 border",
-                period === p
-                  ? "bg-primary text-primary-foreground border-primary shadow-sm"
-                  : "bg-card text-muted-foreground border-border hover:border-primary/40 hover:text-foreground"
-              )}
-            >
-              {PERIOD_LABELS[p]}
-            </button>
-          ))}
-          <span className="text-muted-foreground/40 px-1 self-center text-xs">|</span>
-          <p className="self-center text-xs text-muted-foreground">
-            Top: <span className="font-medium text-foreground">{topCategory ?? "—"}</span>
-          </p>
+        <div className="flex items-center gap-2">
+          <div className="relative flex-1 min-w-0">
+            <Search className="absolute left-4 top-1/2 size-4 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+            <Input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search by name, category, vendor…"
+              className="pl-10 h-11 rounded-full bg-muted/50 border-transparent focus:border-input focus:bg-background transition-colors"
+            />
+          </div>
+          <ExpenseDateFilter value={dateFilter} onChange={setDateFilter} />
           <button
             type="button"
             onClick={() => setShowMoreFilters((v) => !v)}
             className={cn(
-              "ml-auto flex items-center gap-1 rounded-full px-3 py-1 text-xs font-medium border transition-all duration-150",
+              "flex h-11 shrink-0 items-center gap-1 rounded-full px-3 text-xs font-medium border transition-all duration-150",
               showMoreFilters || activeExtraFilterCount > 0
                 ? "bg-primary/10 text-primary border-primary/30"
                 : "bg-card text-muted-foreground border-border hover:border-primary/40 hover:text-foreground"
             )}
+            aria-label="More filters"
           >
-            <Filter className="size-3" /> Filters
+            <Filter className="size-3.5" />
             {activeExtraFilterCount > 0 && (
               <span className="flex size-4 items-center justify-center rounded-full bg-primary text-primary-foreground text-[10px]">
                 {activeExtraFilterCount}
@@ -568,86 +511,11 @@ export function ExpensesManager({
           </button>
         </div>
 
-        {/* Month picker (only for month period) */}
-        {period === "month" && (
-          <div className="flex items-center gap-2 flex-wrap">
-            <div className="relative flex-1 min-w-48">
-              <Search className="absolute left-4 top-1/2 size-4 -translate-y-1/2 text-muted-foreground pointer-events-none" />
-              <Input
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search by name, category, vendor…"
-                className="pl-10 h-11 rounded-full bg-muted/50 border-transparent focus:border-input focus:bg-background transition-colors"
-              />
-            </div>
-            <div className="flex items-center gap-1 rounded-full border bg-card px-2 h-11">
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                className="rounded-full"
-                onClick={() => shiftMonth(-1)}
-                aria-label="Previous month"
-              >
-                <ChevronDown className="size-4 rotate-90" />
-              </Button>
-              <span className="text-sm font-medium px-1 min-w-28 text-center tabular-nums">
-                {periodLabel}
-              </span>
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                className="rounded-full"
-                onClick={() => shiftMonth(1)}
-                aria-label="Next month"
-              >
-                <ChevronDown className="size-4 -rotate-90" />
-              </Button>
-            </div>
-            {month !== currentMonthKey() && (
-              <Button
-                variant="outline"
-                size="sm"
-                className="rounded-full"
-                onClick={() => setMonth(currentMonthKey())}
-              >
-                Current
-              </Button>
-            )}
-          </div>
-        )}
-
-        {/* Custom date range */}
-        {period === "custom" && (
-          <div className="flex items-center gap-2 flex-wrap">
-            <Input
-              type="date"
-              value={customFrom}
-              onChange={(e) => setCustomFrom(e.target.value)}
-              className="h-11 rounded-full w-auto"
-              aria-label="From date"
-            />
-            <span className="text-muted-foreground text-xs">to</span>
-            <Input
-              type="date"
-              value={customTo}
-              onChange={(e) => setCustomTo(e.target.value)}
-              className="h-11 rounded-full w-auto"
-              aria-label="To date"
-            />
-          </div>
-        )}
-
-        {/* Search for non-month, non-custom periods (custom shows its own row above) */}
-        {period !== "month" && (
-          <div className="relative">
-            <Search className="absolute left-4 top-1/2 size-4 -translate-y-1/2 text-muted-foreground pointer-events-none" />
-            <Input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder={`Search in ${PERIOD_LABELS[period].toLowerCase()}…`}
-              className="pl-10 h-11 rounded-full bg-muted/50 border-transparent focus:border-input focus:bg-background transition-colors"
-            />
-          </div>
+        {/* Selected range, shown clearly */}
+        {dateFilter.preset !== "all" && (
+          <p className="flex items-center gap-1.5 px-1 text-xs text-muted-foreground">
+            <Calendar className="size-3.5" /> {periodLabel}
+          </p>
         )}
 
         {/* More filters: category / payment method / vendor */}
@@ -710,39 +578,35 @@ export function ExpensesManager({
         )}
       </div>
 
-      {/* Category breakdown accordion */}
-      {filtered.length > 0 && (
+      {/* Category breakdown accordion — approximated from the currently loaded page(s) */}
+      {expenses.length > 0 && (
         <div className="rounded-2xl border bg-card overflow-hidden">
-          <CategoryBreakdown expenses={filtered} currency={currency} periodLabel={periodLabel} />
+          <CategoryBreakdown expenses={expenses} currency={currency} periodLabel={periodLabel} />
         </div>
       )}
 
       {/* Expenses list */}
-      {filtered.length === 0 ? (
+      {loading ? (
+        <div className="flex justify-center py-16 text-muted-foreground text-sm">Loading…</div>
+      ) : total === 0 ? (
         <EmptyState
           icon={Receipt}
           title={
-            expenses.length === 0
-              ? "No expenses yet"
-              : search || activeExtraFilterCount > 0
+            debouncedSearch || activeExtraFilterCount > 0 || dateFilter.preset !== "all"
               ? "No expenses match your filters"
-              : `No expenses for ${periodLabel}`
+              : "No expenses yet"
           }
           description={
-            expenses.length === 0
-              ? "Start tracking your business expenses to get insights."
-              : undefined
+            debouncedSearch || activeExtraFilterCount > 0
+              ? undefined
+              : "Start tracking your business expenses to get insights."
           }
-          action={
-            expenses.length === 0 ? (
-              <Button onClick={() => setAddFormOpen(true)}>Add first expense</Button>
-            ) : undefined
-          }
+          action={<Button onClick={() => setAddFormOpen(true)}>Add expense</Button>}
         />
       ) : (
         <div className="rounded-2xl border bg-card overflow-hidden">
           <div className="divide-y">
-            {filtered.map((expense) => (
+            {expenses.map((expense) => (
               <div
                 key={expense.id}
                 className="flex items-start gap-3 p-4 hover:bg-muted/30 transition-colors"
@@ -835,17 +699,20 @@ export function ExpensesManager({
             ))}
           </div>
 
-          {/* Period total footer */}
+          {expenses.length < total && (
+            <div className="flex justify-center border-t p-3">
+              <Button variant="outline" size="sm" onClick={loadMore} disabled={loadingMore}>
+                {loadingMore ? "Loading…" : `Load more (${total - expenses.length} more)`}
+              </Button>
+            </div>
+          )}
+
+          {/* Total Expenses / Number of Expenses for the selected filter */}
           <div className="flex items-center justify-between border-t bg-muted/30 px-4 py-3">
             <span className="text-sm font-medium text-muted-foreground">
-              {filtered.length} expense{filtered.length !== 1 ? "s" : ""} · {periodLabel}
+              {total} expense{total !== 1 ? "s" : ""} · {periodLabel}
             </span>
-            <span className="text-sm font-bold">
-              {formatCurrency(
-                filtered.reduce((s, e) => s + e.amount, 0),
-                currency
-              )}
-            </span>
+            <span className="text-sm font-bold">{formatCurrency(totalAmount, currency)}</span>
           </div>
         </div>
       )}

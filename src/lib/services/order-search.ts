@@ -38,6 +38,7 @@ export type OrderSearchResult = {
 const ORDER_INCLUDE = {
   items: true,
   statusEvents: { orderBy: { changedAt: "asc" as const } },
+  returnRequests: { select: { status: true, requestedRefundAmount: true, items: { select: { quantity: true } } } },
 } satisfies Prisma.OrderInclude;
 
 function buildWhere(shopId: string, filters: OrderSearchFilters): Prisma.OrderWhereInput {

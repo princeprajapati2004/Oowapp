@@ -48,6 +48,37 @@ export class PaymentSettlementError extends Error {
   }
 }
 
+// Return/refund eligibility & concurrency violations (not enough returnable
+// quantity left, refund would exceed paid amount, order not eligible, etc.)
+// — its own class so these are never masked as a generic 400.
+export class ReturnError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ReturnError";
+  }
+}
+
+// Purchase-recording validation (supplier isn't type SUPPLIER, payment
+// exceeds the purchase total, etc.) — own class, same reasoning as ReturnError.
+export class PurchaseError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "PurchaseError";
+  }
+}
+
+// Item Master business-rule violations that aren't expressible in the static
+// Zod schema because they depend on this shop's ItemSettings (e.g. HSN code
+// required) or on an async DB lookup (duplicate product name) — own class,
+// same reasoning as PurchaseError, so the real message reaches the client
+// instead of being masked as "Something went wrong".
+export class ProductError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ProductError";
+  }
+}
+
 export function handleApiError(error: unknown) {
   if (error instanceof UnauthorizedError) {
     return NextResponse.json({ error: error.message }, { status: 401 });
@@ -71,6 +102,15 @@ export function handleApiError(error: unknown) {
     return NextResponse.json({ error: error.message }, { status: 400 });
   }
   if (error instanceof PaymentSettlementError) {
+    return NextResponse.json({ error: error.message }, { status: 400 });
+  }
+  if (error instanceof ReturnError) {
+    return NextResponse.json({ error: error.message }, { status: 400 });
+  }
+  if (error instanceof PurchaseError) {
+    return NextResponse.json({ error: error.message }, { status: 400 });
+  }
+  if (error instanceof ProductError) {
     return NextResponse.json({ error: error.message }, { status: 400 });
   }
   if (error instanceof OtpNotFoundError || error instanceof OtpExpiredError || error instanceof OtpProviderError) {

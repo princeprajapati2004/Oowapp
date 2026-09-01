@@ -16,6 +16,7 @@ export async function getWalletSummary(shopId: string, customerId: string) {
     where: { shopId, customerId },
     orderBy: { createdAt: "desc" },
     take: 50,
+    include: { order: { select: { billNumber: true } } },
   });
 
   return { balance: Number(customer.walletBalance), transactions };
@@ -33,17 +34,17 @@ export async function creditWallet(
   args: {
     shopId: string;
     customerId: string;
-    type: "CASHBACK_CREDIT" | "REFERRAL_CREDIT" | "ADMIN_ADJUSTMENT";
+    type: "CASHBACK_CREDIT" | "REFERRAL_CREDIT" | "ADMIN_ADJUSTMENT" | "REFUND_CREDIT";
     amount: number;
     orderId?: string | null;
     description?: string | null;
   }
-): Promise<{ credited: boolean }> {
+): Promise<{ credited: boolean; transactionId: string }> {
   if (args.orderId) {
     const existing = await tx.walletTransaction.findUnique({
       where: { orderId_type: { orderId: args.orderId, type: args.type } },
     });
-    if (existing) return { credited: false };
+    if (existing) return { credited: false, transactionId: existing.id };
   }
 
   const updated = await tx.customer.update({
@@ -51,7 +52,7 @@ export async function creditWallet(
     data: { walletBalance: { increment: args.amount } },
   });
 
-  await tx.walletTransaction.create({
+  const transaction = await tx.walletTransaction.create({
     data: {
       shopId: args.shopId,
       customerId: args.customerId,
@@ -63,7 +64,7 @@ export async function creditWallet(
     },
   });
 
-  return { credited: true };
+  return { credited: true, transactionId: transaction.id };
 }
 
 /**
@@ -94,6 +95,52 @@ export async function debitWalletForRedemption(
       description: "Redeemed at checkout",
     },
   });
+}
+
+/**
+ * Compensating debit for a wallet credit whose triggering order was later
+ * reversed (e.g. cashback clawed back after a full refund). Same
+ * (orderId, type) idempotency as creditWallet — a retried reversal is a
+ * no-op. Deliberately does NOT block the balance from going negative: the
+ * customer may have already spent the credit elsewhere, and silently
+ * skipping the reversal would leave the ledger wrong, which the spec
+ * explicitly forbids. A negative balance here just means the customer owes
+ * it back, same as any other clawback.
+ */
+export async function reverseWalletCredit(
+  tx: Tx,
+  args: {
+    shopId: string;
+    customerId: string;
+    type: "CASHBACK_REVERSAL";
+    amount: number;
+    orderId: string;
+    description?: string | null;
+  }
+): Promise<{ reversed: boolean; transactionId: string }> {
+  const existing = await tx.walletTransaction.findUnique({
+    where: { orderId_type: { orderId: args.orderId, type: args.type } },
+  });
+  if (existing) return { reversed: false, transactionId: existing.id };
+
+  const updated = await tx.customer.update({
+    where: { id: args.customerId },
+    data: { walletBalance: { decrement: args.amount } },
+  });
+
+  const transaction = await tx.walletTransaction.create({
+    data: {
+      shopId: args.shopId,
+      customerId: args.customerId,
+      type: args.type,
+      amount: -args.amount,
+      balanceAfter: updated.walletBalance,
+      orderId: args.orderId,
+      description: args.description ?? null,
+    },
+  });
+
+  return { reversed: true, transactionId: transaction.id };
 }
 
 /** Admin-facing list of customer accounts (login accounts, not guests) with their wallet balance. */

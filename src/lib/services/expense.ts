@@ -1,6 +1,9 @@
 import { db } from "@/lib/db";
 import { NotFoundError } from "@/lib/api-utils";
+import { caseInsensitive } from "@/lib/db-provider";
+import { presetToDateStrings, resolveDateRange } from "@/lib/utils/date-range";
 import type { ExpenseInput } from "@/lib/validation/expense";
+import type { Prisma } from "@/generated/prisma/client";
 
 const VENDOR_SELECT = { id: true, name: true, phone: true, type: true } as const;
 
@@ -23,24 +26,101 @@ export interface ExpenseFilters {
   category?: string;
   paymentMethod?: string;
   partyId?: string;
+  search?: string;
+}
+
+function buildExpenseWhere(shopId: string, filters: ExpenseFilters): Prisma.ExpenseWhereInput {
+  return {
+    shopId,
+    ...(filters.dateFrom || filters.dateTo
+      ? { date: { gte: filters.dateFrom, lte: filters.dateTo } }
+      : {}),
+    ...(filters.category ? { category: filters.category } : {}),
+    ...(filters.paymentMethod ? { paymentMethod: filters.paymentMethod } : {}),
+    ...(filters.partyId ? { partyId: filters.partyId } : {}),
+    ...(filters.search
+      ? {
+          OR: [
+            { name: { contains: filters.search, ...caseInsensitive() } },
+            { category: { contains: filters.search, ...caseInsensitive() } },
+            { transactionReference: { contains: filters.search, ...caseInsensitive() } },
+            { notes: { contains: filters.search, ...caseInsensitive() } },
+            { party: { name: { contains: filters.search, ...caseInsensitive() } } },
+          ],
+        }
+      : {}),
+  };
 }
 
 export async function listExpenses(shopId: string, filters: ExpenseFilters = {}, take = 200) {
   const expenses = await db.expense.findMany({
-    where: {
-      shopId,
-      ...(filters.dateFrom || filters.dateTo
-        ? { date: { gte: filters.dateFrom, lte: filters.dateTo } }
-        : {}),
-      ...(filters.category ? { category: filters.category } : {}),
-      ...(filters.paymentMethod ? { paymentMethod: filters.paymentMethod } : {}),
-      ...(filters.partyId ? { partyId: filters.partyId } : {}),
-    },
+    where: buildExpenseWhere(shopId, filters),
     orderBy: { date: "desc" },
     take,
     include: { party: { select: VENDOR_SELECT } },
   });
   return expenses.map(serializeExpense);
+}
+
+/**
+ * Server-side paginated + aggregated expense search — backs the Expense page's
+ * date-filter icon so a shop with thousands of expenses never has to fetch
+ * (or client-filter) more than one page at a time. totalAmount/count are a
+ * real DB aggregate over the full filtered set, not derived from the page
+ * of rows returned.
+ */
+export async function searchExpenses(
+  shopId: string,
+  filters: ExpenseFilters,
+  pagination: { page: number; pageSize: number }
+) {
+  const where = buildExpenseWhere(shopId, filters);
+  const skip = (pagination.page - 1) * pagination.pageSize;
+
+  const [total, agg, expenses] = await Promise.all([
+    db.expense.count({ where }),
+    db.expense.aggregate({ where, _sum: { amount: true } }),
+    db.expense.findMany({
+      where,
+      orderBy: { date: "desc" },
+      include: { party: { select: VENDOR_SELECT } },
+      skip,
+      take: pagination.pageSize,
+    }),
+  ]);
+
+  return {
+    expenses: expenses.map(serializeExpense),
+    total,
+    totalAmount: Number(agg._sum.amount ?? 0),
+  };
+}
+
+export interface ExpenseQuickTotals {
+  today: number;
+  week: number;
+  month: number;
+  year: number;
+}
+
+// Independent of whatever date filter is active on the page — these are the
+// 4 fixed-period shortcut cards at the top of the Expense page, each backed
+// by its own real DB aggregate (not the current filtered/paginated result
+// set), same IST-safe day-boundary convention as Reports Center.
+export async function getExpenseQuickTotals(shopId: string): Promise<ExpenseQuickTotals> {
+  const presets = ["today", "this_week", "this_month", "this_year"] as const;
+  const [today, week, month, year] = await Promise.all(
+    presets.map(async (preset) => {
+      const { from, to } = presetToDateStrings(preset);
+      const range = resolveDateRange(from, to);
+      const agg = await db.expense.aggregate({
+        where: { shopId, date: { gte: range.from, lte: range.to } },
+        _sum: { amount: true },
+      });
+      return Number(agg._sum.amount ?? 0);
+    })
+  );
+  return { today, week, month, year };
 }
 
 async function assertOwnedExpense(shopId: string, id: string) {

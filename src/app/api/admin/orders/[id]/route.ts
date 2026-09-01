@@ -3,7 +3,7 @@ import { z } from "zod";
 import { ForbiddenError } from "@/lib/session";
 import { requireShopActor, actorAuditFields, type ShopActor } from "@/lib/shop-actor";
 import { handleApiError, NotFoundError, ConflictError } from "@/lib/api-utils";
-import { processOrderPaidRewards, voidPendingCashbackRedemption } from "@/lib/services/rewards";
+import { processOrderPaidRewards, voidPendingCashbackRedemption, reverseCashbackIfCredited } from "@/lib/services/rewards";
 import { writeAuditLog, extractRequestMeta } from "@/lib/services/audit-log";
 import { db } from "@/lib/db";
 import { calculateBill } from "@/lib/services/billing";
@@ -146,6 +146,7 @@ export async function GET(
         items: true,
         statusEvents: { orderBy: { changedAt: "asc" } },
         paymentRecords: { orderBy: { createdAt: "asc" } },
+        returnRequests: { select: { status: true, requestedRefundAmount: true, items: { select: { quantity: true } } } },
       },
     });
     if (!order) throw new NotFoundError("Order not found");
@@ -183,6 +184,7 @@ export async function PATCH(
     } | null = null;
     let shouldVoidPendingCashback = false;
     let shouldProcessPaidRewards = false;
+    let shouldReverseCashback = false;
 
     if ("action" in body && body.action === "edit_items") {
       // Parsed separately — a .refine() (needed for the order-type/table
@@ -236,6 +238,7 @@ export async function PATCH(
             ? [existing.ownerNote, `Refunded: ${parsed.note}`].filter(Boolean).join("\n")
             : existing.ownerNote,
         };
+        shouldReverseCashback = true;
       } else if (parsed.action === "note") {
         data = { ownerNote: parsed.ownerNote };
       } else if (parsed.action === "discount") {
@@ -354,6 +357,9 @@ export async function PATCH(
     if (shouldVoidPendingCashback) {
       await db.$transaction((tx) => voidPendingCashbackRedemption(tx, id));
     }
+    if (shouldReverseCashback) {
+      await db.$transaction((tx) => reverseCashbackIfCredited(tx, id));
+    }
 
     if (newPaymentRecord) {
       await db.paymentRecord.create({ data: newPaymentRecord });
@@ -458,6 +464,24 @@ async function handleEditItems(
     // at all. Enforced here, not just hidden in the UI.
     if (orderType && (existing.status === "OUT_FOR_DELIVERY" || existing.status === "DELIVERED")) {
       throw new ConflictError("Order type can't be changed once the order is out for delivery.");
+    }
+
+    // A line with any return history must stay immutable — its frozen
+    // price/quantity is what a ReturnItem snapshot and refund figure are
+    // computed against, and ReturnItem.orderItemId uses onDelete: Restrict,
+    // so an unguarded delete here would otherwise surface as a raw Prisma
+    // FK-constraint error instead of a clean message.
+    if (updates.length > 0) {
+      const targetedIds = updates.map((u) => u.id);
+      const itemsWithReturns = await db.orderItem.findMany({
+        where: { id: { in: targetedIds }, orderId, returnedQuantity: { gt: 0 } },
+        select: { id: true, name: true },
+      });
+      if (itemsWithReturns.length > 0) {
+        throw new ConflictError(
+          `${itemsWithReturns.map((i) => i.name).join(", ")} has return history and can't be edited.`
+        );
+      }
     }
 
     const taxes = await db.tax.findMany({ where: { shopId, isEnabled: true } });

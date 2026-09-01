@@ -9,7 +9,9 @@ import {
   computeDaysRemaining,
 } from "@/lib/services/subscription";
 import { resolveFeatures } from "@/lib/services/feature-permission";
+import { getOrCreateItemSettings } from "@/lib/services/item-settings";
 import { BusinessInfoForm } from "@/components/admin/settings/business-info-form";
+import { ItemSettingsForm } from "@/components/admin/settings/item-settings-form";
 import { PaymentSettingsForm } from "@/components/admin/settings/payment-settings-form";
 import { OrderSettingsForm } from "@/components/admin/settings/order-settings-form";
 import { MenuSettingsForm } from "@/components/admin/settings/menu-settings-form";
@@ -34,11 +36,12 @@ export default async function SettingsPage() {
   const shop = await getShopById(session.shopId);
   const isRestaurant = isFoodBusiness(shop.businessType);
 
-  const [admin, rawSubscription, enabledFeatureKeys, allFeatures] = await Promise.all([
+  const [admin, rawSubscription, enabledFeatureKeys, allFeatures, itemSettings] = await Promise.all([
     db.admin.findUnique({ where: { id: session.adminId }, select: { id: true, createdAt: true } }),
     getCurrentSubscription(session.shopId),
     resolveFeatures(session.shopId),
     db.feature.findMany({ where: { isActive: true }, select: { key: true, label: true } }),
+    getOrCreateItemSettings(session.shopId),
   ]);
 
   const displayStatus = computeDisplayStatus(rawSubscription);
@@ -55,7 +58,7 @@ export default async function SettingsPage() {
     {
       id: "business",
       title: "Business information",
-      description: "Name, type, contact details, logo_1 and currency.",
+      description: "Logo, name, type, contact details, address and currency.",
       defaultOpen: true,
       content: (
         <BusinessInfoForm
@@ -64,10 +67,17 @@ export default async function SettingsPage() {
             businessName: shop.businessName,
             businessType: shop.businessType,
             logoUrl: shop.logoUrl,
+            ownerName: shopAny.ownerName ?? "",
             phone: shop.phone ?? "",
             whatsappNumber: shop.whatsappNumber,
+            email: shopAny.email ?? "",
             address: shop.address ?? "",
+            city: shopAny.city ?? "",
+            state: shopAny.state ?? "",
+            pincode: shopAny.pincode ?? "",
             gstNumber: shop.gstNumber ?? "",
+            panNumber: shopAny.panNumber ?? "",
+            website: shopAny.website ?? "",
             currency: shop.currency as BusinessInfoInput["currency"],
           }}
         />
@@ -116,6 +126,35 @@ export default async function SettingsPage() {
             isPublished: shop.isPublished,
             enableOrderBarcodeLabels: (shopAny.enableOrderBarcodeLabels as boolean) ?? false,
             enableQrOrdering: (shopAny.enableQrOrdering as boolean) ?? true,
+          }}
+        />
+      ),
+    },
+    {
+      id: "items",
+      title: "Item settings",
+      description: "Which product fields your business collects — Description, MRP, Barcode, Stock, and more.",
+      content: (
+        <ItemSettingsForm
+          bare
+          defaultValues={{
+            descriptionEnabled: itemSettings.descriptionEnabled,
+            mrpEnabled: itemSettings.mrpEnabled,
+            purchasePriceEnabled: itemSettings.purchasePriceEnabled,
+            wholesalePriceEnabled: itemSettings.wholesalePriceEnabled,
+            partyPricingEnabled: itemSettings.partyPricingEnabled,
+            serialNumberEnabled: itemSettings.serialNumberEnabled,
+            batchNumberEnabled: itemSettings.batchNumberEnabled,
+            barcodeEnabled: itemSettings.barcodeEnabled,
+            productTypeEnabled: itemSettings.productTypeEnabled,
+            stockEnabled: itemSettings.stockEnabled,
+            productImageEnabled: itemSettings.productImageEnabled,
+            productCodeEnabled: itemSettings.productCodeEnabled,
+            offerEnabled: itemSettings.offerEnabled,
+            categoryRequired: itemSettings.categoryRequired,
+            hsnEnabled: itemSettings.hsnEnabled,
+            hsnRequired: itemSettings.hsnRequired,
+            allowNegativeStock: itemSettings.allowNegativeStock,
           }}
         />
       ),

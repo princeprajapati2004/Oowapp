@@ -672,10 +672,17 @@ export function PartyStatement({
             <p className="text-xs text-muted-foreground mt-0.5">Paid</p>
           </div>
           <div className="px-4 py-4 text-center">
-            <p className="text-lg font-bold tabular-nums">{statement.summary.orderCount}</p>
-            <p className="text-xs text-muted-foreground mt-0.5">Orders</p>
+            <p className="text-lg font-bold tabular-nums">
+              {party.type === "SUPPLIER" ? statement.summary.purchaseCount : statement.summary.orderCount}
+            </p>
+            <p className="text-xs text-muted-foreground mt-0.5">{party.type === "SUPPLIER" ? "Purchases" : "Orders"}</p>
           </div>
         </div>
+        {party.type === "SUPPLIER" && statement.summary.totalPurchases > 0 && (
+          <div className="border-t px-4 py-2.5 text-center text-xs text-muted-foreground">
+            Total Purchases: <span className="font-semibold text-foreground">{formatCurrency(statement.summary.totalPurchases, shop.currency)}</span>
+          </div>
+        )}
       </div>
 
       {/* Monthly spending chart */}
@@ -683,6 +690,52 @@ export function PartyStatement({
         <div className="rounded-xl border bg-card p-4 print:hidden">
           <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">Monthly Spending</p>
           <RevenueChart data={monthlyChart} granularity="month" currency={shop.currency} />
+        </div>
+      )}
+
+      {/* Purchase history (suppliers only) */}
+      {statement.purchases.length > 0 && (
+        <div className="rounded-xl border overflow-hidden print:hidden">
+          <div className="bg-muted/30 px-4 py-2.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            Purchase History
+          </div>
+          <div className="divide-y">
+            {statement.purchases.map((p) => (
+              <Link
+                key={p.id}
+                href={`/admin/purchases/${p.id}`}
+                className="flex items-center gap-3 px-4 py-3 text-sm hover:bg-muted/40 transition-colors"
+              >
+                <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-secondary text-secondary-foreground">
+                  <ShoppingBag className="size-4" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="font-medium truncate">{p.purchaseNumber}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {new Date(p.purchaseDate).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}
+                    {p.status === "CANCELLED" ? " · Cancelled" : ""}
+                  </p>
+                </div>
+                <div className="text-right shrink-0 space-y-1">
+                  <p className="font-semibold tabular-nums">{formatCurrency(p.grandTotal, shop.currency)}</p>
+                  <Badge
+                    className={cn(
+                      "border-0 font-semibold",
+                      p.status === "CANCELLED"
+                        ? "bg-secondary text-secondary-foreground"
+                        : p.paymentStatus === "PAID"
+                          ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-400"
+                          : p.paymentStatus === "PARTIALLY_PAID"
+                            ? "bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-400"
+                            : "bg-orange-100 text-orange-700 dark:bg-orange-500/15 dark:text-orange-400"
+                    )}
+                  >
+                    {p.status === "CANCELLED" ? "Cancelled" : p.paymentStatus === "PAID" ? "Paid" : p.paymentStatus === "PARTIALLY_PAID" ? "Partially Paid" : "Pending"}
+                  </Badge>
+                </div>
+              </Link>
+            ))}
+          </div>
         </div>
       )}
 
