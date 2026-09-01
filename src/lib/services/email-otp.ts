@@ -13,7 +13,6 @@ const MAX_ATTEMPTS = 5;
 export type OtpPurpose = "SIGNUP" | "LOGIN";
 
 function generateOtp(): string {
-  if (process.env.TEST_OTP) return process.env.TEST_OTP;
   const array = new Uint32Array(1);
   crypto.getRandomValues(array);
   return String(array[0] % 1_000_000).padStart(6, "0");

@@ -48,7 +48,7 @@ export function buildVerifyEmailTemplate(recipientName: string, otp: string): Em
   <hr class="divider" />
   <div class="footer">
     <p>This is an automated message from OOWAPP</p>
-    <p><a href="${BASE_URL}">oowapp.in</a> · Order on WhatsApp</p>
+    <p><a href="${BASE_URL}">oowapp.in</a></p>
     <p style="margin-top:8px;">© ${new Date().getFullYear()} OOWAPP. All rights reserved.</p>
   </div>
 </div>
@@ -68,7 +68,7 @@ Security notice: If you did not create an account on OOWAPP, please ignore this 
 Need help? Reply to this email and our team will assist you.
 
 ---
-OOWAPP · ${BASE_URL}
+OOWAPP · oowapp.in
 © ${new Date().getFullYear()} OOWAPP. All rights reserved.`;
 
   return { html, text };
@@ -101,7 +101,7 @@ export function buildLoginOtpTemplate(recipientName: string, otp: string): Email
   <hr class="divider" />
   <div class="footer">
     <p>This is an automated message from OOWAPP</p>
-    <p><a href="${BASE_URL}">oowapp.in</a> · Order on WhatsApp</p>
+    <p><a href="${BASE_URL}">oowapp.in</a></p>
     <p style="margin-top:8px;">© ${new Date().getFullYear()} OOWAPP. All rights reserved.</p>
   </div>
 </div>
@@ -119,7 +119,7 @@ This code expires in 2 minutes and can only be used once.
 Didn't request this? You can safely ignore this email.
 
 ---
-OOWAPP · ${BASE_URL}
+OOWAPP · oowapp.in
 © ${new Date().getFullYear()} OOWAPP. All rights reserved.`;
 
   return { html, text };
