@@ -47,3 +47,6 @@ next-env.d.ts
 
 # local print bridge — machine-specific auth token, never shared/committed
 /bridge/token.local.txt
+
+# local print agent — machine-specific credentials, never shared/committed
+/print-agent/config.local.json

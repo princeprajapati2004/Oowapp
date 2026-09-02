@@ -38,6 +38,8 @@ export function SessionBill({
         toast.error(outcome.error ?? "Print failed", {
           action: { label: "Print via browser", onClick: () => printViaSystemDialog() },
         });
+      } else if (outcome.queued) {
+        toast.success(`Sent to Local Print Agent — printing on ${outcome.printer?.name}…`);
       } else if (outcome.printer && outcome.printer.connectionType !== "SYSTEM") {
         toast.success(`Sent to ${outcome.printer.name}`);
       }

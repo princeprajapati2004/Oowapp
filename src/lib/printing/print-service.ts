@@ -37,6 +37,12 @@ export interface PrinterProfileDTO {
   bluetoothDeviceName: string | null;
   usbVendorId: number | null;
   usbProductId: number | null;
+  // Local Print Agent — when agentId is set, this printer is reached
+  // through a registered agent on the owner's PC, never directly by the
+  // browser (see print-agent/). systemPrinterName is the exact
+  // Windows-installed printer name the agent prints to.
+  agentId: string | null;
+  systemPrinterName: string | null;
   status: string;
   statusMessage: string | null;
   lastConnectedAt: string | null;
@@ -50,6 +56,11 @@ export interface PrintOutcome {
   error?: string;
   errorCode?: string;
   jobId?: string;
+  // True when a Local Print Agent will finish the job asynchronously — the
+  // browser never touched the printer, so "ok" here only means "queued
+  // successfully," not "printed." Callers should point the owner at the
+  // print queue (Printer Settings) for the real outcome.
+  queued?: boolean;
 }
 
 export async function fetchPrinters(): Promise<PrinterProfileDTO[]> {
@@ -171,6 +182,13 @@ export async function printBill(order: BillOrderData, shop: BillShopData, opts?:
     return { ok: true, printer, jobId: job?.id };
   }
 
+  if (printer.agentId) {
+    // The backend already rendered the receipt and queued it for the agent
+    // (see createPrintJob/print-payload.ts) — the browser's job here is
+    // done; the print queue in Printer Settings shows the real outcome.
+    return { ok: true, printer, jobId: job?.id, queued: true };
+  }
+
   if (job) await patchJob(job.id, { status: "PRINTING" });
 
   try {
@@ -195,6 +213,11 @@ export async function printBill(order: BillOrderData, shop: BillShopData, opts?:
 /** Sends a small connectivity test receipt to an already-saved printer — the "Test Print" button in Printer Settings. Never a real bill. */
 export async function testPrintPrinter(printer: PrinterProfileDTO, businessName: string): Promise<PrintOutcome> {
   const job = await createJob({ printerId: printer.id, documentType: "TEST", orderId: null, format: printer.paperSize });
+
+  if (printer.agentId) {
+    return { ok: true, printer, jobId: job?.id, queued: true };
+  }
+
   if (job) await patchJob(job.id, { status: "PRINTING" });
 
   if (printer.connectionType === "SYSTEM") {

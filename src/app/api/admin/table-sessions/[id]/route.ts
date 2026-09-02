@@ -10,6 +10,7 @@ import { OPEN_STATUSES, computeSessionBill } from "@/lib/services/table-session"
 import { processOrderPaidRewards } from "@/lib/services/rewards";
 import { buildReturnPolicySnapshot } from "@/lib/services/return-eligibility";
 import { writeAuditLog, extractRequestMeta } from "@/lib/services/audit-log";
+import { triggerAutoPrintForCompletedOrder } from "@/lib/services/auto-print";
 import type { StaffRole } from "@/generated/prisma/client";
 
 type TableSessionAction =
@@ -442,6 +443,11 @@ async function closeTable(
   publishOrderEvent(shopId, { type: "session.updated", session: toTableSessionEvent(updatedSession) });
   for (const order of completedOrders) {
     publishOrderEvent(shopId, { type: "order.updated", order: toOrderEvent(order) });
+  }
+  if (paymentMethod !== "VOID") {
+    for (const order of completedOrders) {
+      triggerAutoPrintForCompletedOrder(shopId, order.id).catch(() => {});
+    }
   }
 
   writeAuditLog({

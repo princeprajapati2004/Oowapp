@@ -186,6 +186,32 @@ export type ReturnEventPayload = {
   updatedAt: string;
 };
 
+// Delivered to both the admin dashboard (print queue list) and a Local Print
+// Agent's own SSE stream (see /api/agent/jobs/stream). `payload` (base64
+// ESC/POS bytes, precomputed server-side at job-creation time — see
+// createPrintJob) rides along on print.job.created so the agent can print
+// immediately without a second round-trip; it's omitted on print.job.updated
+// since by then the agent already has it and the admin UI never needs it.
+export type PrintJobEventPayload = {
+  id: string;
+  shopId: string;
+  printerId: string | null;
+  agentId: string | null;
+  // The agent's own OS printer name to send bytes to — resolved server-side
+  // from PrinterProfile.systemPrinterName since the agent only knows
+  // printerId, not which of its local printers that maps to.
+  systemPrinterName: string | null;
+  documentType: string;
+  orderId: string | null;
+  format: string;
+  status: string;
+  attempts: number;
+  errorMessage: string | null;
+  payload: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type OrderEvent =
   | { type: "order.created"; order: OrderEventOrder }
   | { type: "order.updated"; order: OrderEventOrder }
@@ -193,7 +219,45 @@ export type OrderEvent =
   | { type: "session.updated"; session: TableSessionEventPayload }
   | { type: "notification.created"; notification: NotificationEventPayload }
   | { type: "return.created"; return: ReturnEventPayload }
-  | { type: "return.updated"; return: ReturnEventPayload };
+  | { type: "return.updated"; return: ReturnEventPayload }
+  | { type: "print.job.created"; job: PrintJobEventPayload }
+  | { type: "print.job.updated"; job: PrintJobEventPayload };
+
+type RawPrintJobForEvent = {
+  id: string;
+  shopId: string;
+  printerId: string | null;
+  agentId: string | null;
+  systemPrinterName?: string | null;
+  documentType: string;
+  orderId: string | null;
+  format: string;
+  status: string;
+  attempts: number;
+  errorMessage: string | null;
+  payload?: string | null;
+  createdAt: unknown;
+  updatedAt: unknown;
+};
+
+export function toPrintJobEvent(job: RawPrintJobForEvent, includePayload = false): PrintJobEventPayload {
+  return {
+    id: job.id,
+    shopId: job.shopId,
+    printerId: job.printerId,
+    agentId: job.agentId,
+    systemPrinterName: job.systemPrinterName ?? null,
+    documentType: job.documentType,
+    orderId: job.orderId,
+    format: job.format,
+    status: job.status,
+    attempts: job.attempts,
+    errorMessage: job.errorMessage,
+    payload: includePayload ? (job.payload ?? null) : null,
+    createdAt: (job.createdAt as Date).toISOString(),
+    updatedAt: (job.updatedAt as Date).toISOString(),
+  };
+}
 
 type RawReturnForEvent = {
   id: string;

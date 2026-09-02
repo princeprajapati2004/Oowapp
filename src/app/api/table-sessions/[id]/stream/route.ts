@@ -26,7 +26,13 @@ export async function GET(
     if (event.type === "session.created" || event.type === "session.updated") {
       return event.session.id === id;
     }
-    if (event.type === "notification.created" || event.type === "return.created" || event.type === "return.updated") {
+    if (
+      event.type === "notification.created" ||
+      event.type === "return.created" ||
+      event.type === "return.updated" ||
+      event.type === "print.job.created" ||
+      event.type === "print.job.updated"
+    ) {
       return false;
     }
     return event.order.tableSessionId === id;

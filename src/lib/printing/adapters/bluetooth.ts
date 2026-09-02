@@ -100,7 +100,7 @@ async function findWritableCharacteristic(
   }
   throw new PrinterAdapterError(
     "NO_COMPATIBLE_SERVICE",
-    "This Bluetooth device does not expose a compatible printer service. Many thermal printers use classic Bluetooth (SPP), which browsers cannot access directly — use the Local Print Bridge, Wi-Fi, or USB instead."
+    "This Bluetooth device does not expose a compatible printer service. Many thermal printers use classic Bluetooth (SPP), which browsers cannot access directly — connect it to a Windows PC and use the Local Print Agent instead."
   );
 }
 

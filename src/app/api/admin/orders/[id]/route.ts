@@ -12,6 +12,7 @@ import { resolveOrderItems } from "@/lib/services/order-items";
 import { recomputePaymentStatus } from "@/lib/services/order-payment-status";
 import { sendOrderStatusNotification } from "@/lib/services/push";
 import { createNotification } from "@/lib/services/notification";
+import { triggerAutoPrintForCompletedOrder } from "@/lib/services/auto-print";
 import { publishOrderEvent, toOrderEvent, toAdminOrderEvent } from "@/lib/server/order-events";
 import {
   ORDER_STATUSES,
@@ -410,6 +411,10 @@ export async function PATCH(
         body: `Status updated to ${data.status.toLowerCase()}`,
         link: `/admin/orders/${id}`,
       }).catch(() => {});
+
+      if (data.status === "COMPLETED") {
+        triggerAutoPrintForCompletedOrder(existing.shopId, id).catch(() => {});
+      }
     }
 
     publishOrderEvent(existing.shopId, { type: "order.updated", order: toOrderEvent(updated) });

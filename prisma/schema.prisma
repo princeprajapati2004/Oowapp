@@ -85,6 +85,14 @@ enum PrintJobStatus {
   CANCELLED
 }
 
+// A registered Local Print Agent process (see print-agent/). ONLINE/OFFLINE
+// is derived from heartbeat recency, not a live connection — a missed
+// heartbeat window flips it to OFFLINE (see print-agent-heartbeat.ts).
+enum PrintAgentStatus {
+  ONLINE
+  OFFLINE
+}
+
 enum ShopStatus {
   ACTIVE
   SUSPENDED
@@ -393,8 +401,8 @@ model Admin {
   emailVerified Boolean  @default(false)
   // Verifies Shop.whatsappNumber (collected at signup) — kept on Admin, not
   // Shop, to mirror emailVerified's placement as an owner-identity flag.
-  createdAt DateTime @default(now())
-  shop      Shop?
+  createdAt     DateTime @default(now())
+  shop          Shop?
 
   emailVerifications EmailVerification[]
 
@@ -547,38 +555,40 @@ model Shop {
   // existing shops never need a backfill migration.
   itemSettings ItemSettings?
 
-  categories            Category[]
-  products              Product[]
-  partyProductPrices    PartyProductPrice[]
-  taxes                 Tax[]
-  coupons               Coupon[]
-  walletTransactions    WalletTransaction[]
-  cashbackCampaigns     CashbackCampaign[]
-  referralProgramConfig ReferralProgramConfig?
-  referrals             Referral[]
-  orders                Order[]
-  paymentRecords        PaymentRecord[]
-  customers             Customer[]
-  tableSessions         TableSession[]
-  tableStates           TableState[]
-  subscriptions         Subscription[]
-  pushSubscriptions     PushSubscription[]
-  featurePermissions    BusinessFeaturePermission[]
-  staffMembers          StaffMember[]
-  parties               Party[]
-  partyPayments         PartyPayment[]
-  paymentAllocations    PaymentAllocation[]
-  reviews               Review[]
-  notifications         Notification[]
-  menuImages            MenuImage[]
-  menuImports           MenuImport[]
-  expenses              Expense[]
-  kitchenTickets        KitchenTicket[]
-  printerProfiles       PrinterProfile[]
-  printJobs             PrintJob[]
-  returnRequests        ReturnRequest[]
-  lossDamageRecords     LossDamageRecord[]
-  purchases             Purchase[]
+  categories             Category[]
+  products               Product[]
+  partyProductPrices     PartyProductPrice[]
+  taxes                  Tax[]
+  coupons                Coupon[]
+  walletTransactions     WalletTransaction[]
+  cashbackCampaigns      CashbackCampaign[]
+  referralProgramConfig  ReferralProgramConfig?
+  referrals              Referral[]
+  orders                 Order[]
+  paymentRecords         PaymentRecord[]
+  customers              Customer[]
+  tableSessions          TableSession[]
+  tableStates            TableState[]
+  subscriptions          Subscription[]
+  pushSubscriptions      PushSubscription[]
+  featurePermissions     BusinessFeaturePermission[]
+  staffMembers           StaffMember[]
+  parties                Party[]
+  partyPayments          PartyPayment[]
+  paymentAllocations     PaymentAllocation[]
+  reviews                Review[]
+  notifications          Notification[]
+  menuImages             MenuImage[]
+  menuImports            MenuImport[]
+  expenses               Expense[]
+  kitchenTickets         KitchenTicket[]
+  printerProfiles        PrinterProfile[]
+  printJobs              PrintJob[]
+  printAgents            PrintAgent[]
+  printAgentPairingCodes PrintAgentPairingCode[]
+  returnRequests         ReturnRequest[]
+  lossDamageRecords      LossDamageRecord[]
+  purchases              Purchase[]
 
   @@map("shops")
 }
@@ -1578,6 +1588,14 @@ model PrinterProfile {
   usbVendorId  Int?
   usbProductId Int?
 
+  // Local Print Agent — when set, this printer is not reached by the browser
+  // at all; connectionType/ipAddress/usb*/bluetooth* above describe the
+  // physical link between the agent's PC and the printer, and printing is
+  // done by the agent against the OS print spooler using systemPrinterName.
+  agentId           String?
+  agent             PrintAgent? @relation(fields: [agentId], references: [id], onDelete: SetNull)
+  systemPrinterName String? // exact Windows-installed printer name reported by the agent
+
   status          PrinterConnectionStatus @default(DISCONNECTED)
   statusMessage   String?
   lastConnectedAt DateTime?
@@ -1588,7 +1606,9 @@ model PrinterProfile {
 
   printJobs PrintJob[]
 
+  @@unique([agentId, systemPrinterName])
   @@index([shopId])
+  @@index([agentId])
   @@map("printer_profiles")
 }
 
@@ -1610,9 +1630,66 @@ model PrintJob {
   createdAt    DateTime             @default(now())
   updatedAt    DateTime             @updatedAt
 
+  // Local Print Agent claiming/delivery — agentId+claimedAt are set
+  // atomically on the PENDING->PRINTING transition (a conditional update,
+  // not a separate CLAIMED status) so two agent polls/retries can never both
+  // "win" the same job. idempotencyKey lets the caller that created the job
+  // (e.g. auto-print-on-order-completion) safely retry without double
+  // printing, mirroring Order.clientRequestId. payload is the fully
+  // rendered, ready-to-send print data (base64 ESC/POS bytes for agent
+  // jobs) computed server-side at creation time, since the agent has no
+  // browser/DOM to build it itself.
+  agentId        String?
+  agent          PrintAgent? @relation(fields: [agentId], references: [id], onDelete: SetNull)
+  claimedAt      DateTime?
+  idempotencyKey String?
+  payload        String?     @db.Text
+
+  @@unique([shopId, idempotencyKey])
   @@index([shopId])
   @@index([printerId])
+  @@index([agentId, status])
   @@map("print_jobs")
+}
+
+// A registered Local Print Agent process running on the owner's PC (see
+// print-agent/). One agent can host many discovered printers. secretHash is
+// the only credential stored — the plaintext bearer secret is shown to the
+// owner/agent exactly once at pairing time and never persisted server-side.
+model PrintAgent {
+  id           String           @id @default(cuid())
+  shopId       String
+  shop         Shop             @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  name         String // owner-editable label, defaults to computerName
+  computerName String
+  secretHash   String
+  version      String?
+  status       PrintAgentStatus @default(OFFLINE)
+  lastSeenAt   DateTime?
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+
+  printers  PrinterProfile[]
+  printJobs PrintJob[]
+
+  @@index([shopId])
+  @@map("print_agents")
+}
+
+// Short-lived, single-use pairing code the owner generates from Printer
+// Settings and pastes into the Local Print Agent during first-run setup.
+// DB-backed (not in-memory) so it survives serverless instance rotation.
+model PrintAgentPairingCode {
+  id        String    @id @default(cuid())
+  shopId    String
+  shop      Shop      @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  code      String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([shopId])
+  @@map("print_agent_pairing_codes")
 }
 
 // Append-only status change log — written each time an order's status

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
-import { Plus, Star, Trash2, PlayCircle, Loader2, Bluetooth, Wifi, Usb, Monitor, Printer as PrinterIcon } from "lucide-react";
+import { Plus, Star, Trash2, PlayCircle, Loader2, Bluetooth, Wifi, Usb, Monitor, Printer as PrinterIcon, Laptop } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
@@ -11,6 +11,8 @@ import { EmptyState } from "@/components/shared/empty-state";
 import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 import { api, ApiError } from "@/lib/api-client";
 import { fetchPrinters, testPrintPrinter, type PrinterProfileDTO } from "@/lib/printing/print-service";
+import { fetchPrintAgents, type PrintAgentDTO } from "@/lib/printing/agent-client";
+import { formatRelativeTime } from "@/lib/utils/relative-time";
 import {
   CONNECTION_TYPE_LABELS,
   CONNECTION_STATUS_LABELS,
@@ -48,6 +50,8 @@ export function PrinterSettingsPanel({ businessName, initialAutoPrint }: { busin
   const [deleteTarget, setDeleteTarget] = useState<PrinterProfileDTO | null>(null);
   const [jobs, setJobs] = useState<PrintJobRow[]>([]);
   const [autoPrint, setAutoPrint] = useState(initialAutoPrint);
+  const [agents, setAgents] = useState<PrintAgentDTO[]>([]);
+  const [nowMs, setNowMs] = useState(0);
 
   const loadPrinters = useCallback(async () => {
     try {
@@ -69,6 +73,21 @@ export function PrinterSettingsPanel({ businessName, initialAutoPrint }: { busin
     }
   }, []);
 
+  const loadAgents = useCallback(async () => {
+    try {
+      setAgents(await fetchPrintAgents());
+    } catch {
+      // best-effort — agent status card just stays stale until the next poll
+    }
+  }, []);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setNowMs(Date.now());
+    const interval = setInterval(() => setNowMs(Date.now()), 30_000);
+    return () => clearInterval(interval);
+  }, []);
+
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     loadPrinters();
@@ -80,6 +99,13 @@ export function PrinterSettingsPanel({ businessName, initialAutoPrint }: { busin
     const interval = setInterval(loadJobs, 6000);
     return () => clearInterval(interval);
   }, [loadJobs]);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    loadAgents();
+    const interval = setInterval(loadAgents, 10_000);
+    return () => clearInterval(interval);
+  }, [loadAgents]);
 
   async function handleSetDefault(printer: PrinterProfileDTO) {
     try {
@@ -104,7 +130,8 @@ export function PrinterSettingsPanel({ businessName, initialAutoPrint }: { busin
     setTestingId(printer.id);
     try {
       const outcome = await testPrintPrinter(printer, businessName);
-      if (outcome.ok) toast.success(`Test receipt sent to ${printer.name}`);
+      if (outcome.queued) toast.success(`Test print queued — check the print queue below for ${printer.name}`);
+      else if (outcome.ok) toast.success(`Test receipt sent to ${printer.name}`);
       else toast.error(outcome.error ?? "Test print failed");
     } finally {
       setTestingId(null);
@@ -137,17 +164,66 @@ export function PrinterSettingsPanel({ businessName, initialAutoPrint }: { busin
   }
 
   function handleCreated(printer: PrinterProfileDTO) {
-    setPrinters((prev) => (printer.isDefault ? [...prev.map((p) => ({ ...p, isDefault: false })), printer] : [...prev, printer]));
+    setPrinters((prev) => {
+      const withoutExisting = prev.filter((p) => p.id !== printer.id);
+      return printer.isDefault
+        ? [...withoutExisting.map((p) => ({ ...p, isDefault: false })), printer]
+        : [...withoutExisting, printer];
+    });
+    loadAgents();
   }
 
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-4">
-        <p className="text-sm text-muted-foreground">Connect real thermal/receipt printers over Bluetooth, Wi-Fi, or USB.</p>
+        <p className="text-sm text-muted-foreground">Connect real thermal/receipt printers over Local Print Agent, Bluetooth, Wi-Fi, or USB.</p>
         <Button size="sm" onClick={() => setWizardOpen(true)} className="gap-1.5">
           <Plus className="size-4" /> Add printer
         </Button>
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base flex items-center gap-2">
+            <Laptop className="size-4" /> Local Print Agent
+          </CardTitle>
+          <CardDescription>
+            Recommended for USB, Classic Bluetooth (paired in Windows), and network printers — the agent runs on the owner&apos;s
+            PC and prints on OOWAPP&apos;s behalf.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {agents.length === 0 ? (
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <p className="text-sm text-muted-foreground">No Local Print Agent registered yet.</p>
+              <Button variant="outline" size="sm" onClick={() => setWizardOpen(true)}>
+                Set up Local Print Agent
+              </Button>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {agents.map((agent) => (
+                <div key={agent.id} className="rounded-lg border px-3 py-2.5">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                      <div className="flex items-center gap-1.5">
+                        <span className={cn("size-2 rounded-full", agent.online ? "bg-emerald-500" : "bg-slate-400")} />
+                        <p className="text-sm font-medium">{agent.online ? "Connected" : "Offline"}</p>
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        {agent.computerName} · Last seen {agent.lastSeenAt && nowMs ? formatRelativeTime(agent.lastSeenAt, nowMs) : "never"}
+                      </p>
+                    </div>
+                    <span className="text-xs text-muted-foreground">
+                      {agent.printers.length} printer{agent.printers.length === 1 ? "" : "s"}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       {loading ? (
         <div className="flex items-center justify-center py-10 text-muted-foreground">
@@ -179,10 +255,19 @@ export function PrinterSettingsPanel({ businessName, initialAutoPrint }: { busin
                         <Star className="size-3 fill-current" /> Default
                       </Badge>
                     )}
+                    {printer.agentId && (
+                      <Badge variant="outline" className="text-xs gap-1">
+                        <Laptop className="size-3" /> Agent
+                      </Badge>
+                    )}
                   </div>
                   <div className="flex flex-wrap items-center gap-1.5 mt-0.5">
                     <Badge variant="outline" className={cn("text-xs", CONNECTION_STATUS_BADGE_CLASS[printer.status as keyof typeof CONNECTION_STATUS_BADGE_CLASS])}>
-                      {CONNECTION_STATUS_LABELS[printer.status as keyof typeof CONNECTION_STATUS_LABELS] ?? printer.status}
+                      {printer.agentId
+                        ? printer.status === "CONNECTED"
+                          ? "Online"
+                          : "Offline"
+                        : (CONNECTION_STATUS_LABELS[printer.status as keyof typeof CONNECTION_STATUS_LABELS] ?? printer.status)}
                     </Badge>
                     <span className="text-xs text-muted-foreground">
                       {CONNECTION_TYPE_LABELS[printer.connectionType]} · {printFormatLabel(printer.paperSize)}

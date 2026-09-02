@@ -58,6 +58,11 @@ export const printJobCreateSchema = z.object({
   documentType: printJobDocumentTypeSchema,
   orderId: z.string().trim().min(1).nullable().optional(),
   format: printFormatSchema,
+  // Optional caller-supplied dedupe key (e.g. `auto-bill:${orderId}`) — a
+  // second create with the same (shopId, idempotencyKey) returns the
+  // original job instead of creating a duplicate. See Order.clientRequestId
+  // for the same pattern.
+  idempotencyKey: z.string().trim().min(1).max(150).nullable().optional(),
 });
 export type PrintJobCreateInput = z.infer<typeof printJobCreateSchema>;
 
