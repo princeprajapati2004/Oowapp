@@ -9,6 +9,33 @@ import type { Prisma } from "@/generated/prisma/client";
 
 const DUPLICATE_WINDOW_MS = 10_000;
 
+// How long a job is allowed to sit PENDING (waiting for an agent/printer
+// that never came back online) before it's given up on. There's no cron/
+// queue-worker infrastructure in this app (see rate-limit.ts's own note on
+// being per-instance/in-memory), so this is swept lazily at read time —
+// the same "derive it when someone actually looks" pattern print-agent.ts
+// uses for isAgentOnline — rather than a background job.
+const STALE_PENDING_TIMEOUT_MS = 15 * 60_000;
+
+/** Fails any PENDING job older than the stale timeout — printing a bill an hour after the printer finally reconnects would be wrong, not just late, so these are marked FAILED rather than delivered stale. */
+async function failStaleJobs(where: Prisma.PrintJobWhereInput) {
+  const stale = await db.printJob.findMany({
+    where: { ...where, status: "PENDING", createdAt: { lt: new Date(Date.now() - STALE_PENDING_TIMEOUT_MS) } },
+    select: { id: true, shopId: true },
+  });
+  if (stale.length === 0) return;
+
+  await db.printJob.updateMany({
+    where: { id: { in: stale.map((j) => j.id) }, status: "PENDING" },
+    data: { status: "FAILED", errorMessage: "Printer did not come online in time." },
+  });
+
+  for (const job of stale) {
+    const updated = await db.printJob.findUnique({ where: { id: job.id } });
+    if (updated) publishOrderEvent(job.shopId, { type: "print.job.updated", job: toPrintJobEvent(updated) });
+  }
+}
+
 /** Agent-facing job responses always carry the physical printer name to send bytes to — the agent has no other way to resolve printerId -> its own OS printer name. */
 function withSystemPrinterName<T extends { printer?: { systemPrinterName: string | null } | null }>(
   job: T
@@ -18,6 +45,7 @@ function withSystemPrinterName<T extends { printer?: { systemPrinterName: string
 }
 
 export async function listPrintJobs(shopId: string, limit = 50) {
+  await failStaleJobs({ shopId });
   return db.printJob.findMany({
     where: { shopId },
     orderBy: { createdAt: "desc" },
@@ -183,6 +211,7 @@ export function failPrintJob(agentId: string, jobId: string, errorMessage: strin
 }
 
 export async function listPendingJobsForAgent(agentId: string) {
+  await failStaleJobs({ agentId });
   const jobs = await db.printJob.findMany({
     where: { agentId, status: "PENDING" },
     orderBy: { createdAt: "asc" },

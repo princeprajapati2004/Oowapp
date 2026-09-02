@@ -16,7 +16,8 @@
     "db:seed:plans": "npx tsx scripts/seed-plans-features.ts",
     "backfill:order-parties": "npx tsx scripts/backfill-order-parties.ts",
     "bridge": "node bridge/server.mjs",
-    "print-agent": "node print-agent/index.mjs"
+    "print-agent": "node print-agent/index.mjs",
+    "print-agent:diagnose": "node print-agent/index.mjs diagnose"
   },
   "dependencies": {
     "@base-ui/react": "^1.6.0",

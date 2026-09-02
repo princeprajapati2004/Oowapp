@@ -24,3 +24,23 @@ export function loadConfig() {
 export function saveConfig(config) {
   fs.writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2), { mode: 0o600 });
 }
+
+const DEFAULT_SERIAL_CONFIG = { baudRate: 9600, dataBits: 8, parity: "None", stopBits: "One" };
+
+/**
+ * Per-COM-port serial settings for Bluetooth SPP printers — not hard-coded:
+ * defaults are the conventional values every such virtual port accepts,
+ * but can be overridden per port by hand-editing config.local.json, e.g.:
+ *   { "serialPorts": { "COM5": { "baudRate": 115200 } } }
+ * Read independently of loadConfig()'s pairing-validity gate, since this
+ * should work even before/without a fully paired agent.
+ */
+export function getSerialConfig(comPort) {
+  if (!fs.existsSync(CONFIG_FILE)) return DEFAULT_SERIAL_CONFIG;
+  try {
+    const raw = JSON.parse(fs.readFileSync(CONFIG_FILE, "utf8"));
+    return { ...DEFAULT_SERIAL_CONFIG, ...(raw.serialPorts?.[comPort] ?? {}) };
+  } catch {
+    return DEFAULT_SERIAL_CONFIG;
+  }
+}

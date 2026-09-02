@@ -22,6 +22,7 @@ import { createApiClient, ApiError } from "./api.mjs";
 import { discoverPrinters } from "./printers.mjs";
 import { printRawBytes } from "./print.mjs";
 import { consumeSseStream } from "./sse.mjs";
+import { runDiagnostics } from "./diagnose.mjs";
 
 const VERSION = "1.0.0";
 const HEARTBEAT_INTERVAL_MS = 20_000;
@@ -82,6 +83,11 @@ function backoff(attempt) {
 }
 
 async function main() {
+  if (process.argv[2] === "diagnose") {
+    await runDiagnostics();
+    return;
+  }
+
   console.log(`OOWAPP Local Print Agent v${VERSION}`);
   const config = await ensureConfig();
   const api = createApiClient(config.backendUrl, config.token);

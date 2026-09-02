@@ -90,22 +90,29 @@ export async function reportDiscoveredPrinters(
 
   await db.$transaction(async (tx) => {
     for (const printer of input.printers) {
+      // `reachable === false` means the agent actually tried to open this
+      // target (e.g. a Bluetooth SPP port) and it failed right now — being
+      // paired/present in Windows is not the same as being reachable, so
+      // that must never be reported CONNECTED. Anything not actively
+      // probed (reachable undefined — e.g. a normal Windows printer queue)
+      // keeps the original "presence is enough" behavior.
+      const status = printer.reachable === false ? "DISCONNECTED" : "CONNECTED";
       await tx.printerProfile.upsert({
         where: { agentId_systemPrinterName: { agentId, systemPrinterName: printer.systemPrinterName } },
         create: {
           shopId,
           agentId,
           systemPrinterName: printer.systemPrinterName,
-          name: printer.systemPrinterName,
+          name: printer.label ?? printer.systemPrinterName,
           connectionType: printer.connectionType,
           paperSize: "THERMAL_80",
-          status: "CONNECTED",
-          lastConnectedAt: new Date(),
+          status,
+          ...(status === "CONNECTED" ? { lastConnectedAt: new Date() } : {}),
         },
         update: {
           connectionType: printer.connectionType,
-          status: "CONNECTED",
-          lastConnectedAt: new Date(),
+          status,
+          ...(status === "CONNECTED" ? { lastConnectedAt: new Date() } : {}),
         },
       });
     }
