@@ -14,6 +14,7 @@
     "db:studio": "npm run predb && prisma studio",
     "db:seed": "npx tsx scripts/seed-super-admin.ts",
     "db:seed:plans": "npx tsx scripts/seed-plans-features.ts",
+    "clear-db": "node ./scripts/clear-database.mjs",
     "backfill:order-parties": "npx tsx scripts/backfill-order-parties.ts",
     "bridge": "node bridge/server.mjs",
     "print-agent": "node print-agent/index.mjs",
