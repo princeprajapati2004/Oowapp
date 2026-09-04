@@ -53,8 +53,9 @@ export async function sendEmail(
         Precedence: "transactional",
       },
     });
-  } catch (err) {
-    console.error('sendEmail failed:', err?.message || err);
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : typeof err === 'string' ? err : JSON.stringify(err);
+    console.error('sendEmail failed:', msg);
     // Surface the error to callers so API routes can return a useful error
     throw err;
   }
