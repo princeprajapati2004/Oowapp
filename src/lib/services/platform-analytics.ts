@@ -50,6 +50,9 @@ export const PlatformAnalyticsService = {
     const { page = 1, perPage = 20, search, status } = opts;
     const skip = (page - 1) * perPage;
 
+    const VALID_STATUSES = new Set(["ACTIVE", "SUSPENDED", "INACTIVE", "DELETED"]);
+    const safeStatus = status && VALID_STATUSES.has(status) ? status : undefined;
+
     const where = {
       ...(search
         ? {
@@ -59,7 +62,7 @@ export const PlatformAnalyticsService = {
             ],
           }
         : {}),
-      ...(status ? { status: status as never } : {}),
+      ...(safeStatus ? { status: safeStatus as never } : {}),
     };
 
     const [shops, total] = await Promise.all([

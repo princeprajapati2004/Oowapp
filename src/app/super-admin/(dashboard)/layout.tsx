@@ -9,7 +9,7 @@ export default async function SuperAdminLayout({
 }) {
   const session = await getSuperAdminSession();
   if (!session) {
-    redirect("/login");
+    redirect("/super-admin/login");
   }
 
   return <SAShell>{children}</SAShell>;
