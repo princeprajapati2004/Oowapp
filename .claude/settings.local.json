@@ -94,7 +94,13 @@
       "Bash(curl -s http://localhost:3002/)",
       "Bash(powershell -Command \"Stop-Process -Id 36560 -Force -ErrorAction SilentlyContinue\")",
       "Bash(xargs grep -l -i \"order\")",
-      "Bash(env)"
+      "Bash(env)",
+      "Bash(grep -E \"route\\\\.ts$\")",
+      "Bash(curl -s http://localhost:3000)",
+      "Bash(curl -s -m 5 http://localhost:3000/login)",
+      "Bash(cat)",
+      "Bash(chmod +x /tmp/verify-code.sh)",
+      "Bash(/tmp/verify-code.sh)"
     ]
   }
 }
