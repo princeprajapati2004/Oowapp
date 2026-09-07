@@ -1,4 +1,5 @@
 import nodemailer from "nodemailer";
+import { EmailServiceError } from "@/lib/api-utils";
 
 let _transporter: nodemailer.Transporter | null = null;
 
@@ -10,10 +11,9 @@ function getTransporter() {
   const user = process.env.NO_REPLY_EMAIL;
   const pass = process.env.NO_REPLY_EMAIL_PASSWORD;
 
-  // Require explicit SMTP configuration from environment only
   if (!host || !portStr || !user || !pass) {
     console.error('Missing required SMTP environment variables. Set SMTP_HOST, SMTP_PORT, NO_REPLY_EMAIL and NO_REPLY_EMAIL_PASSWORD.');
-    throw new Error('SMTP configuration missing in environment');
+    throw new EmailServiceError('Email service is not configured. Please contact support.');
   }
 
   const port = Number(portStr);
@@ -56,7 +56,7 @@ export async function sendEmail(
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : typeof err === 'string' ? err : JSON.stringify(err);
     console.error('sendEmail failed:', msg);
-    // Surface the error to callers so API routes can return a useful error
-    throw err;
+    if (err instanceof EmailServiceError) throw err;
+    throw new EmailServiceError('Failed to send email. Please try again in a moment.');
   }
 }

@@ -77,6 +77,15 @@ export class ProductError extends Error {
   }
 }
 
+// Email service failures (SMTP misconfiguration, transient network issues, etc.)
+// Distinct class so email-related failures aren't masked as generic "Something went wrong"
+export class EmailServiceError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "EmailServiceError";
+  }
+}
+
 export function handleApiError(error: unknown) {
   if (error instanceof UnauthorizedError) {
     return NextResponse.json({ error: error.message }, { status: 401 });
@@ -92,6 +101,9 @@ export function handleApiError(error: unknown) {
   }
   if (error instanceof BillAlreadyRequestedError) {
     return NextResponse.json({ error: error.message }, { status: 409 });
+  }
+  if (error instanceof EmailServiceError) {
+    return NextResponse.json({ error: error.message }, { status: 503 });
   }
   if (error instanceof InvalidCouponError) {
     return NextResponse.json({ error: error.message }, { status: 400 });
