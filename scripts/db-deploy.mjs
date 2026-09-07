@@ -10,5 +10,10 @@ import { detectDbProvider } from "./detect-db-provider.mjs";
 
 const provider = detectDbProvider(process.env.DATABASE_URL);
 
-console.log(`[db-deploy] Syncing schema for provider "${provider}" using db push…`);
-execSync("node_modules/.bin/prisma db push --accept-data-loss", { stdio: "inherit" });
+if (provider === "postgresql") {
+  console.log(`[db-deploy] Applying migrations for provider "${provider}" using migrate deploy…`);
+  execSync("node_modules/.bin/prisma migrate deploy", { stdio: "inherit" });
+} else {
+  console.log(`[db-deploy] Syncing schema for provider "${provider}" using db push…`);
+  execSync("node_modules/.bin/prisma db push --accept-data-loss", { stdio: "inherit" });
+}
