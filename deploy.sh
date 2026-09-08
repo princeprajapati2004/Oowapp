@@ -1,125 +1,84 @@
 #!/bin/bash
+# Deploy to production server.
+# Make sure you have already done `git push` before running this.
 
 set -euo pipefail
 
-# Load nvm so the correct Node version is available
 export NVM_DIR="$HOME/.nvm"
-# shellcheck source=/dev/null
 [ -s "$NVM_DIR/nvm.sh" ] && source "$NVM_DIR/nvm.sh"
 nvm use default --silent 2>/dev/null || true
-
-########################################
-# CONFIGURATION
-########################################
 
 SERVER_USER="oowapp_i1"
 SERVER_IP="103.191.208.56"
 SERVER_PORT="22"
-REMOTE_PROJECT="~/Oowapp"
-PM2_NAME="oowapp"
+REMOTE_DIR="~/Oowapp"
 
 ########################################
-# BUILD
+# 1. Build
 ########################################
-
 echo "========================================"
 echo " BUILD"
 echo "========================================"
 npm run build
 
 ########################################
-# ZIP .next  (remove any stale local zip first)
+# 2. Zip .next (everything, recursively)
 ########################################
-
 echo ""
-echo "[1/4] Creating .next.zip..."
+echo "[1/3] Zipping .next..."
 rm -f .next.zip
-zip -rq .next.zip .next
-echo "      Done ($(du -sh .next.zip | cut -f1))"
+zip -ry .next.zip .next   # -r = recursive, -y = store symlinks as symlinks
+echo "      $(du -sh .next.zip | cut -f1)"
 
 ########################################
-# UPLOAD
+# 3. Upload
 ########################################
-
 echo ""
-echo "[2/4] Uploading .next.zip and ecosystem config to server..."
-scp -P "$SERVER_PORT" .next.zip "${SERVER_USER}@${SERVER_IP}:${REMOTE_PROJECT}/"
-scp -P "$SERVER_PORT" ecosystem.config.cjs "${SERVER_USER}@${SERVER_IP}:${REMOTE_PROJECT}/"
+echo "[2/3] Uploading to server..."
+scp -P "$SERVER_PORT" .next.zip "${SERVER_USER}@${SERVER_IP}:${REMOTE_DIR}/"
+scp -P "$SERVER_PORT" ecosystem.config.cjs "${SERVER_USER}@${SERVER_IP}:${REMOTE_DIR}/"
 rm -f .next.zip
-echo "      Uploaded."
+echo "      Done."
 
 ########################################
-# GIT PUSH — user confirms before we pull on server
+# 4. Remote deploy
 ########################################
-
 echo ""
-echo "[3/4] Push your latest code to GitHub now."
-read -rp "      Press ENTER after git push is done..."
-
-########################################
-# REMOTE DEPLOY
-########################################
-
-echo ""
-echo "[4/4] Deploying on server..."
+echo "[3/3] Deploying on server..."
 
 ssh -t -p "$SERVER_PORT" "${SERVER_USER}@${SERVER_IP}" bash <<'REMOTE'
 set -euo pipefail
+cd ~/Oowapp
 
-REMOTE_PROJECT="$HOME/Oowapp"
-PM2_NAME="oowapp"
+export NVM_DIR="$HOME/.nvm"
+[ -s "$NVM_DIR/nvm.sh" ] && source "$NVM_DIR/nvm.sh"
+nvm use default --silent 2>/dev/null || true
 
-cd "$REMOTE_PROJECT"
-
-echo "  -> git pull"
-git pull
-
-echo "  -> removing old .next build..."
+echo "  -> removing old .next..."
 rm -rf .next
 
 echo "  -> extracting new .next..."
 unzip -oq .next.zip
 rm -f .next.zip
 
-echo "  -> npm install (sync dependencies)..."
-export NVM_DIR="$HOME/.nvm"
-[ -s "$NVM_DIR/nvm.sh" ] && source "$NVM_DIR/nvm.sh"
-nvm use default --silent 2>/dev/null || true
+echo "  -> git pull..."
+git pull
+
+echo "  -> npm install..."
 npm install --omit=dev
 
-echo "  -> syncing database schema..."
+echo "  -> applying database migrations..."
 node scripts/db-deploy.mjs
 
-# Locate PM2 under nvm
-PM2_BIN=$(find "$NVM_DIR/versions/node" -type f -name pm2 2>/dev/null | sort | tail -n1)
+echo "  -> starting/reloading app..."
+pm2 startOrReload ecosystem.config.cjs --update-env
+pm2 save --force
 
-if [ -z "$PM2_BIN" ]; then
-  PM2_BIN=$(command -v pm2 2>/dev/null || true)
-fi
-
-if [ -z "$PM2_BIN" ]; then
-  echo "ERROR: pm2 not found." >&2
-  exit 1
-fi
-
-echo "  -> pm2 at $PM2_BIN"
-
-if "$PM2_BIN" describe "$PM2_NAME" >/dev/null 2>&1; then
-  echo "  -> reloading $PM2_NAME"
-  "$PM2_BIN" reload "$PM2_NAME" --update-env
-else
-  echo "  -> starting $PM2_NAME via ecosystem config"
-  "$PM2_BIN" start ecosystem.config.cjs
-fi
-
-"$PM2_BIN" save --force
+echo ""
+echo "  Deployed successfully!"
 REMOTE
-
-########################################
-# DONE
-########################################
 
 echo ""
 echo "========================================"
-echo " Deployment complete!"
+echo " Done! Site is live at oowapp.in"
 echo "========================================"
