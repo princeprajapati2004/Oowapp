@@ -24,17 +24,15 @@ export async function POST(request: Request) {
       include: { shop: true },
     });
 
-    if (!admin) {
-      // Constant-time response — don't reveal whether the account exists
-      return NextResponse.json({ error: "Invalid or expired code." }, { status: 400 });
+    if (!admin || !admin.shop) {
+      return NextResponse.json(
+        { error: "Your account does not exist. Please set up your shop first with registration." },
+        { status: 400 }
+      );
     }
 
     if (!admin.emailVerified) {
       return NextResponse.json({ error: "Please verify your email before logging in." }, { status: 400 });
-    }
-
-    if (!admin.shop) {
-      return NextResponse.json({ error: "Please complete your account setup before logging in." }, { status: 400 });
     }
 
     const result = await verifyOtp(admin.id, "LOGIN", input.otp);
