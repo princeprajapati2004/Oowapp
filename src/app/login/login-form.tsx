@@ -38,9 +38,11 @@ export function LoginForm() {
       await api.post("/api/auth/send-login-otp", { email: email.trim() });
       setStep("otp");
       setCooldown(RESEND_COOLDOWN);
-      toast.success("If that account exists, a code has been sent.");
+      toast.success("Code sent! Check your email.");
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "Could not send the code");
+      const errorMsg = err instanceof ApiError ? err.message : "Could not send the code";
+      setError(errorMsg);
+      toast.error(errorMsg);
     } finally {
       setSending(false);
     }
@@ -54,7 +56,9 @@ export function LoginForm() {
       setCooldown(RESEND_COOLDOWN);
       toast.success("Code resent");
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "Could not resend the code");
+      const errorMsg = err instanceof ApiError ? err.message : "Could not resend the code";
+      setError(errorMsg);
+      toast.error(errorMsg);
     } finally {
       setSending(false);
     }
@@ -105,14 +109,17 @@ export function LoginForm() {
 
           {step === "email" ? (
             <form onSubmit={sendOtp} className="space-y-3">
-              <FormRow label="Email" htmlFor="email" required>
+              <FormRow label="Email" htmlFor="email" required error={error ? { message: error } : undefined}>
                 <Input
                   id="email"
                   type="email"
                   autoComplete="username"
                   placeholder="you@example.com"
                   value={email}
-                  onChange={(e) => setEmail(e.target.value)}
+                  onChange={(e) => {
+                    setEmail(e.target.value);
+                    setError("");
+                  }}
                 />
               </FormRow>
               <Button type="submit" className="h-10 w-full" disabled={sending}>

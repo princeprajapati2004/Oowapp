@@ -20,10 +20,18 @@ export async function POST(request: Request) {
       select: { id: true, email: true, emailVerified: true, shop: { select: { id: true, businessName: true } } },
     });
 
-    // Always return the same shape regardless of whether the account exists
-    // or is fully registered — prevents email enumeration.
-    if (!admin || !admin.emailVerified || !admin.shop) {
-      return NextResponse.json({ ok: true });
+    if (!admin || !admin.shop) {
+      return NextResponse.json(
+        { error: "Your account does not exist. Please set up your shop first with registration." },
+        { status: 400 }
+      );
+    }
+
+    if (!admin.emailVerified) {
+      return NextResponse.json(
+        { error: "Please verify your email before logging in." },
+        { status: 400 }
+      );
     }
 
     const allowed = await canResendOtp(admin.id, "LOGIN");
