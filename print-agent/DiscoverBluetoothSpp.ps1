@@ -19,8 +19,17 @@ $btDevices = Get-PnpDevice -Class Bluetooth
 # differs between the two observed formats (...&0&<MAC>_... vs ...&<MAC>\...).
 $deviceByMac = @{}
 foreach ($device in $btDevices) {
-    if ($device.InstanceId -match "([0-9A-Fa-f]{12})") {
-        $mac = $Matches[1].ToUpper()
+    # Use the LAST 12-hex run in the InstanceId, not the first: some nodes'
+    # InstanceId embeds a Bluetooth service class UUID (e.g. the Device ID
+    # service, 00001200-0000-1000-8000-00805F9B34FB) ahead of the real
+    # device address, and every standard Bluetooth SIG base UUID ends in
+    # the same 12-hex suffix (00805F9B34FB) — matching the first run picks
+    # that up instead of the actual MAC, mislabeling the device (observed:
+    # a real printer's own "Device Identification Service" node resolving
+    # to address 00805F9B34FB instead of its true address).
+    $hexMatches = [regex]::Matches($device.InstanceId, "[0-9A-Fa-f]{12}")
+    if ($hexMatches.Count -gt 0) {
+        $mac = $hexMatches[$hexMatches.Count - 1].Value.ToUpper()
         if ($mac -ne "000000000000" -and -not $deviceByMac.ContainsKey($mac)) {
             $lastConnected = Get-PnpDeviceProperty -InstanceId $device.InstanceId -KeyName 'DEVPKEY_Bluetooth_LastConnectedTime' -ErrorAction SilentlyContinue
             $deviceByMac[$mac] = [PSCustomObject]@{
