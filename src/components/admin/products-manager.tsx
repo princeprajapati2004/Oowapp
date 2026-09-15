@@ -41,6 +41,7 @@ import { FormRow } from "@/components/shared/form-row";
 import { EmptyState } from "@/components/shared/empty-state";
 import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 import { ImageUploader } from "@/components/shared/image-uploader";
+import { EvidencePhotosInput } from "@/components/shared/evidence-photos-input";
 import { BarcodeScanButton } from "@/components/admin/barcode-scan-button";
 import { ProductPartyPrices } from "@/components/admin/product-party-prices";
 import { api, ApiError } from "@/lib/api-client";
@@ -72,6 +73,7 @@ const EMPTY_FORM = {
   wholesalePrice: "",
   categoryId: "",
   imageUrl: null as string | null,
+  imageUrls: [] as string[],
   unit: "",
   barcode: "",
   hsnCode: "",
@@ -197,6 +199,7 @@ export function ProductsManager({
       wholesalePrice: product.wholesalePrice != null ? String(product.wholesalePrice) : "",
       categoryId: product.categoryId,
       imageUrl: product.imageUrl,
+      imageUrls: product.imageUrls ?? [],
       unit: product.unit ?? "",
       barcode: product.barcode ?? "",
       hsnCode: product.hsnCode ?? "",
@@ -253,6 +256,7 @@ export function ProductsManager({
       wholesalePrice: wholesaleNum,
       categoryId: form.categoryId,
       imageUrl: form.imageUrl,
+      imageUrls: form.imageUrls,
       unit: form.unit,
       barcode: form.barcode,
       hsnCode: form.hsnCode,
@@ -623,9 +627,24 @@ export function ProductsManager({
             <div className="flex-1 overflow-y-auto px-5 py-4">
               <TabsContent value="basic" className="space-y-4">
                 {itemSettings.productImageEnabled && (
-                  <FormRow label="Image" htmlFor="product-image">
-                    <ImageUploader value={form.imageUrl} onChange={(url) => setForm((f) => ({ ...f, imageUrl: url }))} />
-                  </FormRow>
+                  <>
+                    <FormRow label="Image" htmlFor="product-image">
+                      <ImageUploader value={form.imageUrl} onChange={(url) => setForm((f) => ({ ...f, imageUrl: url }))} />
+                    </FormRow>
+                    <FormRow
+                      label="Additional photos"
+                      htmlFor="product-gallery"
+                      description="Shown as a gallery on the customer's product page — e.g. back, side, or close-up shots."
+                    >
+                      <EvidencePhotosInput
+                        urls={form.imageUrls}
+                        onChange={(urls) => setForm((f) => ({ ...f, imageUrls: urls }))}
+                        endpoint="/api/upload"
+                        max={5}
+                        itemLabel="Product photo"
+                      />
+                    </FormRow>
+                  </>
                 )}
 
                 <FormRow label="Name" htmlFor="product-name" required>

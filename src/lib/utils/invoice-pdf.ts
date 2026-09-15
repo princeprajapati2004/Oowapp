@@ -1,5 +1,5 @@
 import { formatCurrency } from "@/lib/utils/currency";
-import type { BillTotals } from "@/lib/services/billing";
+import type { BillTotals, BillCharge } from "@/lib/services/billing";
 
 export interface InvoicePdfShop {
   businessName: string;
@@ -32,6 +32,10 @@ export interface InvoicePdfInput {
   notes?: string | null;
   items: InvoicePdfItem[];
   bill: BillTotals;
+  // Delivery/packaging/service/etc — bill.grandTotal passed in must already
+  // include these (see getPayableTotal); this is only for the itemized
+  // breakdown lines shown between tax and the final total.
+  charges?: BillCharge[];
   // Optional — used for the "Generate Final Bill" table-session invoice view,
   // which reuses this same PDF generator (current-order-page.tsx / order-tracker.tsx).
   invoiceNumber?: string;
@@ -64,6 +68,7 @@ export async function generateInvoicePdf(input: InvoicePdfInput): Promise<void> 
     notes,
     items,
     bill,
+    charges,
     invoiceNumber,
     invoiceDate,
     paymentStatus,
@@ -166,6 +171,14 @@ export async function generateInvoicePdf(input: InvoicePdfInput): Promise<void> 
     doc.setTextColor(100);
     doc.text(line.name, 40, y);
     doc.text(formatCurrency(line.amount, shop.currency), pageWidth - 40, y, { align: "right" });
+    doc.setTextColor(0);
+    y += 14;
+  });
+
+  (charges ?? []).forEach((charge) => {
+    doc.setTextColor(100);
+    doc.text(charge.label, 40, y);
+    doc.text(formatCurrency(charge.amount, shop.currency), pageWidth - 40, y, { align: "right" });
     doc.setTextColor(0);
     y += 14;
   });

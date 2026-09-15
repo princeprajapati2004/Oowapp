@@ -13,12 +13,18 @@ import { formatRelativeTime } from "@/lib/utils/relative-time";
 import { api, ApiError } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
 
-const SOUND_PREF_KEY = "admin-notif-sound-enabled";
-
-export function NotificationBell({ initialNotifications }: { initialNotifications: NotificationEventPayload[] }) {
+export function NotificationBell({
+  initialNotifications,
+  soundEnabled: initialSoundEnabled,
+}: {
+  initialNotifications: NotificationEventPayload[];
+  // Shop-wide, server-persisted (Settings > Notifications) — loads correctly
+  // on any device/login instead of the old per-browser localStorage flag.
+  soundEnabled: boolean;
+}) {
   const [notifications, setNotifications] = useState(initialNotifications);
   const [open, setOpen] = useState(false);
-  const [soundEnabled, setSoundEnabled] = useState(false);
+  const [soundEnabled, setSoundEnabled] = useState(initialSoundEnabled);
   // Date.now() can't be read during render — captured once on mount, same
   // pattern as party-statement.tsx's nowMs.
   const [nowMs, setNowMs] = useState(0);
@@ -26,7 +32,6 @@ export function NotificationBell({ initialNotifications }: { initialNotification
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    setSoundEnabled(localStorage.getItem(SOUND_PREF_KEY) === "1");
     setNowMs(Date.now());
   }, []);
 
@@ -39,10 +44,16 @@ export function NotificationBell({ initialNotifications }: { initialNotification
     },
   });
 
-  function toggleSound() {
-    const next = !soundEnabled;
+  async function toggleSound() {
+    const previous = soundEnabled;
+    const next = !previous;
     setSoundEnabled(next);
-    localStorage.setItem(SOUND_PREF_KEY, next ? "1" : "0");
+    try {
+      await api.patch("/api/admin/business", { section: "notifications", notificationSoundEnabled: next });
+    } catch {
+      setSoundEnabled(previous);
+      toast.error("Couldn't update sound preference");
+    }
   }
 
   function handleSelect(n: NotificationEventPayload) {

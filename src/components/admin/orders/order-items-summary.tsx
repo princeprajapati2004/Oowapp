@@ -16,6 +16,7 @@ export function OrderItemsSummary({
   discountValue,
   discountedTotal,
   discountReason,
+  charges,
   currency,
   compact,
 }: {
@@ -27,11 +28,16 @@ export function OrderItemsSummary({
   discountValue: number | null;
   discountedTotal: number | null;
   discountReason?: string | null;
+  // Delivery/packaging/service/etc — additive on top of the discounted
+  // sticker price, never folded into it (see billing.ts's getPayableTotal).
+  charges?: { label: string; amount: number }[];
   currency: string;
   compact?: boolean;
 }) {
   const base = subtotal + taxTotal;
-  const finalTotal = discountedTotal ?? base;
+  const discountedFinal = discountedTotal ?? base;
+  const chargesTotal = (charges ?? []).reduce((sum, c) => sum + c.amount, 0);
+  const finalTotal = discountedFinal + chargesTotal;
   const discountAmt = discountedTotal !== null ? base - discountedTotal : 0;
 
   return (
@@ -75,6 +81,12 @@ export function OrderItemsSummary({
             <span className="font-medium">−{formatCurrency(discountAmt, currency)}</span>
           </div>
         ) : null}
+        {(charges ?? []).map((charge, i) => (
+          <div key={`${charge.label}-${i}`} className="flex justify-between text-muted-foreground">
+            <span>{charge.label}</span>
+            <span>{formatCurrency(charge.amount, currency)}</span>
+          </div>
+        ))}
         <div className="flex justify-between border-t pt-2 mt-1 font-bold text-base">
           <span>Total Amount</span>
           <span className="text-primary">{formatCurrency(finalTotal, currency)}</span>

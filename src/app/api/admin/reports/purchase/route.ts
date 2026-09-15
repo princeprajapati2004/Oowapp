@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireAdminSession } from "@/lib/session";
+import { assertFeatureEnabled } from "@/lib/services/feature-permission";
 import { handleApiError } from "@/lib/api-utils";
 import { resolveDateRange } from "@/lib/utils/date-range";
 import { getPurchaseReportSummary, listPurchaseReportRows, type PurchaseReportFilters } from "@/lib/services/reports/purchase-report";
@@ -7,6 +8,7 @@ import { getPurchaseReportSummary, listPurchaseReportRows, type PurchaseReportFi
 export async function GET(request: Request) {
   try {
     const session = await requireAdminSession();
+    await assertFeatureEnabled(session.shopId, "advanced_reports");
     const { searchParams } = new URL(request.url);
 
     const fromParam = searchParams.get("from");

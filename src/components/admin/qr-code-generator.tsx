@@ -3,10 +3,12 @@
 import { useEffect, useState } from "react";
 import QRCode from "qrcode";
 import { jsPDF } from "jspdf";
-import { Download, ExternalLink, Printer, Grid2x2 } from "lucide-react";
+import { toast } from "sonner";
+import { Download, ExternalLink, Printer, Grid2x2, Share2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { CopyButton } from "@/components/shared/copy-button";
 import { isFoodBusiness, type BusinessType } from "@/lib/business-types";
 
 function downloadBlob(url: string, filename: string) {
@@ -33,8 +35,9 @@ export function QrCodeGenerator({
 
   // Table QR state
   const [tableCountInput, setTableCountInput] = useState("5");
-  const [tableQrs, setTableQrs] = useState<{ table: string; dataUrl: string }[]>([]);
+  const [tableQrs, setTableQrs] = useState<{ table: string; dataUrl: string; url: string }[]>([]);
   const [generatingTables, setGeneratingTables] = useState(false);
+  const [canShare, setCanShare] = useState(false);
 
   useEffect(() => {
     const base = process.env.NEXT_PUBLIC_APP_URL || window.location.origin;
@@ -44,6 +47,21 @@ export function QrCodeGenerator({
     QRCode.toDataURL(url, { width: 480, margin: 2 }).then(setPngDataUrl);
     QRCode.toString(url, { type: "svg", width: 480, margin: 2 }).then(setSvgMarkup);
   }, [slug]);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setCanShare(typeof navigator !== "undefined" && typeof navigator.share === "function");
+  }, []);
+
+  async function handleShare() {
+    try {
+      await navigator.share({ title: businessName, text: `Order from ${businessName}`, url: orderUrl });
+    } catch (err) {
+      if (err instanceof Error && err.name !== "AbortError") {
+        toast.error("Couldn't share the link");
+      }
+    }
+  }
 
   function downloadPng() {
     if (pngDataUrl) downloadBlob(pngDataUrl, `${slug}-qr.png`);
@@ -92,7 +110,7 @@ export function QrCodeGenerator({
       tableNames.map(async (table) => {
         const url = `${base}/order/${slug}?table=${encodeURIComponent(table)}`;
         const dataUrl = await QRCode.toDataURL(url, { width: 300, margin: 2 });
-        return { table, dataUrl };
+        return { table, dataUrl, url };
       })
     );
     setTableQrs(qrs);
@@ -141,6 +159,20 @@ export function QrCodeGenerator({
         <CardHeader className="pb-3">
           <CardTitle className="text-base">Your ordering link</CardTitle>
           <CardDescription className="break-all text-xs font-mono">{orderUrl}</CardDescription>
+          <div className="flex gap-2 pt-2">
+            <CopyButton
+              value={orderUrl}
+              label="Copy link"
+              size="sm"
+              className="flex-1"
+              successMessage="Ordering link copied"
+            />
+            {canShare && (
+              <Button variant="outline" size="sm" className="flex-1" onClick={handleShare}>
+                <Share2 className="size-3.5" /> Share
+              </Button>
+            )}
+          </div>
         </CardHeader>
         <CardContent className="flex flex-col items-center gap-5">
           {pngDataUrl ? (
@@ -227,7 +259,7 @@ export function QrCodeGenerator({
                   </Button>
                 </div>
                 <div className="grid grid-cols-3 gap-2">
-                  {tableQrs.map(({ table, dataUrl }) => (
+                  {tableQrs.map(({ table, dataUrl, url }) => (
                     <div
                       key={table}
                       className="flex flex-col items-center gap-1.5 rounded-xl border bg-card p-2.5"
@@ -237,14 +269,25 @@ export function QrCodeGenerator({
                         {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img src={dataUrl} alt={`Table ${table} QR`} className="size-20" />
                       </div>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="h-6 w-full text-xs"
-                        onClick={() => downloadBlob(dataUrl, `${slug}-table-${table}.png`)}
-                      >
-                        <Download className="size-3" /> PNG
-                      </Button>
+                      <div className="flex w-full gap-1">
+                        <CopyButton
+                          value={url}
+                          iconOnly
+                          label={`Copy table ${table} link`}
+                          size="icon-xs"
+                          className="flex-1"
+                          successMessage={`Table ${table} link copied`}
+                        />
+                        <Button
+                          variant="outline"
+                          size="icon-xs"
+                          className="flex-1"
+                          aria-label={`Download table ${table} QR as PNG`}
+                          onClick={() => downloadBlob(dataUrl, `${slug}-table-${table}.png`)}
+                        >
+                          <Download className="size-3" />
+                        </Button>
+                      </div>
                     </div>
                   ))}
                 </div>

@@ -74,6 +74,11 @@ export interface DuplicateOrderData {
   notes?: string;
 }
 
+interface ChargeRow {
+  label: string;
+  amount: string;
+}
+
 interface DraftOrder {
   cart: CartItem[];
   customerName: string;
@@ -89,6 +94,7 @@ interface DraftOrder {
   paymentMethod: PaymentMethod;
   discountType: "PERCENTAGE" | "FIXED" | "";
   discountValue: string;
+  charges: ChargeRow[];
   savedAt: string;
 }
 
@@ -167,6 +173,11 @@ export function CreateOrderPage({
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("CASH");
   const [discountType, setDiscountType] = useState<"PERCENTAGE" | "FIXED" | "">("");
   const [discountValue, setDiscountValue] = useState("");
+  // Additional charges (delivery/packaging/service/etc) — deliberately kept
+  // out of calculateBill/bill.grandTotal (see billing.ts's getPayableTotal
+  // doc comment): they're added to the amount the customer actually pays,
+  // never folded into the sticker-price total revenue reports read.
+  const [charges, setCharges] = useState<ChargeRow[]>([]);
   const [splitAmounts, setSplitAmounts] = useState([
     { method: "Cash", amount: "" },
     { method: "UPI", amount: "" },
@@ -389,6 +400,7 @@ export function CreateOrderPage({
       paymentMethod,
       discountType,
       discountValue,
+      charges,
       savedAt: new Date().toISOString(),
     };
   }
@@ -423,6 +435,7 @@ export function CreateOrderPage({
     setPaymentMethod(draftBanner.paymentMethod);
     setDiscountType(draftBanner.discountType);
     setDiscountValue(draftBanner.discountValue);
+    setCharges(draftBanner.charges ?? []);
     setDraftBanner(null);
     toast.success("Draft resumed");
   }
@@ -543,6 +556,18 @@ export function CreateOrderPage({
     setNotes((prev) => (prev.trim() ? `${prev.trim()}, ${phrase}` : phrase));
   }
 
+  function addCharge(label = "") {
+    setCharges((prev) => [...prev, { label, amount: "" }]);
+  }
+
+  function updateCharge(index: number, patch: Partial<ChargeRow>) {
+    setCharges((prev) => prev.map((c, i) => (i === index ? { ...c, ...patch } : c)));
+  }
+
+  function removeCharge(index: number) {
+    setCharges((prev) => prev.filter((_, i) => i !== index));
+  }
+
   const billItems = cart.map((i) => ({ id: i.productId, name: i.name, price: i.price, quantity: i.quantity, categoryId: i.categoryId }));
   const bill = calculateBill(billItems, taxes);
   const subtotal = cart.reduce((sum, i) => sum + i.price * i.quantity, 0);
@@ -557,7 +582,19 @@ export function CreateOrderPage({
     return discountType === "PERCENTAGE" ? (bill.grandTotal * v) / 100 : v;
   }, [discountType, discountValue, bill.grandTotal]);
 
-  const estimatedTotal = Math.max(0, bill.grandTotal - discountAmount);
+  // Only rows with both a label and a positive amount count toward the
+  // total/submission — an in-progress "+ Add charge" row with an empty
+  // label or amount is silently ignored rather than blocking checkout.
+  const validCharges = useMemo(
+    () =>
+      charges
+        .map((c) => ({ label: c.label.trim(), amount: parseFloat(c.amount) }))
+        .filter((c): c is { label: string; amount: number } => !!c.label && Number.isFinite(c.amount) && c.amount > 0),
+    [charges]
+  );
+  const chargesTotal = useMemo(() => validCharges.reduce((sum, c) => sum + c.amount, 0), [validCharges]);
+
+  const estimatedTotal = Math.max(0, bill.grandTotal - discountAmount) + chargesTotal;
   // Rough heuristic (not a kitchen-timed guarantee) so staff can set customer
   // expectations — base handling time plus a couple of minutes per item.
   const estimatedPrepMinutes = cart.length === 0 ? 0 : Math.min(45, 5 + totalQty * 2);
@@ -611,6 +648,9 @@ export function CreateOrderPage({
       if (discountType && discountValue && parseFloat(discountValue) > 0) {
         body.discountType = discountType;
         body.discountValue = parseFloat(discountValue);
+      }
+      if (validCharges.length > 0) {
+        body.charges = validCharges;
       }
 
       const res = await api.post<{ billNumber: string; orderId: string; tokenNumber: number | null }>("/api/admin/orders", body);
@@ -825,8 +865,14 @@ export function CreateOrderPage({
                   <span>−{formatCurrency(discountAmount, currency)}</span>
                 </div>
               )}
+              {validCharges.map((c, i) => (
+                <div key={`${c.label}-${i}`} className="flex justify-between text-sm text-muted-foreground">
+                  <span>{c.label}</span>
+                  <span>+{formatCurrency(c.amount, currency)}</span>
+                </div>
+              ))}
               <div className="flex justify-between text-base font-bold">
-                <span>Grand Total</span>
+                <span>Total Payable</span>
                 <span>{formatCurrency(estimatedTotal, currency)}</span>
               </div>
               <div className="flex items-center justify-between pt-0.5">
@@ -1151,6 +1197,56 @@ export function CreateOrderPage({
                         />
                       )}
                     </div>
+                  </div>
+
+                  {/* Additional Charges */}
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <Label className="text-xs">Additional Charges</Label>
+                      <button
+                        type="button"
+                        onClick={() => addCharge()}
+                        className="text-xs font-medium text-primary hover:underline"
+                      >
+                        + Add charge
+                      </button>
+                    </div>
+                    {charges.length === 0 ? (
+                      <p className="text-xs text-muted-foreground">
+                        e.g. delivery, packaging, or service charge — shown separately from the item total.
+                      </p>
+                    ) : (
+                      <div className="space-y-1.5">
+                        {charges.map((charge, index) => (
+                          <div key={index} className="flex items-center gap-1.5">
+                            <Input
+                              value={charge.label}
+                              onChange={(e) => updateCharge(index, { label: e.target.value })}
+                              placeholder="e.g. Delivery charge"
+                              maxLength={40}
+                              className="h-8 flex-1 text-sm"
+                            />
+                            <Input
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              value={charge.amount}
+                              onChange={(e) => updateCharge(index, { amount: e.target.value })}
+                              placeholder="Amount"
+                              className="h-8 w-24 text-sm"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => removeCharge(index)}
+                              aria-label="Remove charge"
+                              className="flex size-8 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-destructive"
+                            >
+                              <X className="size-3.5" />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
 
                   {/* Special Instructions / Notes */}

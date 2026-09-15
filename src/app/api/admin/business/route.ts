@@ -43,7 +43,10 @@ export async function PATCH(request: Request) {
       };
     } else if (section === "menu") data = menuSettingsSchema.parse(rest);
     else if (section === "notifications") {
-      data = notificationSettingsSchema.parse(rest);
+      // Partial, unlike most other sections — lets the notification bell's
+      // quick sound-mute toggle PATCH just { notificationSoundEnabled }
+      // without needing to also know/resend the two push-preference booleans.
+      data = notificationSettingsSchema.partial().parse(rest);
     } else if (section === "billNumbering") {
       const parsed = billNumberingSchema.parse(rest);
       data = { billNumberPrefix: parsed.billNumberPrefix || "" };

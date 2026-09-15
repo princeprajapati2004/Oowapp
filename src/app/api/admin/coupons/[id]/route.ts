@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireAdminSession } from "@/lib/session";
+import { assertFeatureEnabled } from "@/lib/services/feature-permission";
 import { handleApiError } from "@/lib/api-utils";
 import { couponSchema } from "@/lib/validation/coupon";
 import { updateCoupon, deleteCoupon } from "@/lib/services/coupon";
@@ -11,6 +12,7 @@ export async function PATCH(
 ) {
   try {
     const session = await requireAdminSession();
+    await assertFeatureEnabled(session.shopId, "coupons");
     const { id } = await params;
     const body = await request.json();
     const input = couponSchema.parse(body);
@@ -27,6 +29,7 @@ export async function DELETE(
 ) {
   try {
     const session = await requireAdminSession();
+    await assertFeatureEnabled(session.shopId, "coupons");
     const { id } = await params;
     await deleteCoupon(session.shopId, id);
     return NextResponse.json({ ok: true });

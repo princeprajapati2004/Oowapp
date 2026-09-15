@@ -43,6 +43,7 @@ import { printBill } from "@/lib/printing/print-service";
 import { printViaSystemDialog } from "@/lib/printing/adapters/system-print";
 import { buildWhatsAppUrl } from "@/lib/services/whatsapp";
 import { buildUpiPaymentUri } from "@/lib/utils/upi";
+import { getPayableTotal, type BillCharge } from "@/lib/services/billing";
 import {
   STATUS_LABELS,
   STATUS_BADGE_CLASS,
@@ -62,6 +63,7 @@ import { OrderCancelDialog } from "./order-cancel-dialog";
 import { OrderPaymentModal } from "./order-payment-modal";
 import { OrderEditModal } from "./order-edit-modal";
 import { CustomerDetailsCard } from "./customer-details-card";
+import { DeliveryTrackingDialog } from "./delivery-tracking-dialog";
 import { PaymentDetailsCard } from "./payment-details-card";
 import { PaymentMethodsCard } from "./payment-methods-card";
 import { PaymentHistorySection } from "./payment-history-section";
@@ -106,12 +108,16 @@ export function OrderDetailPage({
   currency,
   justCreated,
   openPayment,
+  deliveryFeatureEnabled = true,
 }: {
   initialOrder: AdminOrderEventOrder;
   shop: BillShopData;
   currency: string;
   justCreated?: boolean;
   openPayment?: boolean;
+  // Server-resolved (resolveFeatures) — the edit button is UX-hidden when
+  // false; the update_delivery API action independently re-checks too.
+  deliveryFeatureEnabled?: boolean;
 }) {
   const router = useRouter();
   const [order, setOrder] = useState(initialOrder);
@@ -126,6 +132,7 @@ export function OrderDetailPage({
   // Confirm Order click — see create-order-page.tsx's handleSubmit.
   const [paymentOpen, setPaymentOpen] = useState(!!openPayment);
   const [editOpen, setEditOpen] = useState(false);
+  const [deliveryDialogOpen, setDeliveryDialogOpen] = useState(false);
   const [editInitialView, setEditInitialView] = useState<"items" | "add">("items");
   // "Full Edit Mode" — a separate, additional editing surface from the
   // modal above: lets the owner change customer name/order type/payment
@@ -145,8 +152,9 @@ export function OrderDetailPage({
   const nextStatus = getNextStatus({ ...order, status });
   const canCancelNow = canCancel({ ...order, status });
   const { date: orderDateLabel, dayTime: orderDayTimeLabel } = formatOrderDateParts(order.createdAt);
-  const orderTotal = order.discountedTotal ?? order.grandTotal;
+  const orderTotal = getPayableTotal(order);
   const amountDue = Math.max(0, orderTotal - (order.paidAmount ?? 0));
+  const charges = (order.additionalCharges as BillCharge[] | null) ?? [];
   // Real upi://pay deep link for THIS order's current remaining balance —
   // same builder the payment-recording modal's own QR already uses, so it's
   // never a fixed/stale amount. Recomputed whenever amountDue changes (e.g.
@@ -335,7 +343,7 @@ export function OrderDetailPage({
       toast.error("This order has no customer phone number to share with");
       return;
     }
-    const total = order.discountedTotal ?? order.grandTotal;
+    const total = getPayableTotal(order);
     const lines = [
       `*Receipt — ${shop.businessName}*`,
       "",
@@ -513,6 +521,10 @@ export function OrderDetailPage({
             orderType={orderType}
             tableNumber={order.tableNumber}
             deliveryAddress={order.deliveryAddress}
+            courierName={order.courierName}
+            trackingNumber={order.trackingNumber}
+            trackingUrl={order.trackingUrl}
+            onEditDelivery={deliveryFeatureEnabled ? () => setDeliveryDialogOpen(true) : undefined}
           />
 
           {order.paymentClaimStatus === "PENDING" && (
@@ -549,6 +561,7 @@ export function OrderDetailPage({
             discountValue={order.discountValue}
             discountedTotal={order.discountedTotal}
             discountReason={order.discountReason}
+            charges={charges}
             currency={currency}
           />
 
@@ -613,6 +626,7 @@ export function OrderDetailPage({
       </div>
 
       <OrderCancelDialog order={order} open={cancelOpen} onOpenChange={setCancelOpen} onCancelled={applyUpdate} />
+      <DeliveryTrackingDialog order={order} open={deliveryDialogOpen} onOpenChange={setDeliveryDialogOpen} onSaved={applyUpdate} />
       <OrderPaymentModal order={order} currency={currency} shop={shop} open={paymentOpen} onOpenChange={setPaymentOpen} onPaid={applyUpdate} />
       <OrderEditModal order={order} currency={currency} open={editOpen} initialView={editInitialView} onOpenChange={setEditOpen} onSaved={applyUpdate} />
 

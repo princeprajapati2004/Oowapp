@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requireAdminSession } from "@/lib/session";
+import { assertFeatureEnabled } from "@/lib/services/feature-permission";
 import { handleApiError, NotFoundError } from "@/lib/api-utils";
 import { hashPassword } from "@/lib/auth";
 import { db } from "@/lib/db";
@@ -17,6 +18,7 @@ const updateStaffSchema = z.object({
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const session = await requireAdminSession();
+    await assertFeatureEnabled(session.shopId, "multi_staff");
     const { id } = await params;
     const body = await request.json();
     const input = updateStaffSchema.parse(body);
@@ -62,6 +64,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
 export async function DELETE(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const session = await requireAdminSession();
+    await assertFeatureEnabled(session.shopId, "multi_staff");
     const { id } = await params;
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any

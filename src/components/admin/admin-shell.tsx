@@ -51,6 +51,12 @@ type NavItem = {
   href: string;
   label: string;
   icon: LucideIcon;
+  // Feature key from src/lib/plans-features-catalog.ts — omitted means
+  // always visible. Checked against the enabledFeatures map resolved
+  // server-side (src/lib/services/feature-permission.ts); hiding the nav
+  // item is UX only — the page/route itself independently re-checks (see
+  // that service's doc comment on "frontend hiding is not security").
+  requiredFeature?: string;
 };
 
 type NavGroup = {
@@ -63,6 +69,17 @@ type NavEntry = NavItem | NavGroup;
 
 function isGroup(entry: NavEntry): entry is NavGroup {
   return "groupLabel" in entry;
+}
+
+function filterNavByFeatures(entries: NavEntry[], enabledFeatures: Record<string, boolean>): NavEntry[] {
+  const itemAllowed = (item: NavItem) => !item.requiredFeature || !!enabledFeatures[item.requiredFeature];
+  return entries.flatMap((entry): NavEntry[] => {
+    if (isGroup(entry)) {
+      const items = entry.items.filter(itemAllowed);
+      return items.length > 0 ? [{ ...entry, items }] : [];
+    }
+    return itemAllowed(entry) ? [entry] : [];
+  });
 }
 
 export type ShellCopy = {
@@ -83,7 +100,7 @@ function buildNavEntries(foodBusiness: boolean, copy: ShellCopy): NavEntry[] {
 
   return [
     { href: "/admin", label: "Dashboard", icon: LayoutDashboard },
-    { href: "/admin/reports", label: "Reports", icon: BarChart3 },
+    { href: "/admin/reports", label: "Reports", icon: BarChart3, requiredFeature: "advanced_reports" },
     {
       groupLabel: "Operations",
       icon: ClipboardList,
@@ -102,7 +119,7 @@ function buildNavEntries(foodBusiness: boolean, copy: ShellCopy): NavEntry[] {
       groupLabel: "Finance",
       icon: Receipt,
       items: [
-        { href: "/admin/expenses", label: "Expenses", icon: Receipt },
+        { href: "/admin/expenses", label: "Expenses", icon: Receipt, requiredFeature: "expenses" },
         { href: "/admin/purchases", label: "Purchases", icon: ShoppingCart },
         { href: "/admin/taxes", label: "Taxes", icon: Percent },
       ],
@@ -111,7 +128,7 @@ function buildNavEntries(foodBusiness: boolean, copy: ShellCopy): NavEntry[] {
       groupLabel: "Marketing",
       icon: Ticket,
       items: [
-        { href: "/admin/coupons", label: "Coupons", icon: Ticket },
+        { href: "/admin/coupons", label: "Coupons", icon: Ticket, requiredFeature: "coupons" },
         { href: "/admin/cashback", label: "Cashback", icon: Gift },
         { href: "/admin/referrals", label: "Referrals", icon: Share2 },
       ],
@@ -120,7 +137,7 @@ function buildNavEntries(foodBusiness: boolean, copy: ShellCopy): NavEntry[] {
       groupLabel: "People",
       icon: Users,
       items: [
-        { href: "/admin/staff", label: "Staff", icon: Users },
+        { href: "/admin/staff", label: "Staff", icon: Users, requiredFeature: "multi_staff" },
         { href: "/admin/parties", label: "Parties", icon: BookUser },
         { href: "/admin/customers", label: "Customers", icon: Wallet },
         { href: "/admin/reviews", label: "Reviews", icon: Star },
@@ -131,7 +148,7 @@ function buildNavEntries(foodBusiness: boolean, copy: ShellCopy): NavEntry[] {
       icon: QrCode,
       items: [
         { href: "/admin/qr", label: "QR Code", icon: QrCode },
-        { href: "/admin/barcodes", label: "Barcodes", icon: Barcode },
+        { href: "/admin/barcodes", label: "Barcodes", icon: Barcode, requiredFeature: "barcode_scanner" },
       ],
     },
     { href: "/admin/settings", label: "Settings", icon: Settings },
@@ -374,14 +391,20 @@ export function AdminShell({
   shopName,
   shopSlug,
   initialNotifications,
+  notificationSoundEnabled,
   isFoodBusiness,
+  enabledFeatures,
   copy,
   children,
 }: {
   shopName: string;
   shopSlug: string;
   initialNotifications: NotificationEventPayload[];
+  notificationSoundEnabled: boolean;
   isFoodBusiness: boolean;
+  // Resolved server-side (resolveFeatures) — only gates nav visibility (UX).
+  // The actual pages/APIs behind these items independently re-check.
+  enabledFeatures: Record<string, boolean>;
   copy: ShellCopy;
   children: React.ReactNode;
 }) {
@@ -389,7 +412,7 @@ export function AdminShell({
   const router = useRouter();
   const [mobileOpen, setMobileOpen] = useState(false);
 
-  const navEntries = buildNavEntries(isFoodBusiness, copy);
+  const navEntries = filterNavByFeatures(buildNavEntries(isFoodBusiness, copy), enabledFeatures);
   const pageTitle = findActiveLabel(pathname, navEntries);
 
   async function handleLogout() {
@@ -464,7 +487,7 @@ export function AdminShell({
             <span className="text-sm font-medium text-muted-foreground">{pageTitle}</span>
           </div>
           <div className="flex items-center gap-2">
-            <NotificationBell initialNotifications={initialNotifications} />
+            <NotificationBell initialNotifications={initialNotifications} soundEnabled={notificationSoundEnabled} />
             <InstallApp />
             <ThemeToggle />
           </div>

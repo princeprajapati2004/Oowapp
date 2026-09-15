@@ -1,12 +1,13 @@
 "use client";
 
 import { useState } from "react";
-import { Bell, BellOff, BellRing, Loader2 } from "lucide-react";
+import { Bell, BellOff, BellRing, Loader2, Volume2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { ToggleRow } from "@/components/shared/toggle-row";
 import { api, ApiError } from "@/lib/api-client";
 import { usePushNotifications } from "@/lib/hooks/use-push-notifications";
+import { useChime } from "@/lib/utils/chime";
 import { notificationSettingsSchema, type NotificationSettingsInput } from "@/lib/validation/shop-settings";
 
 export function NotificationSettingsForm({
@@ -17,6 +18,7 @@ export function NotificationSettingsForm({
   bare?: boolean;
 }) {
   const { state, subscription, subscribe } = usePushNotifications();
+  const { play } = useChime();
   const [prefs, setPrefs] = useState(defaultValues);
   const [saving, setSaving] = useState(false);
   const [enabling, setEnabling] = useState(false);
@@ -119,6 +121,26 @@ export function NotificationSettingsForm({
           checked={prefs.notifyOrderUpdates}
           onCheckedChange={(v) => setPref("notifyOrderUpdates", v)}
         />
+      </div>
+
+      {/* Notification sound — one shop-wide chime shared by the header bell
+          and Kitchen Display, so both stay in sync and never play a
+          duplicate sound for the same event. */}
+      <div className="space-y-2">
+        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground px-1">
+          Notification sound
+        </p>
+        <ToggleRow
+          label="Play a sound for new orders"
+          description="Chimes in the header bell and Kitchen Display when a new order or notification arrives. Browsers require one tap/click on the page first before any sound can play."
+          checked={prefs.notificationSoundEnabled}
+          onCheckedChange={(v) => setPref("notificationSoundEnabled", v)}
+        />
+        {prefs.notificationSoundEnabled && (
+          <Button type="button" variant="outline" size="sm" className="ml-1" onClick={play}>
+            <Volume2 className="size-3.5" /> Test sound
+          </Button>
+        )}
       </div>
 
       <Button onClick={savePrefs} disabled={saving}>

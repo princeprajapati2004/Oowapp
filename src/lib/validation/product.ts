@@ -15,6 +15,9 @@ const productObjectSchema = z
     wholesalePrice: z.coerce.number().nonnegative("Wholesale price can't be negative").nullable().optional(),
     categoryId: z.string().min(1, "Select a category"),
     imageUrl: z.string().nullable().optional(),
+    // Customer-gallery images beyond the cover `imageUrl` — see Product
+    // model's doc comment. Capped generously; the UI itself offers far fewer.
+    imageUrls: z.array(z.string()).max(8).optional(),
     unit: z.string().trim().max(30).optional().or(z.literal("")),
     barcode: z.string().trim().max(64).optional().or(z.literal("")),
     // Item Master — GST HSN/SAC code. Free text (no registry lookup), same

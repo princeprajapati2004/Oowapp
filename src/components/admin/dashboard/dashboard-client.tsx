@@ -120,9 +120,33 @@ export function DashboardClient({ initialData, initialGranularity, currency, sho
     fetchTableStats();
   }, [fetchTableStats]);
 
+  // Quiet background refresh of the summary/revenue/recent-orders/insights
+  // card data for whichever period is currently selected — no isPending
+  // toggle (that's reserved for the explicit period-switch fetch below), so
+  // a new order arriving over SSE updates the numbers without flashing
+  // skeletons. Errors are swallowed the same way fetchTableStats does: the
+  // dashboard just keeps showing last-known data until the next event/reload.
+  const refreshAnalytics = useCallback(async () => {
+    try {
+      const res = await api.get<DashboardData & { granularity: "hour" | "day" | "month" }>(
+        `/api/admin/analytics?period=${period}`
+      );
+      setData(res);
+      setGranularity(res.granularity);
+    } catch {
+      // Dashboard still works without this refresh — next SSE event or reload retries.
+    }
+  }, [period]);
+
   useOrderEvents("/api/admin/orders/stream", {
-    onCreated: () => fetchTableStats(),
-    onUpdated: () => fetchTableStats(),
+    onCreated: () => {
+      fetchTableStats();
+      refreshAnalytics();
+    },
+    onUpdated: () => {
+      fetchTableStats();
+      refreshAnalytics();
+    },
     onSessionUpdated: () => fetchTableStats(),
   });
 

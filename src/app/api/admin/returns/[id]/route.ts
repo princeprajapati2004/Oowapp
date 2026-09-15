@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { ForbiddenError } from "@/lib/session";
-import { requireShopActor, actorAuditFields, type ShopActor } from "@/lib/shop-actor";
+import { requireShopActor, actorAuditFields } from "@/lib/shop-actor";
 import { handleApiError, NotFoundError, ConflictError, ReturnError } from "@/lib/api-utils";
 import { writeAuditLog, extractRequestMeta } from "@/lib/services/audit-log";
 import { db } from "@/lib/db";
@@ -21,25 +20,8 @@ import {
   conditionRestocksInventory,
   CONDITION_TO_LOSS_DAMAGE_TYPE,
 } from "@/lib/return-status";
-import type { AuditAction, StaffRole } from "@/generated/prisma/client";
+import type { AuditAction } from "@/generated/prisma/client";
 import type { ReturnStatus, ReturnItemCondition } from "@/generated/prisma/enums";
-
-// Money-affecting return actions are MANAGER-only — same posture as the
-// existing "mark_refunded" order action (the closest analog in this
-// codebase), which is also restricted to MANAGER via
-// src/app/api/admin/orders/[id]/route.ts's STAFF_ALLOWED_ACTIONS.
-const RETURN_MUTATE_ALLOWED: Record<StaffRole, boolean> = {
-  KITCHEN: false,
-  WAITER: false,
-  MANAGER: true,
-};
-
-function assertActorCanMutate(actor: ShopActor) {
-  if (actor.kind === "admin") return;
-  if (!RETURN_MUTATE_ALLOWED[actor.staffRole]) {
-    throw new ForbiddenError(`Your role (${actor.staffRole}) can't manage returns.`);
-  }
-}
 
 const patchSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("approve") }),
@@ -86,8 +68,11 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const actor = await requireShopActor();
-    assertActorCanMutate(actor);
+    // Money-affecting return actions are MANAGER-only — same posture as the
+    // existing "mark_refunded" order action (the closest analog in this
+    // codebase), which is also restricted to MANAGER via
+    // src/lib/staff-permissions.ts's ORDER_ACTIONS_BY_ROLE.
+    const actor = await requireShopActor("MANAGER");
     const { id } = await params;
     const body = await request.json();
     const parsed: PatchAction = patchSchema.parse(body);

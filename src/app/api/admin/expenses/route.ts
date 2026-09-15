@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireAdminSession } from "@/lib/session";
+import { assertFeatureEnabled } from "@/lib/services/feature-permission";
 import { handleApiError } from "@/lib/api-utils";
 import { expenseSchema } from "@/lib/validation/expense";
 import { searchExpenses, createExpense } from "@/lib/services/expense";
@@ -8,6 +9,7 @@ import { resolveDateRange } from "@/lib/utils/date-range";
 export async function GET(request: Request) {
   try {
     const session = await requireAdminSession();
+    await assertFeatureEnabled(session.shopId, "expenses");
     const { searchParams } = new URL(request.url);
     const fromParam = searchParams.get("from");
     const toParam = searchParams.get("to");
@@ -49,6 +51,7 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     const session = await requireAdminSession();
+    await assertFeatureEnabled(session.shopId, "expenses");
     const body = await request.json();
     const input = expenseSchema.parse(body);
 

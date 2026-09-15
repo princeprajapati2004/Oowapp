@@ -16,6 +16,7 @@ import { Input } from "@/components/ui/input";
 import { api, ApiError } from "@/lib/api-client";
 import { formatCurrency } from "@/lib/utils/currency";
 import { cn } from "@/lib/utils";
+import { getPayableTotal } from "@/lib/services/billing";
 import type { AdminOrderEventOrder } from "@/lib/server/order-events";
 import type { Product } from "@/lib/types/manual-order";
 
@@ -129,7 +130,7 @@ export function OrderEditModal({
       onSaved(updated);
       const wasPaid = order.paymentStatus === "PAID";
       if (wasPaid && updated.paymentStatus === "PARTIALLY_PAID") {
-        const due = (updated.discountedTotal ?? updated.grandTotal) - (updated.paidAmount ?? 0);
+        const due = getPayableTotal(updated) - (updated.paidAmount ?? 0);
         toast(`Order updated — ${formatCurrency(due, currency)} is now outstanding since the total changed.`);
       } else {
         toast.success("Order updated");

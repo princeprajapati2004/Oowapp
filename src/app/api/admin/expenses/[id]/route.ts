@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireAdminSession } from "@/lib/session";
+import { assertFeatureEnabled } from "@/lib/services/feature-permission";
 import { handleApiError } from "@/lib/api-utils";
 import { expenseSchema } from "@/lib/validation/expense";
 import { updateExpense, deleteExpense } from "@/lib/services/expense";
@@ -10,6 +11,7 @@ export async function PATCH(
 ) {
   try {
     const session = await requireAdminSession();
+    await assertFeatureEnabled(session.shopId, "expenses");
     const { id } = await params;
 
     const body = await request.json();
@@ -29,6 +31,7 @@ export async function DELETE(
 ) {
   try {
     const session = await requireAdminSession();
+    await assertFeatureEnabled(session.shopId, "expenses");
     const { id } = await params;
 
     await deleteExpense(session.shopId, id);

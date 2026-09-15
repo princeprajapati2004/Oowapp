@@ -31,6 +31,12 @@ export type OrderEventOrder = {
   tableNumber: string | null;
   tableSessionId: string | null;
   deliveryAddress: string | null;
+  // Manually entered by the Owner/staff — no courier API integration exists,
+  // so this is never a live courier status feed. Customer-safe: it's their
+  // own order's delivery info, same trust boundary as deliveryAddress above.
+  courierName: string | null;
+  trackingNumber: string | null;
+  trackingUrl: string | null;
   notes: string | null;
   subtotal: number;
   taxTotal: number;
@@ -57,6 +63,11 @@ export type OrderEventOrder = {
   discountValue: number | null;
   discountReason: string | null;
   discountedTotal: number | null;
+  // Delivery/packaging/service/etc, frozen at order-creation time — see
+  // billing.ts's getPayableTotal doc comment. Customer-safe: it's their own
+  // order's charges, same trust boundary as discountedTotal above.
+  additionalCharges: unknown;
+  chargesTotal: number | null;
   // Manual Kitchen Display marker ("VIP" | "RUSH"), set via PATCH .../orders/[id] {action:"priority"}.
   priorityFlag: string | null;
   createdAt: string;
@@ -352,6 +363,9 @@ type RawOrderForEvent = {
   tableNumber: string | null;
   tableSessionId: string | null;
   deliveryAddress: string | null;
+  courierName: string | null;
+  trackingNumber: string | null;
+  trackingUrl: string | null;
   notes: string | null;
   subtotal: unknown;
   taxTotal: unknown;
@@ -368,6 +382,8 @@ type RawOrderForEvent = {
   discountValue: unknown;
   discountReason: string | null;
   discountedTotal: unknown;
+  additionalCharges: unknown;
+  chargesTotal: unknown;
   priorityFlag: string | null;
   createdAt: unknown;
   taxBreakdown: unknown;
@@ -401,6 +417,9 @@ export function toOrderEvent(order: RawOrderForEvent): OrderEventOrder {
     tableNumber: order.tableNumber,
     tableSessionId: order.tableSessionId,
     deliveryAddress: order.deliveryAddress,
+    courierName: order.courierName,
+    trackingNumber: order.trackingNumber,
+    trackingUrl: order.trackingUrl,
     notes: order.notes,
     subtotal: Number(order.subtotal),
     taxTotal: Number(order.taxTotal),
@@ -417,6 +436,8 @@ export function toOrderEvent(order: RawOrderForEvent): OrderEventOrder {
     discountValue: order.discountValue == null ? null : Number(order.discountValue),
     discountReason: order.discountReason,
     discountedTotal: order.discountedTotal == null ? null : Number(order.discountedTotal),
+    additionalCharges: order.additionalCharges,
+    chargesTotal: order.chargesTotal == null ? null : Number(order.chargesTotal),
     priorityFlag: order.priorityFlag ?? null,
     createdAt: (order.createdAt as Date).toISOString(),
     taxBreakdown: order.taxBreakdown,

@@ -95,14 +95,32 @@ export const FEATURE_CATALOG: FeatureCatalogEntry[] = [
     description: "Exportable, detailed sales and tax reports.",
     category: "reporting",
   },
+  {
+    key: "expenses",
+    label: "Expense Tracking",
+    description: "Record and report business expenses.",
+    category: "finance",
+  },
+  {
+    key: "delivery",
+    label: "Delivery Tracking",
+    description: "Courier/tracking details and delivery charges on orders.",
+    category: "fulfillment",
+  },
+  {
+    key: "coupons",
+    label: "Coupons",
+    description: "Create and manage customer-facing discount codes.",
+    category: "marketing",
+  },
 ];
 
 // Which features are enabled by default for each plan code, out of the box.
 // Editable afterward per-plan (Plan Management UI) or per-business (feature overrides).
 export const DEFAULT_PLAN_FEATURES: Record<string, string[]> = {
-  FREE: [],
-  STARTER: ["analytics"],
-  PRO: ["pos", "barcode_scanner", "inventory", "analytics", "advanced_reports"],
+  FREE: ["delivery", "coupons"],
+  STARTER: ["analytics", "delivery", "coupons", "expenses"],
+  PRO: ["pos", "barcode_scanner", "inventory", "analytics", "advanced_reports", "delivery", "coupons", "expenses"],
   ENTERPRISE: [
     "pos",
     "barcode_scanner",
@@ -112,5 +130,8 @@ export const DEFAULT_PLAN_FEATURES: Record<string, string[]> = {
     "custom_branding",
     "unlimited_products",
     "advanced_reports",
+    "delivery",
+    "coupons",
+    "expenses",
   ],
 };

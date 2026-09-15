@@ -539,8 +539,13 @@ model Shop {
   tableNames    String? // JSON-encoded string[]
 
   // Push notification preferences
-  notifyNewOrders    Boolean @default(true)
-  notifyOrderUpdates Boolean @default(true)
+  notifyNewOrders          Boolean @default(true)
+  notifyOrderUpdates       Boolean @default(true)
+  // Notification chime on/off — shop-wide, server-persisted (replaces the
+  // two separate per-browser localStorage flags the bell and Kitchen
+  // Display each kept independently; those didn't sync across devices or
+  // survive a login on a different browser).
+  notificationSoundEnabled Boolean @default(true)
 
   // Ordering mode — WHATSAPP sends the cart to WhatsApp; DIRECT creates orders
   // in the database immediately without opening WhatsApp (requires PRO+).
@@ -840,6 +845,12 @@ model Product {
   // compatibility with existing products.
   offerType      String? // "PERCENTAGE" | "FLAT" | null
   offerValue     Decimal? @db.Decimal(10, 2)
+  // Customer-facing gallery — additional images beyond the primary `imageUrl`
+  // (which stays the cover image every existing reader keeps using
+  // unchanged). Gallery order is [imageUrl, ...imageUrls] when imageUrl is
+  // set. Same String[] @default([]) convention as
+  // LossDamageRecord.evidencePhotoUrls — no join table needed.
+  imageUrls      String[] @default([])
   foodType       FoodType @default(NA)
   isCombo        Boolean  @default(false)
   offerNote      String?
@@ -1251,6 +1262,24 @@ model Order {
   taxTotal                        Decimal       @db.Decimal(10, 2)
   grandTotal                      Decimal       @db.Decimal(10, 2)
   taxBreakdown                    Json
+  // Additional charges (delivery/packaging/service/handling/etc), frozen at
+  // order-creation time — same Json-array-of-lines convention as
+  // taxBreakdown above. Deliberately excluded from grandTotal/discountedTotal
+  // and every existing report's revenue sum (business decision: a delivery
+  // charge is not necessarily business revenue); surfaced as its own
+  // "amount payable" figure in the UI instead. A delivery charge is just one
+  // entry here (label "Delivery") — no separate competing field.
+  additionalCharges               Json?
+  // Denormalized sum of additionalCharges — avoids re-summing the Json array
+  // on every read for display. Null/absent means no charges (same
+  // null-means-not-applicable convention as discountedTotal/couponDiscountAmount).
+  chargesTotal                    Decimal?      @db.Decimal(10, 2)
+  // Manually entered by the Owner — there is no courier API integration, so
+  // these are informational/manual tracking only, never a live courier
+  // status feed. UI must label this clearly as owner-entered.
+  courierName                     String?
+  trackingNumber                  String?
+  trackingUrl                     String?
   status                          OrderStatus   @default(PENDING)
   paymentMethod                   String?
   // "qr" = customer-scanned, "waiter" = placed by waiter staff

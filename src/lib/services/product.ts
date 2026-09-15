@@ -88,6 +88,7 @@ function toProductData(input: ProductInput) {
     wholesalePrice: input.wholesalePrice ?? null,
     categoryId: input.categoryId,
     imageUrl: input.imageUrl || null,
+    imageUrls: input.imageUrls ?? [],
     unit: input.unit || null,
     barcode: input.barcode || null,
     hsnCode: input.hsnCode || null,
@@ -163,6 +164,7 @@ export async function updateProduct(shopId: string, id: string, input: ProductPa
   if (input.wholesalePrice !== undefined) data.wholesalePrice = input.wholesalePrice ?? null;
   if (input.categoryId !== undefined) data.category = { connect: { id: input.categoryId } };
   if (input.imageUrl !== undefined) data.imageUrl = input.imageUrl || null;
+  if (input.imageUrls !== undefined) data.imageUrls = input.imageUrls;
   if (input.unit !== undefined) data.unit = input.unit || null;
   if (input.barcode !== undefined) data.barcode = input.barcode || null;
   if (input.hsnCode !== undefined) data.hsnCode = input.hsnCode || null;
@@ -221,6 +223,7 @@ export async function duplicateProduct(shopId: string, id: string) {
       mrp: existing.mrp,
       wholesalePrice: existing.wholesalePrice,
       imageUrl: existing.imageUrl,
+      imageUrls: existing.imageUrls,
       unit: existing.unit,
       barcode,
       hsnCode: existing.hsnCode,

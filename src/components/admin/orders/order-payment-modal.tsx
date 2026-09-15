@@ -19,6 +19,7 @@ import { api, ApiError } from "@/lib/api-client";
 import { formatCurrency } from "@/lib/utils/currency";
 import { buildUpiPaymentUri } from "@/lib/utils/upi";
 import { PAYMENT_METHODS, UPI_FAMILY_METHODS, type PaymentMethod } from "@/lib/order-status";
+import { getPayableTotal } from "@/lib/services/billing";
 import type { AdminOrderEventOrder } from "@/lib/server/order-events";
 
 export function OrderPaymentModal({
@@ -36,7 +37,7 @@ export function OrderPaymentModal({
   onOpenChange: (open: boolean) => void;
   onPaid: (order: AdminOrderEventOrder) => void;
 }) {
-  const total = order.discountedTotal ?? order.grandTotal;
+  const total = getPayableTotal(order);
   const alreadyPaid = order.paidAmount ?? 0;
   const remaining = Math.max(0, total - alreadyPaid);
 

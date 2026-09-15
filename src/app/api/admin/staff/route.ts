@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requireAdminSession } from "@/lib/session";
+import { assertFeatureEnabled } from "@/lib/services/feature-permission";
 import { handleApiError } from "@/lib/api-utils";
 import { hashPassword } from "@/lib/auth";
 import { db } from "@/lib/db";
@@ -16,6 +17,7 @@ const createStaffSchema = z.object({
 export async function GET() {
   try {
     const session = await requireAdminSession();
+    await assertFeatureEnabled(session.shopId, "multi_staff");
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const staff = await (db as any).staffMember.findMany({
       where: { shopId: session.shopId },
@@ -43,6 +45,7 @@ export async function GET() {
 export async function POST(request: Request) {
   try {
     const session = await requireAdminSession();
+    await assertFeatureEnabled(session.shopId, "multi_staff");
     const body = await request.json();
     const input = createStaffSchema.parse(body);
 

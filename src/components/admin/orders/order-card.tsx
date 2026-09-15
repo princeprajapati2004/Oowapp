@@ -14,6 +14,7 @@ import {
   type PaymentStatus,
 } from "@/lib/order-status";
 import { ORDER_RETURN_BADGE_LABELS, ORDER_RETURN_BADGE_CLASS } from "@/lib/return-status";
+import { getPayableTotal } from "@/lib/services/billing";
 import type { AdminOrderEventOrder } from "@/lib/server/order-events";
 
 // Compact summary only — full item list, billing breakdown, payment
@@ -28,7 +29,7 @@ export function OrderCard({
 }) {
   const status = order.status as OrderStatus;
   const paymentStatus = (order.paymentStatus ?? "PENDING") as PaymentStatus;
-  const total = order.discountedTotal ?? order.grandTotal;
+  const total = getPayableTotal(order);
   const { date, dayTime } = formatOrderDateParts(order.createdAt);
   const orderType = deriveOrderType(order);
 

@@ -109,6 +109,7 @@ export type ShopSettingsInput = Partial<{
   tableNames: string | null;
   notifyNewOrders: boolean;
   notifyOrderUpdates: boolean;
+  notificationSoundEnabled: boolean;
   orderMode: OrderMode;
   billNumberPrefix: string;
   billNumberNext: number;

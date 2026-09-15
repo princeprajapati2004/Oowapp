@@ -51,6 +51,7 @@ export default async function KitchenPage() {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       completedToday={(completedToday as any[]).map(toOrderEvent)}
       shopName={shop.businessName}
+      notificationSoundEnabled={shop.notificationSoundEnabled}
     />
   );
 }

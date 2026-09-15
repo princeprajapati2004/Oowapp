@@ -38,6 +38,7 @@ import { ThemeToggle } from "@/components/shared/theme-toggle";
 import { api, ApiError } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
 import { useOrderEvents, type OrderEventOrder } from "@/lib/hooks/use-order-events";
+import { useChime } from "@/lib/utils/chime";
 
 type KitchenStatus = "PENDING" | "CONFIRMED" | "PREPARING" | "READY";
 type StatusFilter = "ALL" | KitchenStatus | "COMPLETED";
@@ -73,7 +74,6 @@ const STATUS_BADGE: Record<KitchenStatus, string> = {
 
 const DELAYED_MINUTES = 15;
 const LARGE_ORDER_QTY = 8;
-const SOUND_PREF_KEY = "kds-sound-enabled";
 
 const ORDER_TYPE_LABEL: Record<OrderType, string> = {
   DINE_IN: "Dine-In",
@@ -152,23 +152,6 @@ function printTicket(order: OrderEventOrder) {
   win.document.close();
   win.focus();
   win.print();
-}
-
-function playChime(ctx: AudioContext) {
-  const start = ctx.currentTime;
-  [880, 1320].forEach((freq, i) => {
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.type = "sine";
-    osc.frequency.value = freq;
-    const t = start + i * 0.15;
-    gain.gain.setValueAtTime(0.0001, t);
-    gain.gain.exponentialRampToValueAtTime(0.3, t + 0.02);
-    gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.3);
-    osc.connect(gain).connect(ctx.destination);
-    osc.start(t);
-    osc.stop(t + 0.35);
-  });
 }
 
 function StatTile({ label, value }: { label: string; value: number | string }) {
@@ -328,10 +311,15 @@ export function KitchenDisplay({
   initialOrders,
   completedToday: completedTodayInitial,
   shopName,
+  notificationSoundEnabled,
 }: {
   initialOrders: OrderEventOrder[];
   completedToday: OrderEventOrder[];
   shopName: string;
+  // Shop-wide, server-persisted (Settings > Notifications) — same setting
+  // the header notification bell reads, so Kitchen Display and the bell
+  // never play duplicate/conflicting sounds for the same event.
+  notificationSoundEnabled: boolean;
 }) {
   const [orders, setOrders] = useState(initialOrders);
   const [completedToday, setCompletedToday] = useState(completedTodayInitial);
@@ -339,48 +327,22 @@ export function KitchenDisplay({
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("ALL");
   const [typeFilter, setTypeFilter] = useState<Set<OrderType>>(new Set());
-  const [soundEnabled, setSoundEnabled] = useState(false);
+  const [soundEnabled, setSoundEnabled] = useState(notificationSoundEnabled);
   const [prepSamples, setPrepSamples] = useState<number[]>([]);
+  const { play } = useChime();
 
   const statusRef = useRef<Map<string, string>>(new Map(initialOrders.map((o) => [o.id, o.status])));
-  const audioCtxRef = useRef<AudioContext | null>(null);
 
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setSoundEnabled(localStorage.getItem(SOUND_PREF_KEY) === "1");
-  }, []);
-
-  function ensureAudioContext() {
-    if (typeof window === "undefined") return null;
-    if (!audioCtxRef.current) {
-      const Ctor = window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
-      if (!Ctor) return null;
-      audioCtxRef.current = new Ctor();
-    }
-    if (audioCtxRef.current.state === "suspended") audioCtxRef.current.resume();
-    return audioCtxRef.current;
-  }
-
-  // Browsers block audio until a user gesture — silently unlock playback on
-  // the first tap/keypress so the sound toggle (enabled via localStorage from
-  // a prior session) actually works once a real new-order event fires later.
-  useEffect(() => {
-    function unlock() {
-      ensureAudioContext();
-    }
-    window.addEventListener("pointerdown", unlock, { once: true });
-    window.addEventListener("keydown", unlock, { once: true });
-    return () => {
-      window.removeEventListener("pointerdown", unlock);
-      window.removeEventListener("keydown", unlock);
-    };
-  }, []);
-
-  function toggleSound() {
-    const next = !soundEnabled;
+  async function toggleSound() {
+    const previous = soundEnabled;
+    const next = !previous;
     setSoundEnabled(next);
-    localStorage.setItem(SOUND_PREF_KEY, next ? "1" : "0");
-    if (next) ensureAudioContext();
+    try {
+      await api.patch("/api/admin/business", { section: "notifications", notificationSoundEnabled: next });
+    } catch {
+      setSoundEnabled(previous);
+      toast.error("Couldn't update sound preference");
+    }
   }
 
   useOrderEvents("/api/admin/orders/stream", {
@@ -389,10 +351,7 @@ export function KitchenDisplay({
       statusRef.current.set(order.id, order.status);
       setOrders((prev) => (prev.some((o) => o.id === order.id) ? prev : [...prev, order]));
 
-      if (soundEnabled) {
-        const ctx = ensureAudioContext();
-        if (ctx) playChime(ctx);
-      }
+      if (soundEnabled) play();
       toast.custom(
         () => (
           <div className="flex items-center gap-3 rounded-xl border-2 border-primary bg-background px-4 py-3 shadow-lg">

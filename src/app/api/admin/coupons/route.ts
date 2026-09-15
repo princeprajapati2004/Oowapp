@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireAdminSession } from "@/lib/session";
+import { assertFeatureEnabled } from "@/lib/services/feature-permission";
 import { handleApiError } from "@/lib/api-utils";
 import { couponSchema } from "@/lib/validation/coupon";
 import { listCoupons, createCoupon } from "@/lib/services/coupon";
@@ -8,6 +9,7 @@ import { serializeCoupons, serializeCoupon } from "@/lib/serialize";
 export async function GET() {
   try {
     const session = await requireAdminSession();
+    await assertFeatureEnabled(session.shopId, "coupons");
     const coupons = await listCoupons(session.shopId);
     return NextResponse.json(serializeCoupons(coupons));
   } catch (error) {
@@ -18,6 +20,7 @@ export async function GET() {
 export async function POST(request: Request) {
   try {
     const session = await requireAdminSession();
+    await assertFeatureEnabled(session.shopId, "coupons");
     const body = await request.json();
     const input = couponSchema.parse(body);
     const coupon = await createCoupon(session.shopId, input);

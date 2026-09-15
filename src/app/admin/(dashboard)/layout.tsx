@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { getAdminSession } from "@/lib/session";
 import { getShopById } from "@/lib/services/shop";
 import { listNotifications } from "@/lib/services/notification";
+import { resolveFeatures } from "@/lib/services/feature-permission";
 import { AdminShell } from "@/components/admin/admin-shell";
 import { isFoodBusiness, businessTypeCopy, type BusinessType } from "@/lib/business-types";
 import { NotFoundError } from "@/lib/api-utils";
@@ -36,6 +37,8 @@ export default async function DashboardLayout({
   }
 
   const notifications = await listNotifications(session.shopId).catch(() => []);
+  // Nav visibility only (UX) — every gated page/API independently re-checks.
+  const enabledFeatures = await resolveFeatures(session.shopId).catch(() => ({}));
 
   // New signups (createShopForAdmin sets this false) must finish mobile
   // verification + business profile before reaching any dashboard page.
@@ -64,7 +67,9 @@ export default async function DashboardLayout({
       shopName={shop.businessName}
       shopSlug={shop.slug}
       initialNotifications={initialNotifications}
+      notificationSoundEnabled={shop.notificationSoundEnabled}
       isFoodBusiness={foodBusiness}
+      enabledFeatures={enabledFeatures}
       copy={copy}
     >
       {children}

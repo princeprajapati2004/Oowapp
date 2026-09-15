@@ -233,6 +233,7 @@ export default async function SettingsPage() {
           defaultValues={{
             notifyNewOrders: (shopAny.notifyNewOrders as boolean) ?? true,
             notifyOrderUpdates: (shopAny.notifyOrderUpdates as boolean) ?? true,
+            notificationSoundEnabled: (shopAny.notificationSoundEnabled as boolean) ?? true,
           }}
         />
       ),

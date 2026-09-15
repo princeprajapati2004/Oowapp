@@ -1,13 +1,15 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { ForbiddenError } from "@/lib/session";
 import { requireShopActor, actorAuditFields, type ShopActor } from "@/lib/shop-actor";
+import { assertStaffActionAllowed, ORDER_ACTIONS_BY_ROLE } from "@/lib/staff-permissions";
+import { toSafeHttpUrl } from "@/lib/utils/safe-url";
+import { assertFeatureEnabled } from "@/lib/services/feature-permission";
 import { handleApiError, NotFoundError, ConflictError } from "@/lib/api-utils";
 import { processOrderPaidRewards, voidPendingCashbackRedemption, reverseCashbackIfCredited } from "@/lib/services/rewards";
 import { buildReturnPolicySnapshot } from "@/lib/services/return-eligibility";
 import { writeAuditLog, extractRequestMeta } from "@/lib/services/audit-log";
 import { db } from "@/lib/db";
-import { calculateBill } from "@/lib/services/billing";
+import { calculateBill, getPayableTotal } from "@/lib/services/billing";
 import { resolveOrderItems } from "@/lib/services/order-items";
 import { recomputePaymentStatus } from "@/lib/services/order-payment-status";
 import { sendOrderStatusNotification } from "@/lib/services/push";
@@ -22,52 +24,9 @@ import {
   canCancel,
   type OrderStatus,
 } from "@/lib/order-status";
-import type { Prisma, StaffRole } from "@/generated/prisma/client";
+import type { Prisma } from "@/generated/prisma/client";
 
 const PAYMENT_METHOD_VALUES = PAYMENT_METHODS.map((m) => m.value) as [string, ...string[]];
-
-type UpdateOrderAction =
-  | "status"
-  | "discount"
-  | "remove_discount"
-  | "priority"
-  | "edit_items"
-  | "mark_paid"
-  | "mark_refunded"
-  | "reject_payment_claim"
-  | "cancel"
-  | "note";
-
-// Kitchen only ever advances prep status / tags priority. Waiter handles the
-// front-of-house/payment-collection actions (this is the same permission set
-// Cash Counter — the waiter/manager screen — already exercises). Manager gets
-// everything an owner could do on an individual order except deleting it
-// outright (see the DELETE handler below, which is admin/MANAGER only).
-const STAFF_ALLOWED_ACTIONS: Record<StaffRole, Set<UpdateOrderAction>> = {
-  KITCHEN: new Set(["status", "priority"]),
-  WAITER: new Set(["status", "priority", "edit_items", "cancel", "mark_paid", "reject_payment_claim", "note"]),
-  MANAGER: new Set([
-    "status",
-    "priority",
-    "edit_items",
-    "cancel",
-    "mark_paid",
-    "mark_refunded",
-    "reject_payment_claim",
-    "note",
-    "discount",
-    "remove_discount",
-  ]),
-};
-
-// Frontend buttons hide unavailable actions, but that's not security — every
-// action is re-checked here regardless of what the UI happened to show.
-function assertActorCanPerform(actor: ShopActor, action: UpdateOrderAction) {
-  if (actor.kind === "admin") return;
-  if (!STAFF_ALLOWED_ACTIONS[actor.staffRole].has(action)) {
-    throw new ForbiddenError(`Your role (${actor.staffRole}) can't perform "${action}" on orders.`);
-  }
-}
 
 const editItemsSchema = z
   .object({
@@ -133,6 +92,19 @@ const updateOrderSchema = z.discriminatedUnion("action", [
     action: z.literal("note"),
     ownerNote: z.string().trim().max(1000),
   }),
+  z.object({
+    action: z.literal("update_delivery"),
+    courierName: z.string().trim().max(80).optional(),
+    trackingNumber: z.string().trim().max(80).optional(),
+    // Manually entered by the Owner/staff — no courier API integration
+    // exists. Must be http(s) only; javascript:/data:/etc. are rejected.
+    trackingUrl: z
+      .string()
+      .trim()
+      .max(500)
+      .optional()
+      .refine((v) => !v || toSafeHttpUrl(v) !== null, { message: "Tracking URL must be a valid http(s) link" }),
+  }),
 ]);
 
 export async function GET(
@@ -194,13 +166,13 @@ export async function PATCH(
       // /delivery-address combo check) can't be a member of a
       // discriminatedUnion, so this one action is validated on its own.
       const parsed = editItemsSchema.parse(body);
-      assertActorCanPerform(actor, "edit_items");
+      assertStaffActionAllowed(actor, "edit_items", ORDER_ACTIONS_BY_ROLE, "orders");
       return handleEditItems(id, parsed, existing, actor, request);
     }
 
     if ("action" in body) {
       const parsed = updateOrderSchema.parse(body);
-      assertActorCanPerform(actor, parsed.action);
+      assertStaffActionAllowed(actor, parsed.action, ORDER_ACTIONS_BY_ROLE, "orders");
 
       if (parsed.action === "status") {
         const allowed = getNextStatuses(existing);
@@ -297,7 +269,11 @@ export async function PATCH(
           discountedTotal: null,
         };
       } else if (parsed.action === "mark_paid") {
-        const finalTotal = Number(existing.discountedTotal ?? existing.grandTotal);
+        const finalTotal = getPayableTotal({
+          grandTotal: Number(existing.grandTotal),
+          discountedTotal: existing.discountedTotal == null ? null : Number(existing.discountedTotal),
+          chargesTotal: existing.chargesTotal == null ? null : Number(existing.chargesTotal),
+        });
         const paidAmount = parsed.paidAmount ?? finalTotal;
         const previouslyPaid = Number(existing.paidAmount ?? 0);
         data = {
@@ -339,13 +315,20 @@ export async function PATCH(
           return NextResponse.json({ error: "There's no pending payment claim to reject." }, { status: 409 });
         }
         data = { paymentClaimStatus: "REJECTED" };
+      } else if (parsed.action === "update_delivery") {
+        await assertFeatureEnabled(actor.shopId, "delivery");
+        data = {
+          courierName: parsed.courierName?.trim() || null,
+          trackingNumber: parsed.trackingNumber?.trim() || null,
+          trackingUrl: parsed.trackingUrl ? toSafeHttpUrl(parsed.trackingUrl) : null,
+        };
       } else {
         // priority
         data = { priorityFlag: parsed.priorityFlag };
       }
     } else {
       // Legacy format: { status }
-      assertActorCanPerform(actor, "status");
+      assertStaffActionAllowed(actor, "status", ORDER_ACTIONS_BY_ROLE, "orders");
       const statusSchema = z.object({ status: z.enum(ORDER_STATUSES as [string, ...string[]]) });
       const { status } = statusSchema.parse(body);
       const allowed = getNextStatuses(existing);
@@ -604,7 +587,11 @@ async function handleEditItems(
       // anything on yet stays PENDING regardless of item changes, and a
       // REFUNDED order is a terminal state left untouched either way.
       // paidAmount itself and PaymentRecord history are never modified here.
-      const finalTotal = discountedTotal ?? bill.grandTotal;
+      const finalTotal = getPayableTotal({
+        grandTotal: bill.grandTotal,
+        discountedTotal,
+        chargesTotal: existing.chargesTotal == null ? null : Number(existing.chargesTotal),
+      });
       const paidAmount = Number(existing.paidAmount ?? 0);
       const paymentStatus = recomputePaymentStatus(existing.paymentStatus, paidAmount, finalTotal);
 

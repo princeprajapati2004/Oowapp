@@ -1,12 +1,14 @@
 import { NextResponse } from "next/server";
 import { requireAdminSession } from "@/lib/session";
 import { handleApiError } from "@/lib/api-utils";
+import { assertFeatureEnabled } from "@/lib/services/feature-permission";
 import { resolveDateRange } from "@/lib/utils/date-range";
 import { getSalesReportSummary, listSalesReportRows, type SalesReportFilters } from "@/lib/services/reports/sales-report";
 
 export async function GET(request: Request) {
   try {
     const session = await requireAdminSession();
+    await assertFeatureEnabled(session.shopId, "advanced_reports");
     const { searchParams } = new URL(request.url);
 
     const fromParam = searchParams.get("from");

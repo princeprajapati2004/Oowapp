@@ -320,6 +320,7 @@ export function OrderTracker({
         notes: order.notes,
         items: invoiceItems,
         bill: invoiceBill,
+        charges: isTableOrder ? undefined : orderCharges,
         invoiceNumber,
         paymentStatus: isPaid ? "Paid" : "Unpaid",
         ownerApprovalStatus: ownerApprovalStatus ?? undefined,
@@ -356,8 +357,12 @@ export function OrderTracker({
   }
 
   const taxBreakdown = (order.taxBreakdown as TaxLine[] | null) ?? [];
+  const orderCharges = (order.additionalCharges as { label: string; amount: number }[] | null) ?? [];
   const base = order.subtotal + order.taxTotal;
-  const finalTotal = order.discountedTotal ?? base;
+  // Table orders' running tab isn't scoped to charges here — see
+  // billing.ts's getPayableTotal doc comment; a standalone order's own
+  // charges (if any) are added on top of its discounted/sticker total.
+  const finalTotal = (order.discountedTotal ?? base) + (isTableOrder ? 0 : (order.chargesTotal ?? 0));
   const isCancelled = order.status === "CANCELLED";
   const STEPS = order.deliveryAddress ? DELIVERY_STEPS : PICKUP_STEPS;
   const stepIndex = STEPS.findIndex((s) => s.status === order.status);
@@ -581,6 +586,27 @@ export function OrderTracker({
                   <span>{order.deliveryAddress}</span>
                 </div>
               )}
+              {order.deliveryAddress && (order.courierName || order.trackingNumber || order.trackingUrl) && (
+                <div className="flex items-start gap-2 text-muted-foreground">
+                  <Truck className="size-3.5 shrink-0 mt-0.5" />
+                  <div className="space-y-0.5">
+                    <span>
+                      {[order.courierName, order.trackingNumber].filter(Boolean).join(" · ") || "Tracking added"}
+                    </span>
+                    {order.trackingUrl && (
+                      <a
+                        href={order.trackingUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="block text-primary underline-offset-2 hover:underline"
+                      >
+                        Track shipment
+                      </a>
+                    )}
+                    <p className="text-[11px] text-muted-foreground/70">Added manually by {shop.businessName} — not a live courier feed.</p>
+                  </div>
+                </div>
+              )}
               {order.notes && (
                 <div className="flex items-center gap-2 text-muted-foreground">
                   <StickyNote className="size-3.5 shrink-0" />
@@ -649,6 +675,13 @@ export function OrderTracker({
                 <span>−{formatCurrency(base - order.discountedTotal, shop.currency)}</span>
               </div>
             )}
+            {!isTableOrder &&
+              orderCharges.map((charge, i) => (
+                <div key={`${charge.label}-${i}`} className="flex justify-between text-muted-foreground">
+                  <span>{charge.label}</span>
+                  <span>{formatCurrency(charge.amount, shop.currency)}</span>
+                </div>
+              ))}
             <div className="flex justify-between border-t pt-2 mt-1 font-bold text-base">
               <span className="flex items-center gap-1.5">
                 <ReceiptText className="size-4 text-primary" /> Grand total

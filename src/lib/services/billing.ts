@@ -30,8 +30,37 @@ export interface BillTotals {
   grandTotal: number;
 }
 
+export interface BillCharge {
+  label: string;
+  amount: number;
+}
+
 export function round2(value: number) {
   return Math.round(value * 100) / 100;
+}
+
+export function sumCharges(charges: BillCharge[] | null | undefined): number {
+  if (!charges || charges.length === 0) return 0;
+  return round2(charges.reduce((sum, c) => sum + c.amount, 0));
+}
+
+/**
+ * The actual amount owed by the customer — grandTotal (or discountedTotal,
+ * if a discount/coupon applied) plus any additional charges (delivery,
+ * packaging, service, etc.). Deliberately NOT folded into grandTotal itself
+ * so existing revenue reports (sales/profit/discount/cashback/referral) keep
+ * treating grandTotal as the pre-charge sticker price — see
+ * Order.additionalCharges' doc comment in schema.prisma. Use this wherever
+ * "how much does the customer actually need to pay" matters: marking an
+ * order paid, payment modals, the customer's own bill/invoice — never in
+ * report revenue aggregation.
+ */
+export function getPayableTotal(order: {
+  grandTotal: number;
+  discountedTotal?: number | null;
+  chargesTotal?: number | null;
+}): number {
+  return round2((order.discountedTotal ?? order.grandTotal) + (order.chargesTotal ?? 0));
 }
 
 /**

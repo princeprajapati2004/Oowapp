@@ -1,32 +1,12 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { ForbiddenError } from "@/lib/session";
-import { requireShopActor, actorAuditFields, type ShopActor } from "@/lib/shop-actor";
+import { requireShopActor, actorAuditFields } from "@/lib/shop-actor";
 import { handleApiError } from "@/lib/api-utils";
 import { writeAuditLog, extractRequestMeta } from "@/lib/services/audit-log";
 import { searchReturns, getReturnSummary } from "@/lib/services/return-search";
 import { createReturnRequest } from "@/lib/services/return-request";
 import { RETURN_REASONS } from "@/lib/return-status";
 import { toReturnEvent } from "@/lib/server/order-events";
-import type { StaffRole } from "@/generated/prisma/client";
-
-// Same shape/rationale as STAFF_ALLOWED_ACTIONS in
-// src/app/api/admin/orders/[id]/route.ts — WAITER can log a return on a
-// customer's behalf (front-of-house), KITCHEN can't; mutating status
-// transitions (approve/reject/refund) are MANAGER-only, enforced in
-// src/app/api/admin/returns/[id]/route.ts.
-const RETURN_CREATE_ALLOWED: Record<StaffRole, boolean> = {
-  KITCHEN: false,
-  WAITER: true,
-  MANAGER: true,
-};
-
-function assertActorCanCreate(actor: ShopActor) {
-  if (actor.kind === "admin") return;
-  if (!RETURN_CREATE_ALLOWED[actor.staffRole]) {
-    throw new ForbiddenError(`Your role (${actor.staffRole}) can't create return requests.`);
-  }
-}
 
 const createReturnSchema = z
   .object({
@@ -71,8 +51,10 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
-    const actor = await requireShopActor();
-    assertActorCanCreate(actor);
+    // WAITER can log a return on a customer's behalf (front-of-house),
+    // KITCHEN can't; mutating status transitions (approve/reject/refund) are
+    // MANAGER-only, enforced separately in returns/[id]/route.ts.
+    const actor = await requireShopActor("WAITER", "MANAGER");
     const body = await request.json();
     const parsed = createReturnSchema.parse(body);
 

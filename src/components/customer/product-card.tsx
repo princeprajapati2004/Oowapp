@@ -1,8 +1,10 @@
 "use client";
 
+import { useState } from "react";
 import Image from "next/image";
-import { ImageOff } from "lucide-react";
+import { ImageOff, Images } from "lucide-react";
 import { QtyStepper } from "@/components/shared/qty-stepper";
+import { ProductImageGallery } from "@/components/customer/product-image-gallery";
 import { formatCurrency } from "@/lib/utils/currency";
 import { cn } from "@/lib/utils";
 import type { CustomerProduct } from "@/lib/types/customer";
@@ -54,6 +56,11 @@ export function ProductCard({
   onQuantityChange: (quantity: number) => void;
   showImages?: boolean;
 }) {
+  const [galleryOpen, setGalleryOpen] = useState(false);
+  const images = Array.from(
+    new Set([product.imageUrl, ...(product.imageUrls ?? [])].filter((url): url is string => !!url))
+  );
+
   if (!showImages) {
     // Compact horizontal list-style card — no image, tighter layout.
     return (
@@ -97,7 +104,26 @@ export function ProductCard({
         !product.isAvailable && "opacity-60"
       )}
     >
-      <div className="relative aspect-[4/3] w-full bg-muted overflow-hidden">
+      <div
+        className={cn(
+          "relative aspect-[4/3] w-full bg-muted overflow-hidden",
+          images.length > 0 && "cursor-zoom-in"
+        )}
+        {...(images.length > 0
+          ? {
+              role: "button",
+              tabIndex: 0,
+              "aria-label": `View photos of ${product.name}`,
+              onClick: () => setGalleryOpen(true),
+              onKeyDown: (e: React.KeyboardEvent) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  setGalleryOpen(true);
+                }
+              },
+            }
+          : {})}
+      >
         {product.imageUrl ? (
           <Image
             src={product.imageUrl}
@@ -110,6 +136,12 @@ export function ProductCard({
           <div className="flex size-full items-center justify-center bg-muted">
             <ImageOff className="size-6 text-muted-foreground/50" />
           </div>
+        )}
+
+        {images.length > 1 && (
+          <span className="absolute bottom-2 right-2 flex items-center gap-1 rounded-full bg-background/85 px-2 py-0.5 text-[10px] font-medium">
+            <Images className="size-3" /> {images.length}
+          </span>
         )}
 
         {product.foodType !== "NA" && (
@@ -167,6 +199,15 @@ export function ProductCard({
           )}
         </div>
       </div>
+
+      {images.length > 0 && (
+        <ProductImageGallery
+          images={images}
+          productName={product.name}
+          open={galleryOpen}
+          onOpenChange={setGalleryOpen}
+        />
+      )}
     </div>
   );
 }

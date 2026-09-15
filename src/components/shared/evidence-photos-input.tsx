@@ -3,22 +3,27 @@
 import { ImageUploader } from "./image-uploader";
 
 /**
- * Up-to-`max` return-evidence photos — built as a thin wrapper around N
+ * Up-to-`max` photos for one field — built as a thin wrapper around N
  * ImageUploader instances rather than teaching that shared primitive
- * multi-select semantics it was never designed for, so every other caller
- * (products, categories, shop logo) keeps its single-image contract exactly
- * as-is.
+ * multi-select semantics it was never designed for, so every single-image
+ * caller (shop logo, category image, product cover) keeps its contract
+ * exactly as-is. Originally built for return evidence photos; also used by
+ * the product gallery (see products-manager.tsx) with a different itemLabel.
  */
 export function EvidencePhotosInput({
   urls,
   onChange,
   endpoint,
   max = 3,
+  itemLabel = "Evidence photo",
+  addLabel = "Add photo",
 }: {
   urls: string[];
   onChange: (urls: string[]) => void;
   endpoint: string;
   max?: number;
+  itemLabel?: string;
+  addLabel?: string;
 }) {
   function setAt(i: number, url: string | null) {
     const next = [...urls];
@@ -30,10 +35,10 @@ export function EvidencePhotosInput({
   return (
     <div className="flex flex-wrap gap-3">
       {urls.map((url, i) => (
-        <ImageUploader key={`${i}-${url}`} value={url} onChange={(u) => setAt(i, u)} endpoint={endpoint} label={`Evidence photo ${i + 1}`} />
+        <ImageUploader key={`${i}-${url}`} value={url} onChange={(u) => setAt(i, u)} endpoint={endpoint} label={`${itemLabel} ${i + 1}`} />
       ))}
       {urls.length < max && (
-        <ImageUploader value={null} onChange={(u) => u && onChange([...urls, u])} endpoint={endpoint} label="Add photo" />
+        <ImageUploader value={null} onChange={(u) => u && onChange([...urls, u])} endpoint={endpoint} label={addLabel} />
       )}
     </div>
   );

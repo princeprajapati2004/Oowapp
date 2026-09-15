@@ -3,6 +3,7 @@ import { getAdminSession } from "@/lib/session";
 import { getShopById } from "@/lib/services/shop";
 import { db } from "@/lib/db";
 import { toAdminOrderEvent } from "@/lib/server/order-events";
+import { isFeatureEnabled } from "@/lib/services/feature-permission";
 import { OrderDetailPage } from "@/components/admin/orders/order-detail-page";
 
 export default async function OrderDetailRoute({
@@ -31,12 +32,14 @@ export default async function OrderDetailRoute({
   if (!order) notFound();
 
   const shopAny = shop as unknown as Record<string, unknown>;
+  const deliveryFeatureEnabled = await isFeatureEnabled(session.shopId, "delivery");
 
   return (
     <OrderDetailPage
       initialOrder={toAdminOrderEvent(order)}
       justCreated={created === "1"}
       openPayment={pay === "1"}
+      deliveryFeatureEnabled={deliveryFeatureEnabled}
       currency={shop.currency}
       shop={{
         slug: shop.slug,

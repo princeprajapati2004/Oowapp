@@ -3,7 +3,7 @@ import { z } from "zod";
 import { requireAdminSession } from "@/lib/session";
 import { handleApiError } from "@/lib/api-utils";
 import { db } from "@/lib/db";
-import { calculateBill } from "@/lib/services/billing";
+import { calculateBill, sumCharges } from "@/lib/services/billing";
 import { resolveOrCreateSession, OPEN_STATUSES } from "@/lib/services/table-session";
 import { nextBillNumber } from "@/lib/services/bill-number";
 import { sendNewOrderNotification } from "@/lib/services/push";
@@ -59,6 +59,11 @@ const orderItemSchema = z.object({
   offerDiscount: z.number().min(0).optional(),
 });
 
+const chargeSchema = z.object({
+  label: z.string().trim().min(1).max(40),
+  amount: z.number().positive().max(100_000),
+});
+
 const createManualOrderSchema = z.object({
   customerName: z.string().trim().max(100).optional(),
   customerPhone: z.string().trim().max(20).optional(),
@@ -70,6 +75,9 @@ const createManualOrderSchema = z.object({
   discountType: z.enum(["PERCENTAGE", "FIXED"]).optional(),
   discountValue: z.number().positive().max(100_000).optional(),
   discountReason: z.string().trim().max(200).optional(),
+  // Delivery/packaging/service/etc — see billing.ts's getPayableTotal doc
+  // comment for why these stay separate from grandTotal.
+  charges: z.array(chargeSchema).max(10).optional(),
 });
 
 export async function POST(request: Request) {
@@ -155,6 +163,8 @@ export async function POST(request: Request) {
     const tokenNumber =
       (await db.order.count({ where: { shopId: shop.id, createdAt: { gte: startOfToday } } })) + 1;
 
+    const chargesTotal = sumCharges(input.charges);
+
     let discountedTotal: number | null = null;
     if (input.discountType && input.discountValue) {
       const base = bill.grandTotal;
@@ -221,6 +231,8 @@ export async function POST(request: Request) {
           discountValue: input.discountValue ?? null,
           discountReason: input.discountReason ?? null,
           discountedTotal,
+          additionalCharges: input.charges && input.charges.length > 0 ? (input.charges as unknown as Prisma.InputJsonValue) : undefined,
+          chargesTotal: chargesTotal > 0 ? chargesTotal : null,
           items: {
             create: input.items.map((item) => ({
               productId: item.productId ?? null,

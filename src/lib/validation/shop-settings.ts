@@ -109,6 +109,7 @@ export type BillNumberResetInput = z.infer<typeof billNumberResetSchema>;
 export const notificationSettingsSchema = z.object({
   notifyNewOrders: z.boolean(),
   notifyOrderUpdates: z.boolean(),
+  notificationSoundEnabled: z.boolean(),
 });
 export type NotificationSettingsInput = z.infer<typeof notificationSettingsSchema>;
 

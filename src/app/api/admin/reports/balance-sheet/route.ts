@@ -1,11 +1,13 @@
 import { NextResponse } from "next/server";
 import { requireAdminSession } from "@/lib/session";
+import { assertFeatureEnabled } from "@/lib/services/feature-permission";
 import { handleApiError } from "@/lib/api-utils";
 import { getBalanceSheet } from "@/lib/services/reports/balance-sheet-report";
 
 export async function GET(request: Request) {
   try {
     const session = await requireAdminSession();
+    await assertFeatureEnabled(session.shopId, "advanced_reports");
     const { searchParams } = new URL(request.url);
 
     // Point-in-time snapshot — only "to" is meaningful (treated as the "as
