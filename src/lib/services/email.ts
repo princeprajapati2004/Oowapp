@@ -23,8 +23,11 @@ function getTransporter() {
     host,
     port,
     secure,
+    // Port 587 uses STARTTLS — requireTLS ensures the upgrade happens before auth
+    requireTLS: !secure,
     name,
     auth: { user, pass },
+    tls: { rejectUnauthorized: false },
   });
 
   // Log transporter creation in server logs (non-sensitive values only)
@@ -39,7 +42,7 @@ export async function sendEmail(
   text: string,
 ): Promise<void> {
   const transporter = getTransporter();
-  const fromAddress = process.env.NO_REPLY_EMAIL ?? "noreply@oowapp.in";
+  const fromAddress = process.env.NO_REPLY_EMAIL ?? "oowapp.tech@gmail.com";
   try {
     await transporter.sendMail({
       from: `"OOWAPP" <${fromAddress}>`,
