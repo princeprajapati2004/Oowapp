@@ -31,7 +31,7 @@ export default async function CustomerReferPage({ params }: { params: Promise<{ 
       totalEarned={totalEarned}
       programEnabled={!!config?.isEnabled}
       rewardAmount={config ? Number(config.rewardAmount) : 0}
-      referrals={referrals.map((r) => ({
+      referrals={referrals.map((r: (typeof referrals)[number]) => ({
         id: r.id,
         referredName: r.referredCustomer.name,
         status: r.status,

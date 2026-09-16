@@ -11,7 +11,7 @@ import { processOrderPaidRewards } from "@/lib/services/rewards";
 import { buildReturnPolicySnapshot } from "@/lib/services/return-eligibility";
 import { writeAuditLog, extractRequestMeta } from "@/lib/services/audit-log";
 import { triggerAutoPrintForCompletedOrder } from "@/lib/services/auto-print";
-import type { StaffRole } from "@/generated/prisma/client";
+import type { StaffRole, Prisma } from "@/generated/prisma/client";
 
 type TableSessionAction =
   | "mark_paid"
@@ -109,12 +109,12 @@ export async function GET(
       billRequestedAt: tableSession.billRequestedAt?.toISOString() ?? null,
       paidAt: tableSession.paidAt?.toISOString() ?? null,
       paidAmount: tableSession.paidAmount != null ? Number(tableSession.paidAmount) : null,
-      paymentRecords: tableSession.paymentRecords.map((r) => ({
+      paymentRecords: tableSession.paymentRecords.map((r: (typeof tableSession.paymentRecords)[number]) => ({
         ...r,
         amount: Number(r.amount),
         createdAt: r.createdAt.toISOString(),
       })),
-      orders: tableSession.orders.map((o) => ({
+      orders: tableSession.orders.map((o: (typeof tableSession.orders)[number]) => ({
         ...o,
         subtotal: Number(o.subtotal),
         taxTotal: Number(o.taxTotal),
@@ -122,7 +122,7 @@ export async function GET(
         discountValue: o.discountValue ? Number(o.discountValue) : null,
         discountedTotal: o.discountedTotal ? Number(o.discountedTotal) : null,
         createdAt: o.createdAt.toISOString(),
-        items: o.items.map((item) => ({
+        items: o.items.map((item: (typeof o.items)[number]) => ({
           ...item,
           price: Number(item.price),
           lineTotal: Number(item.lineTotal),
@@ -210,7 +210,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         );
       }
 
-      const [updatedSession, movedOrders] = await db.$transaction(async (tx) => {
+      const [updatedSession, movedOrders] = await db.$transaction(async (tx: Prisma.TransactionClient) => {
         const updated = await tx.tableSession.update({
           where: { id },
           data: { tableNumber: input.newTableNumber },
@@ -253,7 +253,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         );
       }
 
-      const [mergedSourceSession, updatedTargetSession, movedOrders] = await db.$transaction(async (tx) => {
+      const [mergedSourceSession, updatedTargetSession, movedOrders] = await db.$transaction(async (tx: Prisma.TransactionClient) => {
         // Reassign every order on the source table to the target's session —
         // this is what actually combines the two tables into one bill.
         await tx.order.updateMany({
@@ -301,7 +301,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     ]);
     if (!shop) throw new NotFoundError("Shop not found");
 
-    const taxes = shop.taxes.map((t) => ({ ...t, value: Number(t.value) }));
+    const taxes = shop.taxes.map((t: (typeof shop.taxes)[number]) => ({ ...t, value: Number(t.value) }));
     const total = computeSessionBill(sessionOrders, taxes).grandTotal;
     const alreadyPaid = existingPaidAmount(tableSession) ?? 0;
     const amountNow = input.paidAmount ?? Math.max(0, total - alreadyPaid);
@@ -372,7 +372,7 @@ async function closeTable(
   // release_table, which settle the table without collecting anything.
   amountCollectedNow = 0
 ) {
-  const [updatedSession, completedOrders] = await db.$transaction(async (tx) => {
+  const [updatedSession, completedOrders] = await db.$transaction(async (tx: Prisma.TransactionClient) => {
     const updated = await tx.tableSession.update({
       where: { id },
       data: {
@@ -413,7 +413,7 @@ async function closeTable(
 
     const isVoid = paymentMethod === "VOID";
     const orders = await Promise.all(
-      openOrders.map(async (o) => {
+      openOrders.map(async (o: (typeof openOrders)[number]) => {
         const returnPolicySnapshot = returnPolicyShop
           ? buildReturnPolicySnapshot(returnPolicyShop, o, "COMPLETED")
           : null;

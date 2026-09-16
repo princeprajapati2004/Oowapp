@@ -5,7 +5,7 @@ import { ArrowLeft, Wallet, ArrowDownCircle, ArrowUpCircle } from "lucide-react"
 import { EmptyState } from "@/components/shared/empty-state";
 import { formatCurrency } from "@/lib/utils/currency";
 
-type WalletTransactionRow = {
+export type WalletTransactionRow = {
   id: string;
   type: string;
   amount: number;

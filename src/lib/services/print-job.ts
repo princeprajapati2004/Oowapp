@@ -26,7 +26,7 @@ async function failStaleJobs(where: Prisma.PrintJobWhereInput) {
   if (stale.length === 0) return;
 
   await db.printJob.updateMany({
-    where: { id: { in: stale.map((j) => j.id) }, status: "PENDING" },
+    where: { id: { in: stale.map((j: (typeof stale)[number]) => j.id) }, status: "PENDING" },
     data: { status: "FAILED", errorMessage: "Printer did not come online in time." },
   });
 

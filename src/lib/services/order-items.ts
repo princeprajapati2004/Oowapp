@@ -59,7 +59,7 @@ export async function resolveOrderItems(
       ? db.party.findFirst({ where: { shopId, phone: customerPhone }, select: { id: true, category: true } })
       : Promise.resolve(null),
   ]);
-  const byId = new Map(products.map((p) => [p.id, p]));
+  const byId = new Map<string, (typeof products)[number]>(products.map((p: (typeof products)[number]) => [p.id, p]));
 
   const resolved: ResolvedOrderItem[] = [];
   for (const item of items) {

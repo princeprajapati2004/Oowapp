@@ -25,7 +25,7 @@ export default async function OrderBarcodesPage({
     <OrderBarcodeLabels
       billNumber={order.billNumber}
       businessName={shop.businessName}
-      items={order.items.map((item) => ({ id: item.id, name: item.name, quantity: item.quantity }))}
+      items={order.items.map((item: (typeof order.items)[number]) => ({ id: item.id, name: item.name, quantity: item.quantity }))}
     />
   );
 }

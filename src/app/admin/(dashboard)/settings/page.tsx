@@ -46,7 +46,7 @@ export default async function SettingsPage() {
 
   const displayStatus = computeDisplayStatus(rawSubscription);
   const daysRemaining = computeDaysRemaining(rawSubscription.endDate);
-  const featureLabelByKey = new Map(allFeatures.map((f) => [f.key, f.label]));
+  const featureLabelByKey = new Map<string, string>(allFeatures.map((f: (typeof allFeatures)[number]) => [f.key, f.label]));
   const enabledFeatureLabels = Object.entries(enabledFeatureKeys)
     .filter(([, enabled]) => enabled)
     .map(([key]) => featureLabelByKey.get(key) ?? key);

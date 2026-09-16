@@ -87,28 +87,28 @@ async function computePartyReportRows(shopId: string, filters: PartyReportFilter
     },
   });
 
-  return parties.map((partyWithRelations) => {
+  return parties.map((partyWithRelations: (typeof parties)[number]) => {
     const { orders, payments, purchases, ...party } = partyWithRelations;
 
     // All-time outstanding — exact same math as listPartiesWithBalances.
-    const unpaidOrderTotal = orders.filter(isOutstandingOrder).reduce((sum, o) => sum + orderOutstanding(o), 0);
+    const unpaidOrderTotal = orders.filter(isOutstandingOrder).reduce((sum: number, o: (typeof orders)[number]) => sum + orderOutstanding(o), 0);
     const receivedUnallocated = paymentsReceivedUnallocated(payments);
     const paidUnallocated = paymentsPaidUnallocated(payments);
     const unpaidPurchases = unpaidPurchaseTotal(purchases);
     const outstanding = computeOutstanding(party, unpaidOrderTotal, receivedUnallocated, paidUnallocated, unpaidPurchases);
 
     // Period-scoped activity — filtered from the same fetched arrays.
-    const ordersInRange = orders.filter((o) => o.status !== "CANCELLED" && inRange(o.createdAt, filters.from, filters.to));
-    const purchasesInRange = purchases.filter((p) => p.status !== "CANCELLED" && inRange(p.purchaseDate, filters.from, filters.to));
-    const paymentsInRange = payments.filter((p) => inRange(p.createdAt, filters.from, filters.to));
+    const ordersInRange = orders.filter((o: (typeof orders)[number]) => o.status !== "CANCELLED" && inRange(o.createdAt, filters.from, filters.to));
+    const purchasesInRange = purchases.filter((p: (typeof purchases)[number]) => p.status !== "CANCELLED" && inRange(p.purchaseDate, filters.from, filters.to));
+    const paymentsInRange = payments.filter((p: (typeof payments)[number]) => inRange(p.createdAt, filters.from, filters.to));
 
     const totalOrders = ordersInRange.length;
     const totalSalesOrPurchases =
       party.type === "SUPPLIER"
-        ? purchasesInRange.reduce((sum, p) => sum + Number(p.grandTotal), 0)
-        : ordersInRange.reduce((sum, o) => sum + orderAmount(o), 0);
-    const paidInRange = paymentsInRange.filter((p) => p.direction === "PAID").reduce((sum, p) => sum + Number(p.amount), 0);
-    const receivedInRange = paymentsInRange.filter((p) => p.direction === "RECEIVED").reduce((sum, p) => sum + Number(p.amount), 0);
+        ? purchasesInRange.reduce((sum: number, p: (typeof purchasesInRange)[number]) => sum + Number(p.grandTotal), 0)
+        : ordersInRange.reduce((sum: number, o: (typeof ordersInRange)[number]) => sum + orderAmount(o), 0);
+    const paidInRange = paymentsInRange.filter((p: (typeof paymentsInRange)[number]) => p.direction === "PAID").reduce((sum: number, p: (typeof paymentsInRange)[number]) => sum + Number(p.amount), 0);
+    const receivedInRange = paymentsInRange.filter((p: (typeof paymentsInRange)[number]) => p.direction === "RECEIVED").reduce((sum: number, p: (typeof paymentsInRange)[number]) => sum + Number(p.amount), 0);
 
     return {
       id: party.id,

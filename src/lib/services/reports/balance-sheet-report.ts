@@ -59,7 +59,7 @@ async function computeAccountsReceivable(shopId: string): Promise<number> {
     where: { shopId, status: { not: "CANCELLED" } },
     select: { grandTotal: true, discountedTotal: true, paidAmount: true, status: true, paymentStatus: true },
   });
-  return round2(orders.filter(isOutstandingOrder).reduce((sum, o) => sum + orderOutstanding(o), 0));
+  return round2(orders.filter(isOutstandingOrder).reduce((sum: number, o: (typeof orders)[number]) => sum + orderOutstanding(o), 0));
 }
 
 /**
@@ -78,7 +78,7 @@ async function computeAccountsPayable(shopId: string): Promise<number> {
     where: { shopId, status: "RECORDED" },
     select: { grandTotal: true, paidAmount: true },
   });
-  return round2(purchases.reduce((sum, p) => sum + Math.max(0, Number(p.grandTotal) - Number(p.paidAmount ?? 0)), 0));
+  return round2(purchases.reduce((sum: number, p: (typeof purchases)[number]) => sum + Math.max(0, Number(p.grandTotal) - Number(p.paidAmount ?? 0)), 0));
 }
 
 /** Customer wallet balances — real money owed back to customers as store credit, a genuine liability. */

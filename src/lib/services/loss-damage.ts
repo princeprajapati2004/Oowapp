@@ -79,7 +79,7 @@ export async function createLossDamageRecord(input: CreateLossDamageInput): Prom
   }
 
   try {
-    return await db.$transaction(async (tx) => {
+    return await db.$transaction(async (tx: Prisma.TransactionClient) => {
       const product = await tx.product.findFirst({
         where: { id: input.productId, shopId: input.shopId },
         select: { id: true, name: true, costPrice: true, stock: true },

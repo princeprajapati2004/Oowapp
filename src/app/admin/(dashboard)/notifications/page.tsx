@@ -8,7 +8,7 @@ export default async function NotificationsPage() {
   if (!session) redirect("/login");
 
   const notifications = await listNotifications(session.shopId);
-  const initialNotifications = notifications.map((n) => ({
+  const initialNotifications = notifications.map((n: (typeof notifications)[number]) => ({
     id: n.id,
     shopId: n.shopId,
     type: n.type,

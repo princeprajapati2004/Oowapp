@@ -107,17 +107,17 @@ export async function listReferralReportRows(
   // @relation to Order (confirmed in schema.prisma) — so it can't be pulled
   // in via `include`. Resolve the linked orders' billNumber/effective total
   // with a separate lookup instead of guessing a relation name.
-  const orderIds = referrals.map((r) => r.qualifyingOrderId).filter((id): id is string => id !== null);
+  const orderIds = referrals.map((r: (typeof referrals)[number]) => r.qualifyingOrderId).filter((id: string | null): id is string => id !== null);
   const orders = orderIds.length
     ? await db.order.findMany({
         where: { id: { in: orderIds } },
         select: { id: true, billNumber: true, grandTotal: true, discountedTotal: true },
       })
     : [];
-  const orderById = new Map(orders.map((o) => [o.id, o]));
+  const orderById = new Map(orders.map((o: (typeof orders)[number]) => [o.id, o]));
 
-  const rows: ReferralReportRow[] = referrals.map((referral) => {
-    const order = referral.qualifyingOrderId ? orderById.get(referral.qualifyingOrderId) : undefined;
+  const rows: ReferralReportRow[] = referrals.map((referral: (typeof referrals)[number]) => {
+    const order = referral.qualifyingOrderId ? orderById.get(referral.qualifyingOrderId) as { id: string; billNumber: string; grandTotal: unknown; discountedTotal: unknown } | undefined : undefined;
     return {
       id: referral.id,
       date: referral.createdAt.toISOString(),

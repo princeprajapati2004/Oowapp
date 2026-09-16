@@ -58,7 +58,7 @@ export default async function MenuImportHistoryPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {imports.map((row) => (
+              {imports.map((row: (typeof imports)[number]) => (
                 <TableRow key={row.id}>
                   <TableCell>
                     <Link href={`/admin/menu-import/history/${row.id}`} className="hover:underline">

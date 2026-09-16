@@ -106,7 +106,7 @@ export async function listCashbackReportRows(
     }),
   ]);
 
-  const rows: CashbackReportRow[] = redemptions.map((redemption) => ({
+  const rows: CashbackReportRow[] = redemptions.map((redemption: (typeof redemptions)[number]) => ({
     id: redemption.id,
     date: redemption.createdAt.toISOString(),
     campaignCode: redemption.campaign.code,

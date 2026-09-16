@@ -145,7 +145,7 @@ export async function PATCH(
         data: { status: "CANCELLED" },
         include: { items: true },
       });
-      await db.$transaction((tx) => voidPendingCashbackRedemption(tx, id));
+      await db.$transaction((tx: Prisma.TransactionClient) => voidPendingCashbackRedemption(tx, id));
 
       sendOrderStatusNotification(order.shopId, {
         billNumber: order.billNumber,
@@ -158,7 +158,7 @@ export async function PATCH(
     }
 
     // action === "update_items"
-    const knownItemIds = new Set(order.items.map((item) => item.id));
+    const knownItemIds = new Set(order.items.map((item: (typeof order.items)[number]) => item.id));
     for (const change of input.items) {
       if (!knownItemIds.has(change.itemId)) throw new NotFoundError("Item not found on this order");
     }
@@ -168,7 +168,7 @@ export async function PATCH(
     // or remove what's already been sent to the kitchen.
     if (order.tableSessionId) {
       for (const change of input.items) {
-        const item = order.items.find((i) => i.id === change.itemId)!;
+        const item = order.items.find((i: (typeof order.items)[number]) => i.id === change.itemId)!;
         if (change.quantity < item.quantity) {
           return NextResponse.json(
             { error: "Items already sent for a table order can't be reduced or removed — you can only add more." },
@@ -178,7 +178,7 @@ export async function PATCH(
       }
     }
 
-    const remainingCount = order.items.filter((item) => {
+    const remainingCount = order.items.filter((item: (typeof order.items)[number]) => {
       const change = input.items.find((c) => c.itemId === item.id);
       return change ? change.quantity > 0 : true;
     }).length;
@@ -191,7 +191,7 @@ export async function PATCH(
 
     await db.$transaction(
       input.items.map((change) => {
-        const item = order.items.find((i) => i.id === change.itemId)!;
+        const item = order.items.find((i: (typeof order.items)[number]) => i.id === change.itemId)!;
         return change.quantity <= 0
           ? db.orderItem.delete({ where: { id: change.itemId } })
           : db.orderItem.update({
@@ -206,14 +206,14 @@ export async function PATCH(
       include: { product: { select: { categoryId: true } } },
     });
     const bill = calculateBill(
-      freshItems.map((item) => ({
+      freshItems.map((item: (typeof freshItems)[number]) => ({
         id: item.productId ?? item.id,
         name: item.name,
         price: Number(item.price),
         quantity: item.quantity,
         categoryId: item.product?.categoryId ?? "",
       })),
-      order.shop.taxes.map((t) => ({ ...t, value: Number(t.value) }))
+      order.shop.taxes.map((t: (typeof order.shop.taxes)[number]) => ({ ...t, value: Number(t.value) }))
     );
 
     let discountedTotal: number | null = null;

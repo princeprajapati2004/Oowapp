@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
+import type { Prisma } from "@/generated/prisma/client";
 import { getCustomerSession } from "@/lib/customer-session";
 import { handleApiError, NotFoundError, ConflictError } from "@/lib/api-utils";
 import { writeAuditLog, extractRequestMeta } from "@/lib/services/audit-log";
@@ -57,7 +58,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       throw new ConflictError("This return can no longer be cancelled.");
     }
 
-    const updated = await db.$transaction(async (tx) => {
+    const updated = await db.$transaction(async (tx: Prisma.TransactionClient) => {
       const result = await tx.returnRequest.updateMany({
         where: { id, status: { in: validPrior } },
         data: { status: "CANCELLED", cancelledById: session.customerId, cancelledAt: new Date() },

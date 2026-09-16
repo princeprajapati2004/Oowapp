@@ -71,8 +71,8 @@ export default async function AdminDashboardPage() {
 
   const shopAny = shop as unknown as Record<string, unknown>;
   const configuredTables: string[] = shop.tableNames ? JSON.parse(shop.tableNames) : [];
-  const occupied = openSessions.filter((s) => s.status === "ACTIVE").length;
-  const awaitingPayment = openSessions.filter((s) => s.status === "AWAITING_PAYMENT").length;
+  const occupied = openSessions.filter((s: (typeof openSessions)[number]) => s.status === "ACTIVE").length;
+  const awaitingPayment = openSessions.filter((s: (typeof openSessions)[number]) => s.status === "AWAITING_PAYMENT").length;
   const available = Math.max(0, configuredTables.length - openSessions.length);
 
   return (

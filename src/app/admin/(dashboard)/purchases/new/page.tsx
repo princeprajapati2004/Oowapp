@@ -12,7 +12,7 @@ export default async function NewPurchasePage() {
 
   return (
     <PurchaseForm
-      products={products.map((p) => ({ id: p.id, name: p.name, unit: p.unit, costPrice: p.costPrice != null ? Number(p.costPrice) : null }))}
+      products={products.map((p: (typeof products)[number]) => ({ id: p.id, name: p.name, unit: p.unit, costPrice: p.costPrice != null ? Number(p.costPrice) : null }))}
       suppliers={suppliers}
     />
   );

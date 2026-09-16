@@ -17,7 +17,14 @@ export default async function MenuPrintPage() {
     getShopById(session.shopId),
   ]);
 
-  const serialized = serializeProducts(products);
+  const serialized = serializeProducts(products) as Array<{
+    id: string;
+    name: string;
+    description: string | null;
+    categoryId: string;
+    price: number;
+    offerValue: number | null;
+  }>;
 
   return (
     <div className="space-y-6">
@@ -36,14 +43,14 @@ export default async function MenuPrintPage() {
           {shop.phone ? <p className="text-sm text-muted-foreground">{shop.phone}</p> : null}
         </div>
 
-        {categories.map((category) => {
-          const items = serialized.filter((p) => p.categoryId === category.id);
+        {categories.map((category: (typeof categories)[number]) => {
+          const items = serialized.filter((p: (typeof serialized)[number]) => p.categoryId === category.id);
           if (items.length === 0) return null;
           return (
             <div key={category.id} className="mb-6 break-inside-avoid">
               <h3 className="mb-2 border-b pb-1 text-lg font-bold">{category.name}</h3>
               <div className="space-y-1.5">
-                {items.map((item) => (
+                {items.map((item: (typeof items)[number]) => (
                   <div key={item.id} className="flex justify-between gap-4 text-sm">
                     <span>
                       {item.name}

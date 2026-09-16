@@ -16,7 +16,7 @@ export async function GET() {
     if (!shop) throw new Error("Shop not found");
 
     const configuredTables: string[] = shop.tableNames ? JSON.parse(shop.tableNames) : [];
-    const taxes = shop.taxes.map((t) => ({ ...t, value: Number(t.value) }));
+    const taxes = shop.taxes.map((t: (typeof shop.taxes)[number]) => ({ ...t, value: Number(t.value) }));
 
     const [openSessions, tableStates] = await Promise.all([
       db.tableSession.findMany({
@@ -33,7 +33,7 @@ export async function GET() {
 
     const board = buildTableBoard(
       configuredTables,
-      openSessions.map((s) => ({
+      openSessions.map((s: (typeof openSessions)[number]) => ({
         id: s.id,
         tableNumber: s.tableNumber,
         status: s.status,
@@ -42,9 +42,9 @@ export async function GET() {
         customerName: s.customerName,
         guestCount: s.guestCount,
         paidAmount: s.paidAmount,
-        orders: s.orders.map((o) => ({
+        orders: s.orders.map((o: (typeof s.orders)[number]) => ({
           status: o.status,
-          items: o.items.map((item) => ({
+          items: o.items.map((item: (typeof o.items)[number]) => ({
             productId: item.productId,
             name: item.name,
             price: item.price,
@@ -54,7 +54,7 @@ export async function GET() {
         })),
       })),
       taxes,
-      tableStates.map((s) => ({ tableNumber: s.tableNumber, state: s.state, note: s.note }))
+      tableStates.map((s: (typeof tableStates)[number]) => ({ tableNumber: s.tableNumber, state: s.state, note: s.note }))
     );
 
     return NextResponse.json({ enableTableQr: shop.enableTableQr, currency: shop.currency, tables: board });

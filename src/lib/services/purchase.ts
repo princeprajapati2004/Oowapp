@@ -56,7 +56,7 @@ export async function createPurchase(shopId: string, createdBy: string | null, i
 
   const productIds = input.items.map((i) => i.productId);
   const products = await db.product.findMany({ where: { id: { in: productIds }, shopId } });
-  const productById = new Map(products.map((p) => [p.id, p]));
+  const productById = new Map<string, (typeof products)[number]>(products.map((p: (typeof products)[number]) => [p.id, p]));
   for (const item of input.items) {
     if (!productById.has(item.productId)) throw new NotFoundError("One or more products were not found");
   }
@@ -74,7 +74,7 @@ export async function createPurchase(shopId: string, createdBy: string | null, i
   const updateCostPrice = input.updateCostPrice ?? true;
 
   try {
-    return await db.$transaction(async (tx) => {
+    return await db.$transaction(async (tx: Prisma.TransactionClient) => {
       const purchaseNumber = await nextPurchaseNumber(tx, shopId);
 
       const purchase = await tx.purchase.create({
@@ -167,7 +167,7 @@ export async function recordPurchasePayment(
     throw new PurchaseError(`Payment (${input.amount.toFixed(2)}) would exceed the outstanding amount for this purchase`);
   }
 
-  await db.$transaction(async (tx) => {
+  await db.$transaction(async (tx: Prisma.TransactionClient) => {
     await tx.partyPayment.create({
       data: {
         shopId,
@@ -194,8 +194,8 @@ export async function cancelPurchase(shopId: string, purchaseId: string, cancell
   if (!purchase) throw new NotFoundError("Purchase not found");
   if (purchase.status === "CANCELLED") throw new PurchaseError("Purchase is already cancelled");
 
-  await db.$transaction(async (tx) => {
-    await reverseStockIncrement(tx, purchase.items.map((item) => ({ productId: item.productId, quantity: item.quantity })));
+  await db.$transaction(async (tx: Prisma.TransactionClient) => {
+    await reverseStockIncrement(tx, purchase.items.map((item: (typeof purchase.items)[number]) => ({ productId: item.productId, quantity: item.quantity })));
     await tx.purchase.update({
       where: { id: purchase.id },
       data: { status: "CANCELLED", cancelReason: reason || null, cancelledAt: new Date(), cancelledBy },

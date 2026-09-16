@@ -5,6 +5,7 @@ import { resolveCustomerIdentity, resolveActiveTableSession } from "@/lib/servic
 import { getShopRatingSummary } from "@/lib/services/review";
 import { db } from "@/lib/db";
 import { CustomerMenu } from "@/components/customer/customer-menu";
+import type { CustomerProduct } from "@/lib/types/customer";
 
 export default async function OrderPage({
   params,
@@ -42,7 +43,7 @@ export default async function OrderPage({
     <CustomerMenu
       shop={shopInfo}
       categories={categories}
-      products={serializeProducts(products)}
+      products={serializeProducts(products) as CustomerProduct[]}
       prefilledTable={prefilledTable}
       customer={customer}
       activeSession={activeSession}

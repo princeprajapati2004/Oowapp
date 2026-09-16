@@ -87,7 +87,7 @@ export async function POST(request: Request) {
       }
     }
 
-    const taxes = shop.taxes.map((t) => ({ ...t, value: Number(t.value) }));
+    const taxes = shop.taxes.map((t: (typeof shop.taxes)[number]) => ({ ...t, value: Number(t.value) }));
 
     // Price, name, and category always come from the DB, never the client —
     // only productId/quantity from the request are trusted. Party-specific/
@@ -133,7 +133,7 @@ export async function POST(request: Request) {
     // failure" — a Prisma transaction-timeout error surfacing as a flat
     // "Something went wrong"). 15s covers the realistic worst case without
     // resorting to an unbounded "just wait forever" timeout.
-    const { order, isDuplicate } = await db.$transaction(async (tx) => {
+    const { order, isDuplicate } = await db.$transaction(async (tx: Prisma.TransactionClient) => {
       const existing = await tx.order.findUnique({
         where: { shopId_clientRequestId: { shopId: shop.id, clientRequestId: input.clientRequestId } },
         include: { items: true },
@@ -371,9 +371,9 @@ export async function POST(request: Request) {
           }).catch(() => {});
         }
 
-        sessionOrders = ordersInSession.map((o) => ({
+        sessionOrders = ordersInSession.map((o: (typeof ordersInSession)[number]) => ({
           status: o.status,
-          items: o.items.map((item) => ({
+          items: o.items.map((item: (typeof o.items)[number]) => ({
             productId: item.productId,
             name: item.name,
             price: Number(item.price),
@@ -382,7 +382,7 @@ export async function POST(request: Request) {
             imageUrl: item.product?.imageUrl,
           })),
         }));
-        sessionBill = computeSessionBill(sessionOrders, taxes);
+        sessionBill = computeSessionBill(sessionOrders ?? [], taxes);
       } catch {
         // Client falls back to its existing local session state — the next
         // successful order or a page reload will resync it.

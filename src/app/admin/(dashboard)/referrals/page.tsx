@@ -26,7 +26,7 @@ export default async function ReferralsPage() {
             }
           : null
       }
-      initialReferrals={referrals.map((r) => ({
+      initialReferrals={referrals.map((r: (typeof referrals)[number]) => ({
         id: r.id,
         referrerName: r.referrerCustomer.name,
         referrerPhone: r.referrerCustomer.phone,

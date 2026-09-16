@@ -174,7 +174,7 @@ async function computeStockReportRows(shopId: string, filters: StockReportFilter
     }
   }
 
-  return products.map((p) => {
+  return products.map((p: (typeof products)[number]) => {
     const currentStock = p.stock;
     const costPrice = p.costPrice != null ? Number(p.costPrice) : null;
     const price = Number(p.price);

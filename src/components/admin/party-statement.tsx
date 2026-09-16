@@ -195,9 +195,9 @@ export function PartyStatement({
   const outstandingOrders = useMemo(
     () =>
       statement.orders
-        .filter((o) => o.status !== "CANCELLED" && (o.paymentStatus === "PENDING" || o.paymentStatus === "PARTIALLY_PAID"))
+        .filter((o: (typeof statement.orders)[number]) => o.status !== "CANCELLED" && (o.paymentStatus === "PENDING" || o.paymentStatus === "PARTIALLY_PAID"))
         .slice()
-        .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()),
+        .sort((a: (typeof statement.orders)[number], b: (typeof statement.orders)[number]) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()),
     [statement.orders]
   );
 
@@ -209,7 +209,7 @@ export function PartyStatement({
   const [wasLogOpen, setWasLogOpen] = useState(logOpen);
   if (logOpen !== wasLogOpen) {
     setWasLogOpen(logOpen);
-    if (logOpen) setSelectedOrderIds(new Set(outstandingOrders.map((o) => o.id)));
+    if (logOpen) setSelectedOrderIds(new Set(outstandingOrders.map((o: (typeof outstandingOrders)[number]) => o.id)));
   }
 
   function toggleOrderSelected(orderId: string) {
@@ -227,14 +227,14 @@ export function PartyStatement({
   const allocationPreview = useMemo(() => {
     const amountNum = Number(amount) || 0;
     const discountNum = Number(discount) || 0;
-    const selected = outstandingOrders.filter((o) => selectedOrderIds.has(o.id));
+    const selected = outstandingOrders.filter((o: (typeof outstandingOrders)[number]) => selectedOrderIds.has(o.id));
     type Row = { order: (typeof outstandingOrders)[number]; cashPortion: number; discountPortion: number; newOutstanding: number };
     const initial: { remainingCash: number; remainingDiscount: number; rows: Row[] } = {
       remainingCash: amountNum,
       remainingDiscount: discountNum,
       rows: [],
     };
-    return selected.reduce((acc, o) => {
+    return selected.reduce((acc: typeof initial, o: (typeof selected)[number]) => {
       const outstanding = o.outstanding ?? 0;
       const cashPortion = acc.remainingCash > 0.005 ? Math.min(acc.remainingCash, outstanding) : 0;
       const discountPortion = acc.remainingDiscount > 0.005 ? Math.min(acc.remainingDiscount, outstanding - cashPortion) : 0;
@@ -246,7 +246,7 @@ export function PartyStatement({
       };
     }, initial).rows;
   }, [outstandingOrders, selectedOrderIds, amount, discount]);
-  const totalSelectedOutstanding = allocationPreview.reduce((s, a) => s + (a.order.outstanding ?? 0), 0);
+  const totalSelectedOutstanding = allocationPreview.reduce((s: number, a: (typeof allocationPreview)[number]) => s + (a.order.outstanding ?? 0), 0);
 
   const timeline = useMemo(() => {
     type Entry = {
@@ -258,7 +258,7 @@ export function PartyStatement({
       status: EntryStatus;
       href?: string;
     };
-    const orderEntries: Entry[] = statement.orders.map((o) => ({
+    const orderEntries: Entry[] = statement.orders.map((o: (typeof statement.orders)[number]) => ({
       id: `order-${o.id}`,
       date: o.createdAt,
       kind: "order",
@@ -267,7 +267,7 @@ export function PartyStatement({
       status: orderPaymentBadge(o.paymentStatus),
       href: `/admin/orders/${o.id}`,
     }));
-    const paymentEntries: Entry[] = statement.payments.map((p) => ({
+    const paymentEntries: Entry[] = statement.payments.map((p: (typeof statement.payments)[number]) => ({
       id: `payment-${p.id}`,
       date: p.createdAt,
       kind: "payment",
@@ -367,7 +367,7 @@ export function PartyStatement({
         direction,
         note,
         ...(settlingOrders
-          ? { discount: discountNum > 0 ? discountNum : undefined, orderIds: allocationPreview.map((a) => a.order.id) }
+          ? { discount: discountNum > 0 ? discountNum : undefined, orderIds: allocationPreview.map((a: (typeof allocationPreview)[number]) => a.order.id) }
           : {}),
       });
       await refresh();
@@ -712,7 +712,7 @@ export function PartyStatement({
             Purchase History
           </div>
           <div className="divide-y">
-            {statement.purchases.map((p) => (
+            {statement.purchases.map((p: (typeof statement.purchases)[number]) => (
               <Link
                 key={p.id}
                 href={`/admin/purchases/${p.id}`}
@@ -859,8 +859,8 @@ export function PartyStatement({
                     Settle outstanding invoices with the payment above — oldest first by default, uncheck any you don&apos;t want this payment applied to.
                   </p>
                   <div className="max-h-56 space-y-1.5 overflow-y-auto rounded-xl border p-2">
-                    {outstandingOrders.map((o) => {
-                      const preview = allocationPreview.find((a) => a.order.id === o.id);
+                    {outstandingOrders.map((o: (typeof outstandingOrders)[number]) => {
+                      const preview = allocationPreview.find((a: (typeof allocationPreview)[number]) => a.order.id === o.id);
                       const checked = selectedOrderIds.has(o.id);
                       return (
                         <label

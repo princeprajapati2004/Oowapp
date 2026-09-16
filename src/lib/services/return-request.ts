@@ -79,7 +79,7 @@ export async function createReturnRequest(input: CreateReturnRequestInput): Prom
       customerId: input.requireCustomerId || undefined,
     },
     include: { items: true },
-  });
+  }) as Prisma.OrderGetPayload<{ include: { items: true } }> | null;
   if (!order) throw new NotFoundError("Order not found");
   if (!isOrderReturnEligible(order)) {
     throw new ReturnError("This order isn't eligible for a return yet");
@@ -88,7 +88,7 @@ export async function createReturnRequest(input: CreateReturnRequestInput): Prom
     throw new ReturnError("Return period has expired for this order.");
   }
 
-  const orderItemsById = new Map(order.items.map((i) => [i.id, i]));
+  const orderItemsById = new Map(order.items.map((i: (typeof order.items)[number]) => [i.id, i]));
   const seen = new Set<string>();
   for (const reqItem of input.items) {
     if (!orderItemsById.has(reqItem.orderItemId)) {

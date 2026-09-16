@@ -126,7 +126,7 @@ export async function listPartiesWithBalances(shopId: string) {
   });
   if (parties.length === 0) return [];
 
-  return parties.map((partyWithRelations) => {
+  return parties.map((partyWithRelations: (typeof parties)[number]) => {
     // Destructuring (not `{ ...party, key: newValue }`) is required here —
     // spreading a naked Prisma result and overriding a key produces an
     // intersection of old and new key types instead of replacing it, so the
@@ -136,7 +136,7 @@ export async function listPartiesWithBalances(shopId: string) {
     const { orders, payments, purchases, ...party } = partyWithRelations;
     const unpaidOrderTotal = orders
       .filter(isOutstandingOrder)
-      .reduce((sum, o) => sum + orderOutstanding(o), 0);
+      .reduce((sum: number, o: (typeof orders)[number]) => sum + orderOutstanding(o), 0);
     // A settlement payment (one with PaymentAllocation rows) already reduced
     // unpaidOrderTotal above via the orders' own paidAmount — counting it
     // again here would subtract the same money twice. Only a plain,
@@ -183,7 +183,7 @@ export async function getPartyStatement(shopId: string, id: string) {
 
   const unpaidOrderTotal = orders
     .filter(isOutstandingOrder)
-    .reduce((sum, o) => sum + orderOutstanding(o), 0);
+    .reduce((sum: number, o: (typeof orders)[number]) => sum + orderOutstanding(o), 0);
   // See the matching comment in listPartiesWithBalances — only unallocated
   // payments count toward the outstanding formula; totalPaid below reports
   // every payment regardless.
@@ -199,7 +199,7 @@ export async function getPartyStatement(shopId: string, id: string) {
       createdAt: party.createdAt.toISOString(),
       updatedAt: party.updatedAt.toISOString(),
     },
-    orders: orders.map((o) => ({
+    orders: orders.map((o: (typeof orders)[number]) => ({
       id: o.id,
       billNumber: o.billNumber,
       createdAt: o.createdAt.toISOString(),
@@ -214,7 +214,7 @@ export async function getPartyStatement(shopId: string, id: string) {
       status: o.status,
       itemCount: o.items.length,
     })),
-    payments: payments.map((p) => ({
+    payments: payments.map((p: (typeof payments)[number]) => ({
       id: p.id,
       amount: Number(p.amount),
       method: p.method,
@@ -223,7 +223,7 @@ export async function getPartyStatement(shopId: string, id: string) {
       purchaseId: p.purchaseId,
       createdAt: p.createdAt.toISOString(),
     })),
-    purchases: purchases.map((p) => ({
+    purchases: purchases.map((p: (typeof purchases)[number]) => ({
       id: p.id,
       purchaseNumber: p.purchaseNumber,
       purchaseDate: p.purchaseDate.toISOString(),
@@ -239,7 +239,7 @@ export async function getPartyStatement(shopId: string, id: string) {
       totalPaid: party.type === "SUPPLIER" ? sumPayments(payments, "PAID") : sumPayments(payments, "RECEIVED"),
       orderCount: orders.length,
       purchaseCount: purchases.length,
-      totalPurchases: purchases.filter((p) => p.status !== "CANCELLED").reduce((sum, p) => sum + Number(p.grandTotal), 0),
+      totalPurchases: purchases.filter((p: (typeof purchases)[number]) => p.status !== "CANCELLED").reduce((sum: number, p: (typeof purchases)[number]) => sum + Number(p.grandTotal), 0),
     },
   };
 }
@@ -353,7 +353,7 @@ export async function settlePartyPayment(
   await assertOwnedParty(shopId, partyId);
   const discount = input.discount ?? 0;
 
-  return db.$transaction(async (tx) => {
+  return db.$transaction(async (tx: Tx) => {
     const allOrders = await tx.order.findMany({
       where: { shopId, partyId, status: { not: "CANCELLED" } },
       orderBy: { createdAt: "asc" }, // oldest first = FIFO default
@@ -361,13 +361,13 @@ export async function settlePartyPayment(
     let targetOrders = allOrders.filter(isOutstandingOrder);
     if (input.orderIds && input.orderIds.length > 0) {
       const idSet = new Set(input.orderIds);
-      targetOrders = targetOrders.filter((o) => idSet.has(o.id));
+      targetOrders = targetOrders.filter((o: (typeof targetOrders)[number]) => idSet.has(o.id));
     }
     if (targetOrders.length === 0) {
       throw new PaymentSettlementError("No outstanding orders to settle for this party.");
     }
 
-    const totalOutstanding = targetOrders.reduce((s, o) => s + orderOutstanding(o), 0);
+    const totalOutstanding = targetOrders.reduce((s: number, o: (typeof targetOrders)[number]) => s + orderOutstanding(o), 0);
     if (input.amount + discount > totalOutstanding + 0.005) {
       throw new PaymentSettlementError(
         `Payment plus discount (${(input.amount + discount).toFixed(2)}) exceeds the outstanding amount (${totalOutstanding.toFixed(2)}) for the selected invoice(s).`
@@ -406,7 +406,7 @@ export async function settlePartyPayment(
     });
 
     for (const alloc of allocations) {
-      const order = targetOrders.find((o) => o.id === alloc.orderId)!;
+      const order = targetOrders.find((o: (typeof targetOrders)[number]) => o.id === alloc.orderId)!;
       const newPaidAmount = Number(order.paidAmount ?? 0) + alloc.cashPortion;
       const currentEffectiveTotal = orderAmount(order);
       const newDiscountedTotal =

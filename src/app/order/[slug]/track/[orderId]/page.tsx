@@ -68,11 +68,11 @@ export default async function TrackOrderPage({
   // /api/customer/orders do that instead, since they don't otherwise fetch
   // full return detail).
   trackedOrder.returnBadge = computeOrderReturnBadge(
-    order.items.map((i) => ({ quantity: i.quantity })),
-    returnRequests.map((r) => ({ status: r.status, items: r.items }))
+    order.items.map((i: (typeof order.items)[number]) => ({ quantity: i.quantity })),
+    returnRequests.map((r: (typeof returnRequests)[number]) => ({ status: r.status, items: r.items }))
   );
   trackedOrder.totalRefunded = computeOrderTotalRefunded(
-    returnRequests.map((r) => ({ status: r.status, requestedRefundAmount: Number(r.requestedRefundAmount) }))
+    returnRequests.map((r: (typeof returnRequests)[number]) => ({ status: r.status, requestedRefundAmount: Number(r.requestedRefundAmount) }))
   );
 
   let session: ReturnType<typeof toTableSessionEvent> | null = null;
@@ -91,9 +91,9 @@ export default async function TrackOrderPage({
       }),
     ]);
     if (sessionRow) {
-      const sessionOrdersForBill = ordersInSession.map((o) => ({
+      const sessionOrdersForBill = ordersInSession.map((o: (typeof ordersInSession)[number]) => ({
         status: o.status,
-        items: o.items.map((item) => ({
+        items: o.items.map((item: (typeof o.items)[number]) => ({
           productId: item.productId,
           name: item.name,
           price: item.price,
@@ -102,7 +102,7 @@ export default async function TrackOrderPage({
         })),
       }));
       session = toTableSessionEvent(sessionRow);
-      sessionBill = computeSessionBill(sessionOrdersForBill, taxes.map((t) => ({ ...t, value: Number(t.value) })));
+      sessionBill = computeSessionBill(sessionOrdersForBill, taxes.map((t: (typeof taxes)[number]) => ({ ...t, value: Number(t.value) })));
       sessionItems = mergeSessionItems(sessionOrdersForBill);
     }
   }

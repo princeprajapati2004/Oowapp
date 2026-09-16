@@ -10,7 +10,7 @@ export async function GET() {
     return NextResponse.json({
       code,
       totalEarned,
-      referrals: referrals.map((r) => ({
+      referrals: referrals.map((r: (typeof referrals)[number]) => ({
         id: r.id,
         referredName: r.referredCustomer.name,
         status: r.status,

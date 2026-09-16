@@ -108,8 +108,8 @@ export async function getTransactionReportSummary(shopId: string, filters: Trans
   ]);
 
   const allRows = [
-    ...orderPayments.map((p) => ({ amount: Number(p.amount), method: p.method })),
-    ...partyPayments.map((p) => ({ amount: Number(p.amount), method: p.method as string })),
+    ...orderPayments.map((p: (typeof orderPayments)[number]) => ({ amount: Number(p.amount), method: p.method })),
+    ...partyPayments.map((p: (typeof partyPayments)[number]) => ({ amount: Number(p.amount), method: p.method as string })),
   ];
 
   let totalAmount = 0;
@@ -193,7 +193,7 @@ export async function listTransactionReportRows(
       : Promise.resolve([]),
   ]);
 
-  const unifiedOrderRows: TransactionReportRow[] = orderRows.map((p): TransactionReportRow => ({
+  const unifiedOrderRows: TransactionReportRow[] = orderRows.map((p: (typeof orderRows)[number]): TransactionReportRow => ({
     id: p.id,
     source: "order_payment",
     date: p.createdAt.toISOString(),
@@ -208,7 +208,7 @@ export async function listTransactionReportRows(
     notes: p.note,
   }));
 
-  const unifiedPartyRows: TransactionReportRow[] = partyRows.map((p): TransactionReportRow => ({
+  const unifiedPartyRows: TransactionReportRow[] = partyRows.map((p: (typeof partyRows)[number]): TransactionReportRow => ({
     id: p.id,
     source: "party_payment",
     date: p.createdAt.toISOString(),

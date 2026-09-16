@@ -105,7 +105,7 @@ async function computeItemReportRows(shopId: string, filters: ItemReportFilters)
     purchasedMap.set(g.productId, g._sum.quantity ?? 0);
   }
 
-  return products.map((p) => {
+  return products.map((p: (typeof products)[number]) => {
     const sold = soldMap.get(p.id);
     const unitsSold = sold?.qty ?? 0;
     const salesAmount = sold?.amount ?? 0;

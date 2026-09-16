@@ -101,7 +101,7 @@ export async function listExpenseReportRows(
     }),
   ]);
 
-  const rows: ExpenseReportRow[] = expenses.map((expense) => ({
+  const rows: ExpenseReportRow[] = expenses.map((expense: (typeof expenses)[number]) => ({
     id: expense.id,
     date: expense.date.toISOString(),
     name: expense.name,

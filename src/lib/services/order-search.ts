@@ -126,7 +126,7 @@ export async function searchOrders(shopId: string, filters: OrderSearchFilters):
   const nextCursor = hasMore && last ? `${last.createdAt.getTime()}_${last.id}` : null;
 
   return {
-    orders: page.map((order) => toAdminOrderEvent(order)),
+    orders: page.map((order: (typeof page)[number]) => toAdminOrderEvent(order)),
     nextCursor,
     hasMore,
   };

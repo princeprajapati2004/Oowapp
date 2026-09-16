@@ -163,7 +163,7 @@ export async function listSalesReportRows(
     }),
   ]);
 
-  const rows: SalesReportRow[] = orders.map((order) => {
+  const rows: SalesReportRow[] = orders.map((order: (typeof orders)[number]) => {
     const grand = Number(order.grandTotal);
     const effective = effectiveTotal(order);
     const paid = Number(order.paidAmount ?? 0);

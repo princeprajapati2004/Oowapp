@@ -24,9 +24,9 @@ async function loadSessionOrders(sessionId: string) {
 }
 
 function toBillItems(orders: Awaited<ReturnType<typeof loadSessionOrders>>) {
-  return orders.map((o) => ({
+  return orders.map((o: (typeof orders)[number]) => ({
     status: o.status,
-    items: o.items.map((item) => ({
+    items: o.items.map((item: (typeof o.items)[number]) => ({
       productId: item.productId,
       name: item.name,
       price: item.price,
@@ -46,7 +46,8 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
       where: { id: session.shopId },
       include: { taxes: { where: { isEnabled: true } } },
     });
-    const taxes = (shop?.taxes ?? []).map((t) => ({ ...t, value: Number(t.value) }));
+    const shopTaxes = shop?.taxes ?? [];
+    const taxes = shopTaxes.map((t: (typeof shopTaxes)[number]) => ({ ...t, value: Number(t.value) }));
 
     return NextResponse.json({
       session: toTableSessionEvent(session),

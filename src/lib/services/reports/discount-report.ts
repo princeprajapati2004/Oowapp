@@ -80,7 +80,7 @@ export async function getDiscountReportSummary(shopId: string, filters: Discount
     select: { grandTotal: true, discountedTotal: true, couponDiscountAmount: true },
   });
 
-  const totalDiscount = orders.reduce((sum, order) => sum + discountAmountOf(order), 0);
+  const totalDiscount = orders.reduce((sum: number, order: (typeof orders)[number]) => sum + discountAmountOf(order), 0);
   const discountedOrderCount = orders.length;
 
   return {
@@ -124,7 +124,7 @@ export async function listDiscountReportRows(
     }),
   ]);
 
-  const rows: DiscountReportRow[] = orders.map((order) => {
+  const rows: DiscountReportRow[] = orders.map((order: (typeof orders)[number]) => {
     const discountTypeLabel = order.discountType ? order.discountType : order.couponCode ? "Coupon" : "-";
     const discountAmount = discountAmountOf(order);
     return {

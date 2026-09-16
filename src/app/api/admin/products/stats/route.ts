@@ -25,8 +25,8 @@ export async function GET() {
     });
 
     const stats = rows
-      .filter((r) => r.productId)
-      .map((r) => ({ productId: r.productId as string, orderCount: r._sum.quantity ?? 0 }));
+      .filter((r: (typeof rows)[number]) => r.productId)
+      .map((r: (typeof rows)[number]) => ({ productId: r.productId as string, orderCount: r._sum.quantity ?? 0 }));
 
     return NextResponse.json(stats);
   } catch (error) {

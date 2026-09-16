@@ -349,13 +349,13 @@ export async function PATCH(
     const updated = await (db.order as any).update({ where: { id }, data, include: { items: true } });
 
     if (shouldProcessPaidRewards) {
-      await db.$transaction((tx) => processOrderPaidRewards(tx, updated));
+      await db.$transaction((tx: Prisma.TransactionClient) => processOrderPaidRewards(tx, updated));
     }
     if (shouldVoidPendingCashback) {
-      await db.$transaction((tx) => voidPendingCashbackRedemption(tx, id));
+      await db.$transaction((tx: Prisma.TransactionClient) => voidPendingCashbackRedemption(tx, id));
     }
     if (shouldReverseCashback) {
-      await db.$transaction((tx) => reverseCashbackIfCredited(tx, id));
+      await db.$transaction((tx: Prisma.TransactionClient) => reverseCashbackIfCredited(tx, id));
     }
 
     if (newPaymentRecord) {
@@ -480,7 +480,7 @@ async function handleEditItems(
       });
       if (itemsWithReturns.length > 0) {
         throw new ConflictError(
-          `${itemsWithReturns.map((i) => i.name).join(", ")} has return history and can't be edited.`
+          `${itemsWithReturns.map((i: (typeof itemsWithReturns)[number]) => i.name).join(", ")} has return history and can't be edited.`
         );
       }
     }
@@ -494,7 +494,7 @@ async function handleEditItems(
     const resolvedNewItems = newItems.length > 0 ? await resolveOrderItems(shopId, newItems) : [];
     const newItemPriceOverrides = new Map(newItems.map((i) => [i.productId, i.price]));
 
-    const updated = await db.$transaction(async (tx) => {
+    const updated = await db.$transaction(async (tx: Prisma.TransactionClient) => {
       // Apply quantity/price changes — delete items with qty 0. Every item id
       // is re-checked against orderId here so a caller can't reference an
       // OrderItem belonging to a different order (or another shop's order).
@@ -550,7 +550,7 @@ async function handleEditItems(
         include: { product: { select: { categoryId: true } } },
       });
 
-      const lineItems = remaining.map((item) => ({
+      const lineItems = remaining.map((item: (typeof remaining)[number]) => ({
         id: item.productId ?? item.name,
         name: item.name,
         price: Number(item.price),
@@ -560,7 +560,7 @@ async function handleEditItems(
 
       const bill = calculateBill(
         lineItems,
-        taxes.map((t) => ({ ...t, value: Number(t.value) }))
+        taxes.map((t: (typeof taxes)[number]) => ({ ...t, value: Number(t.value) }))
       );
 
       // A manual (non-coupon) discount is recomputed against the new base

@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import type { Prisma } from "@/generated/prisma/client";
 import { NotFoundError, ConflictError } from "@/lib/api-utils";
 import { UnauthorizedError } from "@/lib/session";
 import {
@@ -38,7 +39,7 @@ export async function registerAgent(input: AgentRegisterInput) {
   const secret = generateAgentSecret();
   const secretHash = await hashAgentSecret(secret);
 
-  const agent = await db.$transaction(async (tx) => {
+  const agent = await db.$transaction(async (tx: Prisma.TransactionClient) => {
     const pairing = await tx.printAgentPairingCode.findUnique({ where: { code: input.pairingCode } });
     if (!pairing) throw new NotFoundError("Invalid pairing code");
     if (pairing.usedAt) throw new ConflictError("Pairing code already used");
@@ -88,7 +89,7 @@ export async function reportDiscoveredPrinters(
 ) {
   const seenNames = input.printers.map((p) => p.systemPrinterName);
 
-  await db.$transaction(async (tx) => {
+  await db.$transaction(async (tx: Prisma.TransactionClient) => {
     for (const printer of input.printers) {
       // `reachable === false` means the agent actually tried to open this
       // target (e.g. a Bluetooth SPP port) and it failed right now — being
@@ -140,7 +141,7 @@ export async function getAgentsForShop(shopId: string) {
     include: { printers: { orderBy: { name: "asc" } } },
     orderBy: { createdAt: "asc" },
   });
-  return agents.map((agent) => ({ ...agent, online: isAgentOnline(agent) }));
+  return agents.map((agent: (typeof agents)[number]) => ({ ...agent, online: isAgentOnline(agent) }));
 }
 
 export async function assertAgentBelongsToShop(agentId: string, shopId: string) {

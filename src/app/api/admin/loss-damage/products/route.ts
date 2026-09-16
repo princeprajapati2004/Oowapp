@@ -18,7 +18,7 @@ export async function GET() {
       orderBy: { name: "asc" },
     });
     return NextResponse.json(
-      products.map((p) => ({
+      products.map((p: (typeof products)[number]) => ({
         id: p.id,
         name: p.name,
         imageUrl: p.imageUrl,

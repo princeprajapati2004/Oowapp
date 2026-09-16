@@ -89,7 +89,7 @@ export default async function BusinessesPage({
                   </tr>
                 </thead>
                 <tbody className="divide-y">
-                  {shops.map((shop) => (
+                  {shops.map((shop: (typeof shops)[number]) => (
                     <tr key={shop.id} className="hover:bg-muted/30 transition-colors">
                       <td className="px-4 py-3">
                         <p className="font-medium truncate max-w-[160px]">{shop.businessName}</p>

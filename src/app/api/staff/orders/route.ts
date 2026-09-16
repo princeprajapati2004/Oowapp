@@ -47,7 +47,7 @@ export async function POST(request: Request) {
     });
     if (!shop) return NextResponse.json({ error: "Shop not found" }, { status: 404 });
 
-    const taxes = shop.taxes.map((t) => ({ ...t, value: Number(t.value) }));
+    const taxes = shop.taxes.map((t: (typeof shop.taxes)[number]) => ({ ...t, value: Number(t.value) }));
 
     // Price, name, and category always come from the DB, never the client.
     const [resolvedItems, itemSettings] = await Promise.all([
@@ -58,7 +58,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "No valid items in this order." }, { status: 400 });
     }
 
-    const { order, isDuplicate } = await db.$transaction(async (tx) => {
+    const { order, isDuplicate } = await db.$transaction(async (tx: Prisma.TransactionClient) => {
       const existing = await tx.order.findUnique({
         where: { shopId_clientRequestId: { shopId: shop.id, clientRequestId: input.clientRequestId } },
         include: { items: true },

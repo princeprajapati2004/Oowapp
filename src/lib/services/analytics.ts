@@ -149,11 +149,11 @@ async function fetchRevenueChart(shopId: string, from: Date, to: Date, granulari
           GROUP BY hour
           ORDER BY hour
         `;
-    const map = new Map(rows.map((r) => [r.hour, r]));
+    const map = new Map(rows.map((r: (typeof rows)[number]) => [r.hour, r]));
     return Array.from({ length: 24 }, (_, h) => ({
       label: formatHourLabel(h),
-      revenue: map.get(h)?.revenue ?? 0,
-      orders: map.get(h)?.orders ?? 0,
+      revenue: (map.get(h) as { revenue: number; orders: number } | undefined)?.revenue ?? 0,
+      orders: (map.get(h) as { revenue: number; orders: number } | undefined)?.orders ?? 0,
     }));
   }
 
@@ -183,7 +183,7 @@ async function fetchRevenueChart(shopId: string, from: Date, to: Date, granulari
           GROUP BY date
           ORDER BY date
         `;
-    const map = new Map(rows.map((r) => [r.date, r]));
+    const map = new Map(rows.map((r: (typeof rows)[number]) => [r.date, r]));
     const points: RevenuePoint[] = [];
     const cursor = new Date(from);
     while (cursor < to) {
@@ -192,8 +192,8 @@ async function fetchRevenueChart(shopId: string, from: Date, to: Date, granulari
       const month = cursor.toLocaleString("en", { month: "short" });
       points.push({
         label: `${month} ${day}`,
-        revenue: map.get(key)?.revenue ?? 0,
-        orders: map.get(key)?.orders ?? 0,
+        revenue: (map.get(key) as { revenue: number; orders: number } | undefined)?.revenue ?? 0,
+        orders: (map.get(key) as { revenue: number; orders: number } | undefined)?.orders ?? 0,
       });
       cursor.setDate(cursor.getDate() + 1);
     }
@@ -226,7 +226,7 @@ async function fetchRevenueChart(shopId: string, from: Date, to: Date, granulari
         GROUP BY month
         ORDER BY month
       `;
-  const map = new Map(rows.map((r) => [r.month, r]));
+  const map = new Map(rows.map((r: (typeof rows)[number]) => [r.month, r]));
   const points: RevenuePoint[] = [];
   const cursor = new Date(from.getFullYear(), from.getMonth(), 1);
   const end = new Date(to.getFullYear(), to.getMonth() + 1, 1);
@@ -234,8 +234,8 @@ async function fetchRevenueChart(shopId: string, from: Date, to: Date, granulari
     const key = `${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, "0")}`;
     points.push({
       label: cursor.toLocaleString("en", { month: "short" }),
-      revenue: map.get(key)?.revenue ?? 0,
-      orders: map.get(key)?.orders ?? 0,
+      revenue: (map.get(key) as { revenue: number; orders: number } | undefined)?.revenue ?? 0,
+      orders: (map.get(key) as { revenue: number; orders: number } | undefined)?.orders ?? 0,
     });
     cursor.setMonth(cursor.getMonth() + 1);
   }
@@ -270,8 +270,8 @@ async function fetchPaymentBreakdown(shopId: string, from: Date, to: Date): Prom
           ORDER BY amount DESC
         `;
 
-  const total = rows.reduce((sum, r) => sum + r.amount, 0);
-  return rows.map((r) => ({
+  const total = rows.reduce((sum: number, r: (typeof rows)[number]) => sum + r.amount, 0);
+  return rows.map((r: (typeof rows)[number]) => ({
     method: r.method ?? "UNKNOWN",
     label: r.method ? (PAYMENT_LABELS[r.method] ?? r.method) : "QR/WhatsApp",
     amount: r.amount,
@@ -305,8 +305,8 @@ async function fetchStatusBreakdown(shopId: string, from: Date, to: Date): Promi
           GROUP BY status
           ORDER BY count DESC
         `;
-  const total = rows.reduce((sum, r) => sum + r.count, 0);
-  return rows.map((r) => ({
+  const total = rows.reduce((sum: number, r: (typeof rows)[number]) => sum + r.count, 0);
+  return rows.map((r: (typeof rows)[number]) => ({
     status: r.status,
     label: STATUS_LABELS[r.status] ?? r.status,
     count: r.count,

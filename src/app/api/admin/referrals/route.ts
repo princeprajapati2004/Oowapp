@@ -8,7 +8,7 @@ export async function GET() {
     const session = await requireAdminSession();
     const referrals = await listReferrals(session.shopId);
 
-    const serialized = referrals.map((r) => ({
+    const serialized = referrals.map((r: (typeof referrals)[number]) => ({
       id: r.id,
       referrerName: r.referrerCustomer.name,
       referrerPhone: r.referrerCustomer.phone,
@@ -24,9 +24,9 @@ export async function GET() {
 
     const stats = {
       total: serialized.length,
-      pending: serialized.filter((r) => r.status === "PENDING").length,
-      rewarded: serialized.filter((r) => r.status === "REWARDED").length,
-      totalCredited: serialized.reduce((sum, r) => sum + (r.status === "REWARDED" ? (r.rewardAmount ?? 0) : 0), 0),
+      pending: serialized.filter((r: (typeof serialized)[number]) => r.status === "PENDING").length,
+      rewarded: serialized.filter((r: (typeof serialized)[number]) => r.status === "REWARDED").length,
+      totalCredited: serialized.reduce((sum: number, r: (typeof serialized)[number]) => sum + (r.status === "REWARDED" ? (r.rewardAmount ?? 0) : 0), 0),
     };
 
     return NextResponse.json({ referrals: serialized, stats });

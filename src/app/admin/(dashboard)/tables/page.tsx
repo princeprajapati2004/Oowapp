@@ -46,11 +46,11 @@ export default async function TablesPage() {
     }),
     db.tableState.findMany({ where: { shopId: shop.id } }),
   ]);
-  const taxes = taxRows.map((t) => ({ ...t, value: Number(t.value) }));
+  const taxes = taxRows.map((t: (typeof taxRows)[number]) => ({ ...t, value: Number(t.value) }));
 
   const board = buildTableBoard(
     configuredTables,
-    openSessions.map((s) => ({
+    openSessions.map((s: (typeof openSessions)[number]) => ({
       id: s.id,
       tableNumber: s.tableNumber,
       status: s.status,
@@ -59,9 +59,9 @@ export default async function TablesPage() {
       customerName: s.customerName,
       guestCount: s.guestCount,
       paidAmount: s.paidAmount,
-      orders: s.orders.map((o) => ({
+      orders: s.orders.map((o: (typeof s.orders)[number]) => ({
         status: o.status,
-        items: o.items.map((item) => ({
+        items: o.items.map((item: (typeof o.items)[number]) => ({
           productId: item.productId,
           name: item.name,
           price: item.price,
@@ -71,7 +71,7 @@ export default async function TablesPage() {
       })),
     })),
     taxes,
-    tableStates.map((s) => ({ tableNumber: s.tableNumber, state: s.state, note: s.note }))
+    tableStates.map((s: (typeof tableStates)[number]) => ({ tableNumber: s.tableNumber, state: s.state, note: s.note }))
   );
 
   return <TablesBoard initialTables={board} currency={shop.currency} />;

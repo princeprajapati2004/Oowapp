@@ -4,6 +4,7 @@ import { serializeTaxes } from "@/lib/serialize";
 import { resolveCustomerIdentity, resolveActiveTableSession } from "@/lib/services/customer-order-session";
 import { db } from "@/lib/db";
 import { CurrentOrderPage } from "@/components/customer/current-order-page";
+import type { CustomerTax } from "@/lib/types/customer";
 
 export default async function BillPage({
   params,
@@ -38,7 +39,7 @@ export default async function BillPage({
   return (
     <CurrentOrderPage
       shop={shopInfo}
-      taxes={serializeTaxes(taxes)}
+      taxes={serializeTaxes(taxes) as CustomerTax[]}
       prefilledTable={prefilledTable}
       customer={customer}
       activeSession={activeSession}

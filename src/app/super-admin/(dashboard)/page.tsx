@@ -76,7 +76,7 @@ export default async function SuperAdminDashboardPage() {
             <p className="text-sm text-muted-foreground py-4 text-center">No signups yet.</p>
           ) : (
             <div className="divide-y">
-              {recentSignups.map((admin) => (
+              {recentSignups.map((admin: (typeof recentSignups)[number]) => (
                 <div key={admin.id} className="flex items-center justify-between py-3 gap-4">
                   <div className="min-w-0">
                     <p className="text-sm font-medium truncate">

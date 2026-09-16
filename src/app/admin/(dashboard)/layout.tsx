@@ -47,7 +47,7 @@ export default async function DashboardLayout({
     redirect("/admin/onboarding");
   }
 
-  const initialNotifications = notifications.map((n) => ({
+  const initialNotifications = notifications.map((n: (typeof notifications)[number]) => ({
     id: n.id,
     shopId: n.shopId,
     type: n.type,

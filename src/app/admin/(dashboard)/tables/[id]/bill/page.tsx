@@ -42,11 +42,11 @@ export default async function TableSessionBillPage({
   if (!tableSession) notFound();
 
   const taxes = await db.tax.findMany({ where: { shopId: session.shopId, isEnabled: true } });
-  const taxLines = taxes.map((t) => ({ ...t, value: Number(t.value) }));
+  const taxLines = taxes.map((t: (typeof taxes)[number]) => ({ ...t, value: Number(t.value) }));
 
-  const orders = tableSession.orders.map((o) => ({
+  const orders = tableSession.orders.map((o: (typeof tableSession.orders)[number]) => ({
     status: o.status,
-    items: o.items.map((item) => ({
+    items: o.items.map((item: (typeof o.items)[number]) => ({
       productId: item.productId,
       name: item.name,
       price: Number(item.price),

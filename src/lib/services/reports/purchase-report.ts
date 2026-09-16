@@ -108,7 +108,7 @@ export async function listPurchaseReportRows(
     }),
   ]);
 
-  const rows: PurchaseReportRow[] = purchases.map((purchase) => {
+  const rows: PurchaseReportRow[] = purchases.map((purchase: (typeof purchases)[number]) => {
     const total = Number(purchase.grandTotal);
     const paid = Number(purchase.paidAmount ?? 0);
     return {
@@ -117,7 +117,7 @@ export async function listPurchaseReportRows(
       date: purchase.purchaseDate.toISOString(),
       supplierName: purchase.supplierName,
       itemCount: purchase.items.length,
-      quantity: purchase.items.reduce((sum, item) => sum + item.quantity, 0),
+      quantity: purchase.items.reduce((sum: number, item: (typeof purchase.items)[number]) => sum + item.quantity, 0),
       total,
       paid,
       pending: total - paid,

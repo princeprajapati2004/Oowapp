@@ -5,6 +5,7 @@ import { getExpense } from "@/lib/services/expense";
 import { listPartiesForPicker } from "@/lib/services/party";
 import { NotFoundError } from "@/lib/api-utils";
 import { ExpenseDetail } from "@/components/admin/expense-detail";
+import type { Expense } from "@/components/admin/expense-form";
 
 export default async function ExpenseDetailPage({
   params,
@@ -29,5 +30,5 @@ export default async function ExpenseDetailPage({
     listPartiesForPicker(session.shopId),
   ]);
 
-  return <ExpenseDetail initialExpense={expense} parties={parties} currency={shop.currency} />;
+  return <ExpenseDetail initialExpense={expense as Expense} parties={parties} currency={shop.currency} />;
 }

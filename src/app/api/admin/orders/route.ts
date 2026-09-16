@@ -133,7 +133,7 @@ export async function POST(request: Request) {
 
     const bill = calculateBill(
       billItems,
-      shop.taxes.map((t) => ({ ...t, value: Number(t.value) }))
+      shop.taxes.map((t: (typeof shop.taxes)[number]) => ({ ...t, value: Number(t.value) }))
     );
 
     // Frozen onto each OrderItem.costPrice below — see profit.ts's doc
@@ -147,7 +147,7 @@ export async function POST(request: Request) {
               where: { id: { in: productIdsWithCost }, shopId: shop.id },
               select: { id: true, costPrice: true },
             })
-          ).map((p) => [p.id, p.costPrice != null ? Number(p.costPrice) : null])
+          ).map((p: { id: string; costPrice: unknown }) => [p.id, p.costPrice != null ? Number(p.costPrice) : null])
         : []
     );
 
@@ -175,7 +175,7 @@ export async function POST(request: Request) {
       discountedTotal = Math.max(0, base - discount);
     }
 
-    const order = await db.$transaction(async (tx) => {
+    const order = await db.$transaction(async (tx: Prisma.TransactionClient) => {
       // Only a Pending-payment dine-in order represents a running tab —
       // everything else (Cash/UPI/etc.) is an immediately-settled sale and
       // never touches table occupancy, exactly like before this change.

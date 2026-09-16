@@ -92,12 +92,12 @@ async function computeProfitReportRows(shopId: string, filters: ProfitReportFilt
     },
   });
 
-  const rows = orders.map((order) => {
+  const rows = orders.map((order: (typeof orders)[number]) => {
     const grand = Number(order.grandTotal);
     const effective = order.discountedTotal != null ? Number(order.discountedTotal) : grand;
     const discountAmount = Math.max(0, grand - effective);
 
-    const items = order.items.map((i) => ({
+    const items = order.items.map((i: (typeof order.items)[number]) => ({
       price: Number(i.price),
       costPrice: i.costPrice != null ? Number(i.costPrice) : null,
       quantity: i.quantity,
@@ -119,7 +119,7 @@ async function computeProfitReportRows(shopId: string, filters: ProfitReportFilt
   });
 
   if (!filters.completeOnly) return rows;
-  return rows.filter((r) => r.purchaseCost !== null && !r.hasIncompleteCostData);
+  return rows.filter((r: (typeof rows)[number]) => r.purchaseCost !== null && !r.hasIncompleteCostData);
 }
 
 export function summarizeProfitReportRows(rows: ProfitReportRow[], totalRefunds: number): ProfitReportSummary {

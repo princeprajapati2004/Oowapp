@@ -38,14 +38,14 @@ export async function resolveFeatures(shopId: string): Promise<Record<string, bo
     const planFeatures = await db.planFeature.findMany({
       where: { planId: subscription.resolvedPlanId },
     });
-    const featureById = new Map(features.map((f) => [f.id, f]));
+    const featureById = new Map<string, (typeof features)[number]>(features.map((f: (typeof features)[number]) => [f.id, f]));
     for (const pf of planFeatures) {
       const feature = featureById.get(pf.featureId);
       if (feature) result[feature.key] = pf.enabled;
     }
   }
 
-  const featureById = new Map(features.map((f) => [f.id, f]));
+  const featureById = new Map<string, (typeof features)[number]>(features.map((f: (typeof features)[number]) => [f.id, f]));
   for (const override of overrides) {
     const feature = featureById.get(override.featureId);
     if (feature) result[feature.key] = override.enabled;
@@ -87,9 +87,9 @@ export async function getFeaturePermissionsForBusiness(shopId: string): Promise<
     resolveFeatures(shopId),
   ]);
 
-  const overrideByFeatureId = new Map(overrides.map((o) => [o.featureId, o]));
+  const overrideByFeatureId = new Map<string, (typeof overrides)[number]>(overrides.map((o: (typeof overrides)[number]) => [o.featureId, o]));
 
-  return features.map((feature) => {
+  return features.map((feature: (typeof features)[number]) => {
     const override = overrideByFeatureId.get(feature.id);
     return {
       featureId: feature.id,

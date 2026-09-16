@@ -1,5 +1,6 @@
 import * as XLSX from "xlsx";
 import { db } from "@/lib/db";
+import type { Prisma } from "@/generated/prisma/client";
 import { caseInsensitive } from "@/lib/db-provider";
 import { NotFoundError } from "@/lib/api-utils";
 import { z } from "zod";
@@ -117,8 +118,8 @@ export async function findDuplicateProductIds(
     where: { shopId },
     select: { id: true, name: true },
   });
-  const byName = new Map(existing.map((p) => [p.name.trim().toLowerCase(), p.id]));
-  return items.map((item) => byName.get(item.name.trim().toLowerCase()) ?? null);
+  const byName = new Map(existing.map((p: (typeof existing)[number]) => [p.name.trim().toLowerCase(), p.id]));
+  return items.map((item) => byName.get(item.name.trim().toLowerCase()) ?? null) as (string | null)[];
 }
 
 async function resolveCategoryIds(shopId: string, names: string[]) {
@@ -126,7 +127,7 @@ async function resolveCategoryIds(shopId: string, names: string[]) {
   const existing = await db.category.findMany({
     where: { shopId, name: { in: uniqueNames, ...caseInsensitive() } },
   });
-  const byLowerName = new Map(existing.map((c) => [c.name.trim().toLowerCase(), c.id]));
+  const byLowerName = new Map(existing.map((c: (typeof existing)[number]) => [c.name.trim().toLowerCase(), c.id]));
 
   const toCreate = uniqueNames.filter((name) => !byLowerName.has(name.toLowerCase()));
   if (toCreate.length > 0) {
@@ -165,14 +166,14 @@ export async function commitMenuImport(
   let updated = 0;
   let skipped = 0;
 
-  await db.$transaction(async (tx) => {
+  await db.$transaction(async (tx: Prisma.TransactionClient) => {
     for (const item of items) {
       if (item.resolution === "skip") {
         skipped++;
         continue;
       }
 
-      const categoryId = categoryIds.get(item.category.trim().toLowerCase()) ?? categoryIds.get(UNCATEGORIZED.toLowerCase());
+      const categoryId = (categoryIds.get(item.category.trim().toLowerCase()) ?? categoryIds.get(UNCATEGORIZED.toLowerCase())) as string | undefined;
       if (!categoryId) {
         skipped++;
         continue;

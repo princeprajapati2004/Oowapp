@@ -80,7 +80,7 @@ async function loadBillOrderData(shopId: string, orderId: string): Promise<BillO
     discountReason: order.discountReason,
     discountedTotal: order.discountedTotal == null ? null : Number(order.discountedTotal),
     createdAt: order.createdAt.toISOString(),
-    items: order.items.map((item) => ({
+    items: order.items.map((item: (typeof order.items)[number]) => ({
       id: item.id,
       name: item.name,
       price: Number(item.price),

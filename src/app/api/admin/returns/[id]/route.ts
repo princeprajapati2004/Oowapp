@@ -20,7 +20,7 @@ import {
   conditionRestocksInventory,
   CONDITION_TO_LOSS_DAMAGE_TYPE,
 } from "@/lib/return-status";
-import type { AuditAction } from "@/generated/prisma/client";
+import type { AuditAction, Prisma } from "@/generated/prisma/client";
 import type { ReturnStatus, ReturnItemCondition } from "@/generated/prisma/enums";
 
 const patchSchema = z.discriminatedUnion("action", [
@@ -92,9 +92,9 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     }
 
     if (parsed.action === "mark_item_returned") {
-      const existingIds = new Set(existing.items.map((i) => i.id));
-      const parsedIds = new Set(parsed.items.map((i) => i.id));
-      const coversAll = existing.items.every((i) => parsedIds.has(i.id)) && parsed.items.every((i) => existingIds.has(i.id));
+      const existingIds = new Set(existing.items.map((i: (typeof existing.items)[number]) => i.id));
+      const parsedIds = new Set(parsed.items.map((i: (typeof parsed.items)[number]) => i.id));
+      const coversAll = existing.items.every((i: (typeof existing.items)[number]) => parsedIds.has(i.id)) && parsed.items.every((i: (typeof parsed.items)[number]) => existingIds.has(i.id));
       if (!coversAll) {
         throw new ReturnError("Specify a condition for every returned item, and only items on this return");
       }
@@ -166,7 +166,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         break;
     }
 
-    const updated = await db.$transaction(async (tx) => {
+    const updated = await db.$transaction(async (tx: Prisma.TransactionClient) => {
       // Wallet credit happens before the CAS update so its result
       // (walletTransactionId) can be folded into `data` — but only actually
       // takes effect if the CAS below succeeds, since this whole function is
@@ -208,7 +208,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         // above has already succeeded), so this can never double-adjust
         // stock even under a retried/duplicate request.
         for (const itemInput of parsed.items) {
-          const returnItem = existing.items.find((i) => i.id === itemInput.id)!;
+          const returnItem = existing.items.find((i: (typeof existing.items)[number]) => i.id === itemInput.id)!;
           const condition = itemInput.condition as ReturnItemCondition;
           await tx.returnItem.update({ where: { id: returnItem.id }, data: { condition } });
 

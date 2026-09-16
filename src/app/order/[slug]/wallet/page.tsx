@@ -4,7 +4,7 @@ import { getCustomerSession } from "@/lib/customer-session";
 import { getWalletSummary } from "@/lib/services/wallet";
 import { serializeWalletTransactions } from "@/lib/serialize";
 import { db } from "@/lib/db";
-import { WalletPage } from "@/components/customer/wallet-page";
+import { WalletPage, type WalletTransactionRow } from "@/components/customer/wallet-page";
 
 export default async function CustomerWalletPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
@@ -28,7 +28,7 @@ export default async function CustomerWalletPage({ params }: { params: Promise<{
       businessName={shop.businessName}
       currency={shop.currency}
       balance={balance}
-      transactions={serializeWalletTransactions(transactions)}
+      transactions={serializeWalletTransactions(transactions) as WalletTransactionRow[]}
     />
   );
 }

@@ -55,9 +55,9 @@ export async function resolveActiveTableSession(args: {
     status: found.status,
     billRequestedAt: found.billRequestedAt ? found.billRequestedAt.toISOString() : null,
     paymentMethod: found.paymentMethod,
-    orders: found.orders.map((order) => ({
+    orders: found.orders.map((order: (typeof found.orders)[number]) => ({
       status: order.status,
-      items: order.items.map((item) => ({
+      items: order.items.map((item: (typeof order.items)[number]) => ({
         productId: item.productId,
         name: item.name,
         price: Number(item.price),

@@ -110,8 +110,8 @@ export function CouponManager({
       startsAt: toDateInputValue(coupon.startsAt),
       expiresAt: toDateInputValue(coupon.expiresAt),
       isEnabled: coupon.isEnabled,
-      categoryIds: coupon.categories.map((c) => c.categoryId),
-      productIds: coupon.products.map((p) => p.productId),
+      categoryIds: coupon.categories.map((c: (typeof coupon.categories)[number]) => c.categoryId),
+      productIds: coupon.products.map((p: (typeof coupon.products)[number]) => p.productId),
     });
     setDialogOpen(true);
   }
@@ -187,8 +187,8 @@ export function CouponManager({
         startsAt: coupon.startsAt,
         expiresAt: coupon.expiresAt,
         isEnabled: !coupon.isEnabled,
-        categoryIds: coupon.categories.map((c) => c.categoryId),
-        productIds: coupon.products.map((p) => p.productId),
+        categoryIds: coupon.categories.map((c: (typeof coupon.categories)[number]) => c.categoryId),
+        productIds: coupon.products.map((p: (typeof coupon.products)[number]) => p.productId),
       });
       setCoupons((prev) => prev.map((c) => (c.id === updated.id ? updated : c)));
     } catch (error) {

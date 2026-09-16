@@ -65,7 +65,7 @@ export async function POST(request: Request) {
     const existingProducts = matchedIds.length
       ? await db.product.findMany({ where: { id: { in: matchedIds } } })
       : [];
-    const existingById = new Map(existingProducts.map((p) => [p.id, p]));
+    const existingById = new Map<string, (typeof existingProducts)[number]>(existingProducts.map((p: (typeof existingProducts)[number]) => [p.id, p]));
 
     const itemsWithDuplicates = items.map((item, i) => {
       const dupId = duplicateIds[i];

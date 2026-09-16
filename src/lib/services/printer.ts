@@ -1,5 +1,6 @@
 import { db } from "@/lib/db";
 import { NotFoundError } from "@/lib/api-utils";
+import type { Prisma } from "@/generated/prisma/client";
 import type { PrinterInput, PrinterUpdateInput } from "@/lib/validation/printer";
 
 export async function listPrinters(shopId: string) {
@@ -31,7 +32,7 @@ function toPrinterData(input: PrinterInput) {
 }
 
 export async function createPrinter(shopId: string, input: PrinterInput) {
-  return db.$transaction(async (tx) => {
+  return db.$transaction(async (tx: Prisma.TransactionClient) => {
     if (input.isDefault) {
       await tx.printerProfile.updateMany({ where: { shopId, isDefault: true }, data: { isDefault: false } });
     }
@@ -44,7 +45,7 @@ export async function createPrinter(shopId: string, input: PrinterInput) {
 export async function updatePrinter(shopId: string, id: string, input: PrinterUpdateInput) {
   await assertOwnedPrinter(shopId, id);
 
-  return db.$transaction(async (tx) => {
+  return db.$transaction(async (tx: Prisma.TransactionClient) => {
     if (input.isDefault) {
       await tx.printerProfile.updateMany({ where: { shopId, isDefault: true, id: { not: id } }, data: { isDefault: false } });
     }

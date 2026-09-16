@@ -18,7 +18,7 @@ export default async function StockReportPage() {
         gstNumber: shop.gstNumber,
         phone: shop.phone,
       }}
-      categories={categories.map((c) => ({ id: c.id, name: c.name }))}
+      categories={categories.map((c: (typeof categories)[number]) => ({ id: c.id, name: c.name }))}
     />
   );
 }

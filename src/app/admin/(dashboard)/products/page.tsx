@@ -27,7 +27,7 @@ export default async function ProductsPage() {
       currency={shop.currency}
       businessType={shop.businessType}
       itemSettings={itemSettings}
-      parties={parties.filter((p) => p.type === "CUSTOMER")}
+      parties={parties.filter((p: (typeof parties)[number]) => p.type === "CUSTOMER")}
     />
   );
 }

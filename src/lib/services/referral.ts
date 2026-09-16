@@ -36,8 +36,8 @@ export async function getReferralStats(shopId: string, customerId: string) {
     orderBy: { createdAt: "desc" },
   });
   const totalEarned = referrals
-    .filter((r) => r.status === "REWARDED")
-    .reduce((sum, r) => sum + Number(r.rewardAmount ?? 0), 0);
+    .filter((r: (typeof referrals)[number]) => r.status === "REWARDED")
+    .reduce((sum: number, r: (typeof referrals)[number]) => sum + Number(r.rewardAmount ?? 0), 0);
 
   return { code, referrals, totalEarned };
 }
