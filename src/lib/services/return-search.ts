@@ -99,7 +99,7 @@ export async function searchReturns(shopId: string, filters: ReturnSearchFilters
   const nextCursor = hasMore && last ? `${last.createdAt.getTime()}_${last.id}` : null;
 
   return {
-    returns: page.map((r) => toReturnEvent(r)),
+    returns: page.map(toReturnEvent),
     nextCursor,
     hasMore,
   };

@@ -165,7 +165,7 @@ export async function adjustWalletManually(
   delta: number,
   description: string | null
 ) {
-  return db.$transaction(async (tx) => {
+  return db.$transaction(async (tx: Tx) => {
     const customer = await tx.customer.findFirst({ where: { id: customerId, shopId } });
     if (!customer) throw new WalletError("Customer not found");
     if (Number(customer.walletBalance) + delta < 0) {

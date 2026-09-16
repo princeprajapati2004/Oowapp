@@ -92,7 +92,7 @@ export async function listShopReviews(shopId: string) {
     orderBy: { createdAt: "desc" },
     include: { customer: { select: { name: true } } },
   });
-  return reviews.map((r) => ({
+  return reviews.map((r: (typeof reviews)[number]) => ({
     id: r.id,
     rating: r.rating,
     reviewText: r.reviewText,
@@ -111,7 +111,7 @@ export async function listOwnerReviews(shopId: string) {
     orderBy: { createdAt: "desc" },
     include: { customer: { select: { name: true } }, order: { select: { billNumber: true } } },
   });
-  return reviews.map((r) => ({
+  return reviews.map((r: (typeof reviews)[number]) => ({
     id: r.id,
     rating: r.rating,
     reviewText: r.reviewText,

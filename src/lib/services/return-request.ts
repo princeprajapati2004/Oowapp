@@ -76,7 +76,7 @@ export async function createReturnRequest(input: CreateReturnRequestInput): Prom
     where: {
       id: input.orderId,
       shopId: input.shopId,
-      ...(input.requireCustomerId ? { customerId: input.requireCustomerId } : {}),
+      customerId: input.requireCustomerId || undefined,
     },
     include: { items: true },
   });
@@ -151,7 +151,7 @@ export async function createReturnRequest(input: CreateReturnRequestInput): Prom
     totalRefundAmount
   );
 
-  const created = await db.$transaction(async (tx) => {
+  const created = await db.$transaction(async (tx: Prisma.TransactionClient) => {
     for (const reqItem of input.items) {
       await reserveReturnQuantity(tx, reqItem.orderItemId, reqItem.quantity);
     }

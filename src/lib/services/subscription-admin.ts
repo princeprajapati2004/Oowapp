@@ -228,7 +228,7 @@ export async function getSubscriptionDetailForSuperAdmin(shopId: string) {
       displayStatus: computeDisplayStatus(current),
       daysRemaining: computeDaysRemaining(current.endDate),
     },
-    history: historyRows.map((row) => ({
+    history: historyRows.map((row: (typeof historyRows)[number]) => ({
       id: row.id,
       planCode: row.planRef?.code ?? row.plan,
       planName: row.planRef?.name ?? row.plan,
@@ -273,7 +273,7 @@ export async function listBusinessSubscriptions(filters: SubscriptionListFilters
     orderBy: { createdAt: "desc" },
     include: { admin: { select: { email: true } } },
   });
-  const shopIds = shops.map((s) => s.id);
+  const shopIds = shops.map((s: (typeof shops)[number]) => s.id);
 
   // Batched instead of one getCurrentSubscription() call per shop — this list can span
   // every business on the platform, and N+1 queries against a remote pooled Postgres
@@ -291,10 +291,10 @@ export async function listBusinessSubscriptions(filters: SubscriptionListFilters
   for (const sub of allSubs) {
     if (!latestByShop.has(sub.shopId)) latestByShop.set(sub.shopId, sub);
   }
-  const planByCode = new Map(plans.map((p) => [p.code, p]));
+  const planByCode = new Map(plans.map((p: (typeof plans)[number]) => [p.code, p]));
   const freePlan = planByCode.get("FREE");
 
-  let rows = shops.map((shop) => {
+  let rows = shops.map((shop: (typeof shops)[number]) => {
     const latest = latestByShop.get(shop.id);
     const startDate = latest?.startDate ?? shop.createdAt;
     const record = {
@@ -326,9 +326,9 @@ export async function listBusinessSubscriptions(filters: SubscriptionListFilters
     };
   });
 
-  if (planCode) rows = rows.filter((r) => r.planCode === planCode);
-  if (status) rows = rows.filter((r) => r.status === status);
-  if (expiryBefore) rows = rows.filter((r) => r.endDate !== null && r.endDate <= expiryBefore);
+  if (planCode) rows = rows.filter((r: (typeof rows)[number]) => r.planCode === planCode);
+  if (status) rows = rows.filter((r: (typeof rows)[number]) => r.status === status);
+  if (expiryBefore) rows = rows.filter((r: (typeof rows)[number]) => r.endDate !== null && r.endDate <= expiryBefore);
 
   const total = rows.length;
   const totalPages = Math.max(1, Math.ceil(total / perPage));
@@ -337,8 +337,8 @@ export async function listBusinessSubscriptions(filters: SubscriptionListFilters
   // Same resolution order as feature-permission.ts::resolveFeatures (override → plan
   // default → disabled, fail-closed unless access-granting), inlined against batched
   // queries here instead of calling resolveFeatures() once per row.
-  const pagedShopIds = paged.map((r) => r.shopId);
-  const planIds = [...new Set(paged.map((r) => r.resolvedPlanId).filter((id): id is string => !!id))];
+  const pagedShopIds = paged.map((r: (typeof paged)[number]) => r.shopId);
+  const planIds = [...new Set(paged.map((r: (typeof paged)[number]) => r.resolvedPlanId).filter((id: string | null): id is string => !!id))];
 
   const [allFeatures, overrides, planFeatures] = await Promise.all([
     db.feature.findMany({ where: { isActive: true } }),
@@ -357,7 +357,7 @@ export async function listBusinessSubscriptions(filters: SubscriptionListFilters
     planFeaturesByPlan.get(pf.planId)!.push(pf);
   }
 
-  paged.forEach((row) => {
+  paged.forEach((row: (typeof paged)[number]) => {
     const enabled = new Map<string, boolean>();
     for (const feature of allFeatures) enabled.set(feature.id, false);
 
@@ -372,7 +372,7 @@ export async function listBusinessSubscriptions(filters: SubscriptionListFilters
       }
     }
 
-    row.enabledFeatures = allFeatures.filter((f) => enabled.get(f.id)).map((f) => f.key);
+    row.enabledFeatures = allFeatures.filter((f: (typeof allFeatures)[number]) => enabled.get(f.id)).map((f: (typeof allFeatures)[number]) => f.key);
   });
 
   return { rows: paged, total, page, perPage, totalPages };
