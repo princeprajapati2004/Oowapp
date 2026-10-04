@@ -13,13 +13,13 @@ const VALID_ORDER_TYPES = new Set(["DINE_IN", "TAKEAWAY", "DELIVERY"]);
 export default async function CreateManualOrderPage({
   searchParams,
 }: {
-  searchParams: Promise<{ type?: string; table?: string }>;
+  searchParams: Promise<{ type?: string; table?: string; returnTo?: string }>;
 }) {
   const session = await getAdminSession();
   if (!session) redirect("/login");
 
   const shop = await getShopById(session.shopId);
-  const { type, table } = await searchParams;
+  const { type, table, returnTo } = await searchParams;
   const initialOrderType = type && VALID_ORDER_TYPES.has(type) ? (type as "DINE_IN" | "TAKEAWAY" | "DELIVERY") : undefined;
   const initialTableNumber = table?.trim() || undefined;
 
@@ -45,6 +45,7 @@ export default async function CreateManualOrderPage({
       initialOrderType={initialTableNumber ? "DINE_IN" : initialOrderType}
       initialTableNumber={initialTableNumber}
       showProductImages={(shopAny.showProductImages as boolean) ?? true}
+      returnToHistory={returnTo === "history"}
     />
   );
 }

@@ -1,8 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { toast } from "sonner";
-import { ClipboardList, Loader2 } from "lucide-react";
+import { ClipboardList, Loader2, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/shared/empty-state";
 import { api } from "@/lib/api-client";
@@ -130,9 +131,20 @@ export function OrdersListView({
 
   return (
     <div className="space-y-4">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">Order History</h1>
-        <p className="text-muted-foreground text-sm">Tap any order card to check details and manage payments.</p>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">Order History</h1>
+          <p className="text-muted-foreground text-sm">Tap any order card to check details and manage payments.</p>
+        </div>
+        <Button
+          size="sm"
+          className="shrink-0"
+          render={<Link href="/admin/orders/create?returnTo=history" />}
+          nativeButton={false}
+        >
+          <Plus className="size-4" />
+          Create Order
+        </Button>
       </div>
 
       <OrderFiltersBar filters={filters} onChange={(patch) => setFilters((prev) => ({ ...prev, ...patch }))} />

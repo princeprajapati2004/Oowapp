@@ -78,3 +78,49 @@ export async function POST(request: Request) {
     return handleApiError(error);
   }
 }
+
+// Standard (non-transformed) Cloudinary secure_url shape:
+// https://res.cloudinary.com/<cloud>/image/upload/v<version>/<public_id>.<ext>
+// Reliable to parse since nothing here ever applies eager transformations.
+function extractPublicId(url: string): string | null {
+  try {
+    const { pathname } = new URL(url);
+    const marker = "/upload/";
+    const idx = pathname.indexOf(marker);
+    if (idx === -1) return null;
+    const rest = pathname
+      .slice(idx + marker.length)
+      .replace(/^v\d+\//, "")
+      .replace(/\.[a-zA-Z0-9]+$/, "");
+    return rest || null;
+  } catch {
+    return null;
+  }
+}
+
+// Best-effort storage cleanup when an owner removes an image from a
+// product's gallery — never load-bearing (the DB write already happened by
+// the time this is called), so failures here are swallowed by the caller.
+export async function DELETE(request: Request) {
+  try {
+    const session = await requireAdminSession();
+    const body = await request.json().catch(() => null);
+    const url = body?.url;
+    if (typeof url !== "string") {
+      return NextResponse.json({ error: "No url provided" }, { status: 400 });
+    }
+
+    const publicId = extractPublicId(url);
+    // Scoped to this shop's own upload folder (see the `folder` passed to
+    // upload_stream above) so one shop can never delete another's file by
+    // supplying an arbitrary Cloudinary URL it merely knows.
+    if (!publicId || !publicId.startsWith(`shops/${session.shopId}/`)) {
+      return NextResponse.json({ error: "Not allowed" }, { status: 403 });
+    }
+
+    await cloudinary.uploader.destroy(publicId).catch(() => null);
+    return NextResponse.json({ ok: true });
+  } catch (error) {
+    return handleApiError(error);
+  }
+}

@@ -125,12 +125,18 @@ export function CreateOrderPage({
   initialOrderType,
   initialTableNumber,
   showProductImages = true,
+  returnToHistory = false,
 }: {
   currency: string;
   shopSlug: string;
   initialOrderType?: OrderType;
   initialTableNumber?: string;
   showProductImages?: boolean;
+  // true when this flow was entered via Order History's "+ Create Order"
+  // button — on success, land back there instead of the order detail page.
+  // Default (false) keeps every other existing entry point's behavior
+  // unchanged (e.g. the Cash Counter's link into this same page).
+  returnToHistory?: boolean;
 }) {
   const router = useRouter();
 
@@ -678,10 +684,17 @@ export function CreateOrderPage({
         }
       }
 
-      // Straight to the order detail page instead of back to the list —
-      // that page already renders the full order and carries Print/Share/
-      // status actions for this exact moment.
-      router.push(`/admin/orders/${res.orderId}?created=1${readyForPayment ? "&pay=1" : ""}`);
+      if (returnToHistory) {
+        // Entered via Order History's "+ Create Order" button — land back
+        // there; the list's own SSE wiring (useOrderEvents) already
+        // live-prepends the new order with no extra refresh logic needed.
+        router.push("/admin/orders");
+      } else {
+        // Default: straight to the order detail page instead of back to the
+        // list — that page already renders the full order and carries
+        // Print/Share/status actions for this exact moment.
+        router.push(`/admin/orders/${res.orderId}?created=1${readyForPayment ? "&pay=1" : ""}`);
+      }
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : "Failed to create order");
     } finally {

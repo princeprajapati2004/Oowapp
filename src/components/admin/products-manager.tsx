@@ -40,8 +40,7 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { FormRow } from "@/components/shared/form-row";
 import { EmptyState } from "@/components/shared/empty-state";
 import { ConfirmDialog } from "@/components/shared/confirm-dialog";
-import { ImageUploader } from "@/components/shared/image-uploader";
-import { EvidencePhotosInput } from "@/components/shared/evidence-photos-input";
+import { ProductImageManager } from "@/components/admin/product-image-manager";
 import { BarcodeScanButton } from "@/components/admin/barcode-scan-button";
 import { ProductPartyPrices } from "@/components/admin/product-party-prices";
 import { api, ApiError } from "@/lib/api-client";
@@ -627,24 +626,19 @@ export function ProductsManager({
             <div className="flex-1 overflow-y-auto px-5 py-4">
               <TabsContent value="basic" className="space-y-4">
                 {itemSettings.productImageEnabled && (
-                  <>
-                    <FormRow label="Image" htmlFor="product-image">
-                      <ImageUploader value={form.imageUrl} onChange={(url) => setForm((f) => ({ ...f, imageUrl: url }))} />
-                    </FormRow>
-                    <FormRow
-                      label="Additional photos"
-                      htmlFor="product-gallery"
-                      description="Shown as a gallery on the customer's product page — e.g. back, side, or close-up shots."
-                    >
-                      <EvidencePhotosInput
-                        urls={form.imageUrls}
-                        onChange={(urls) => setForm((f) => ({ ...f, imageUrls: urls }))}
-                        endpoint="/api/upload"
-                        max={5}
-                        itemLabel="Product photo"
-                      />
-                    </FormRow>
-                  </>
+                  <FormRow
+                    label="Product images"
+                    htmlFor="product-images"
+                    description="Select multiple at once. The first (or starred) image is the primary photo shown on product cards, search, and order lines."
+                  >
+                    <ProductImageManager
+                      images={form.imageUrl ? [form.imageUrl, ...form.imageUrls] : form.imageUrls}
+                      onChange={(images) =>
+                        setForm((f) => ({ ...f, imageUrl: images[0] ?? null, imageUrls: images.slice(1) }))
+                      }
+                      max={8}
+                    />
+                  </FormRow>
                 )}
 
                 <FormRow label="Name" htmlFor="product-name" required>
