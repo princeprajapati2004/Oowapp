@@ -16,6 +16,9 @@ import {
   UtensilsCrossed,
   ImageOff,
   FileSpreadsheet,
+  MoreVertical,
+  Eye,
+  Power,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -41,6 +44,15 @@ import { FormRow } from "@/components/shared/form-row";
 import { EmptyState } from "@/components/shared/empty-state";
 import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 import { ProductImageManager } from "@/components/admin/product-image-manager";
+import { ProductDetailsSheet } from "@/components/admin/product-details-sheet";
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+} from "@/components/ui/dropdown-menu";
+import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import { BarcodeScanButton } from "@/components/admin/barcode-scan-button";
 import { ProductPartyPrices } from "@/components/admin/product-party-prices";
 import { api, ApiError } from "@/lib/api-client";
@@ -54,7 +66,7 @@ import type { listProducts } from "@/lib/services/product";
 import type { serializeProductsWithCost } from "@/lib/serialize";
 import type { ItemSettingsInput } from "@/lib/validation/item-settings";
 
-type ProductRow = ReturnType<typeof serializeProductsWithCost<Awaited<ReturnType<typeof listProducts>>[number]>>[number];
+export type ProductRow = ReturnType<typeof serializeProductsWithCost<Awaited<ReturnType<typeof listProducts>>[number]>>[number];
 type ItemSettings = ItemSettingsInput;
 type PartyOption = { id: string; name: string; phone: string };
 
@@ -130,6 +142,8 @@ export function ProductsManager({
   const [form, setForm] = useState(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<ProductRow | null>(null);
+  const [viewingProductId, setViewingProductId] = useState<string | null>(null);
+  const viewingProduct = products.find((p) => p.id === viewingProductId) ?? null;
 
   // Category search
   const [categorySearch, setCategorySearch] = useState("");
@@ -538,7 +552,12 @@ export function ProductsManager({
                   <div className={cn("flex-1 min-w-0", view === "grid" && "p-3 space-y-1.5")}>
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0">
-                        <p className="font-medium leading-tight text-sm truncate">{product.name}</p>
+                        <Tooltip>
+                          <TooltipTrigger className="block w-full min-w-0 text-left">
+                            <p className="font-medium leading-tight text-sm truncate">{product.name}</p>
+                          </TooltipTrigger>
+                          <TooltipContent>{product.name}</TooltipContent>
+                        </Tooltip>
                         {product.productCode && (
                           <p className="text-[11px] text-muted-foreground truncate">{product.productCode}</p>
                         )}
@@ -593,6 +612,39 @@ export function ProductsManager({
                     >
                       <Trash2 className="size-3.5" />
                     </Button>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger
+                        render={
+                          <Button
+                            variant="ghost"
+                            size="icon-sm"
+                            aria-label="More product options"
+                            className="text-muted-foreground hover:text-foreground"
+                            onClick={(e: React.MouseEvent) => e.stopPropagation()}
+                          />
+                        }
+                      >
+                        <MoreVertical className="size-3.5" />
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem onClick={() => setViewingProductId(product.id)}>
+                          <Eye className="size-3.5" /> View details
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => openEdit(product)}>
+                          <Pencil className="size-3.5" /> Edit product
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => handleDuplicate(product)}>
+                          <Copy className="size-3.5" /> Duplicate product
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => handleToggleAvailable(product)}>
+                          <Power className="size-3.5" /> {product.isAvailable ? "Disable" : "Enable"} product
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem variant="destructive" onClick={() => handleDeleteRequest(product)}>
+                          <Trash2 className="size-3.5" /> Delete product
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   </div>
                 </div>
               ))}
@@ -1030,6 +1082,23 @@ export function ProductsManager({
         confirmLabel="Delete"
         destructive
         onConfirm={handleDeleteConfirm}
+      />
+
+      <ProductDetailsSheet
+        product={viewingProduct}
+        onOpenChange={(open) => !open && setViewingProductId(null)}
+        currency={currency}
+        itemSettings={itemSettings}
+        onEdit={(product) => {
+          setViewingProductId(null);
+          openEdit(product);
+        }}
+        onDuplicate={handleDuplicate}
+        onToggleAvailable={handleToggleAvailable}
+        onDeleteRequest={(product) => {
+          setViewingProductId(null);
+          handleDeleteRequest(product);
+        }}
       />
     </div>
   );
