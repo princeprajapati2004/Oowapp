@@ -100,17 +100,28 @@ export function SubscriptionManager({
   current,
   history,
   plans,
+  siblingShopCount = 1,
 }: {
   shopId: string;
   current: CurrentSubscription;
   history: HistoryRow[];
   plans: Plan[];
+  siblingShopCount?: number;
 }) {
   const router = useRouter();
   const remainingDisplay = current.daysRemaining === null ? null : Math.max(current.daysRemaining, 0);
 
   return (
     <div className="space-y-4">
+      {siblingShopCount > 1 && (
+        <div className="flex items-start gap-2 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-800 dark:border-blue-900/50 dark:bg-blue-900/20 dark:text-blue-400">
+          <AlertTriangle className="size-4 shrink-0 mt-0.5" />
+          <p>
+            Billing is account-level — this owner has {siblingShopCount} businesses, and any
+            action below changes the plan for all of them, not just this one.
+          </p>
+        </div>
+      )}
       <Card>
         <CardHeader className="pb-3">
           <div className="flex items-center justify-between gap-2 flex-wrap">

@@ -1,5 +1,6 @@
 import { db } from "@/lib/db";
-import type { SubscriptionStatus, SubscriptionDuration } from "@/generated/prisma/client";
+import { NotFoundError } from "@/lib/api-utils";
+import type { SubscriptionStatus, SubscriptionDuration, BillingCycle } from "@/generated/prisma/client";
 
 const DURATION_DAYS: Record<SubscriptionDuration, number> = {
   FIFTEEN_DAYS: 15,
@@ -23,7 +24,7 @@ export function addDurationDays(startDate: Date, duration: SubscriptionDuration)
 
 export interface SubscriptionRecord {
   id: string | null; // null when this is a virtual (non-persisted) fallback
-  shopId: string;
+  adminId: string;
   resolvedPlanId: string | null; // Plan.id, resolved via planId FK or legacy-code fallback
   planCode: string;
   planName: string;
@@ -34,12 +35,17 @@ export interface SubscriptionRecord {
   createdBy: string | null;
   remarks: string | null;
   createdAt: Date;
+  // Scheduled-downgrade intent, surfaced as-is (never silently consumed) so the owner UI
+  // can show "switching to X on <date>" — resolvedPlanId/planCode/planName above already
+  // reflect the *effective* plan (i.e. the pending plan once endDate has passed).
+  cancelAtPeriodEnd: boolean;
+  pendingPlanId: string | null;
+  pendingBillingCycle: BillingCycle | null;
 }
 
-async function resolvePlanForSubscription(row: {
-  planId: string | null;
-  plan: string;
-}): Promise<{ id: string; code: string; name: string } | null> {
+type SubscriptionRow = NonNullable<Awaited<ReturnType<typeof db.subscription.findFirst>>>;
+
+async function resolvePlanForSubscription(row: { planId: string | null; plan: string }): Promise<{ id: string; code: string; name: string } | null> {
   if (row.planId) {
     const plan = await db.plan.findUnique({ where: { id: row.planId } });
     if (plan) return plan;
@@ -51,41 +57,82 @@ async function resolvePlanForSubscription(row: {
 }
 
 /**
- * Every new shop gets a Subscription row at signup (see createInitialSubscription,
- * called from src/app/api/auth/signup/route.ts). This only returns a virtual,
- * non-persisted default for shops that predate that hook — a read path must never
- * mutate data as a side effect, so nothing is written here.
+ * Pure derivation, zero writes, ever — if a downgrade was scheduled
+ * (cancelAtPeriodEnd) and the period has actually ended, the *effective*
+ * plan for every caller (feature resolution, limit checks, the owner's
+ * billing page) is the pending plan, from the moment endDate passes. A real
+ * new Subscription row only gets written the next time some other genuine
+ * mutation happens (a renewal/upgrade/SA action) — see subscription-billing.ts.
  */
-export async function getCurrentSubscription(shopId: string): Promise<SubscriptionRecord> {
+async function applyPendingDowngrade(
+  row: Pick<SubscriptionRow, "cancelAtPeriodEnd" | "pendingPlanId" | "endDate">,
+  resolvedPlan: { id: string; code: string; name: string } | null,
+  now: Date
+): Promise<{ id: string; code: string; name: string } | null> {
+  if (!row.cancelAtPeriodEnd || !row.pendingPlanId || !row.endDate || now < row.endDate) {
+    return resolvedPlan;
+  }
+  const pendingPlan = await db.plan.findUnique({ where: { id: row.pendingPlanId } });
+  return pendingPlan ?? resolvedPlan;
+}
+
+function toRecord(row: SubscriptionRow, effectivePlan: { id: string; code: string; name: string } | null): SubscriptionRecord {
+  return {
+    id: row.id,
+    adminId: row.adminId ?? "",
+    resolvedPlanId: effectivePlan?.id ?? null,
+    planCode: effectivePlan?.code ?? row.plan,
+    planName: effectivePlan?.name ?? row.plan,
+    status: row.status,
+    duration: row.duration,
+    startDate: row.startDate,
+    endDate: row.endDate,
+    createdBy: row.createdBy,
+    remarks: row.remarks,
+    createdAt: row.createdAt,
+    cancelAtPeriodEnd: row.cancelAtPeriodEnd,
+    pendingPlanId: row.pendingPlanId,
+    pendingBillingCycle: row.pendingBillingCycle,
+  };
+}
+
+/** Resolve the owning adminId for a shop — used by callers that only have a shopId
+ * (e.g. feature-permission.ts resolving a per-shop nav/route check) but must key
+ * subscription/billing lookups by the account, not the business. */
+export async function resolveAdminIdForShop(shopId: string): Promise<string> {
+  const shop = await db.shop.findUnique({ where: { id: shopId }, select: { adminId: true } });
+  if (!shop) throw new NotFoundError("Business not found");
+  return shop.adminId;
+}
+
+/**
+ * Every new admin account gets a Subscription row at signup (see createInitialSubscription,
+ * called from src/app/api/auth/complete-registration/route.ts). This only returns a virtual,
+ * non-persisted default for admins that predate that hook — a read path must never mutate
+ * data as a side effect, so nothing is written here.
+ *
+ * Keyed by adminId — authoritative as of multi-business support (one plan covers every
+ * shop an admin owns). The multi-business migration already backfilled adminId onto every
+ * pre-existing row, so no shopId fallback is needed here.
+ */
+export async function getCurrentSubscription(adminId: string): Promise<SubscriptionRecord> {
   const row = await db.subscription.findFirst({
-    where: { shopId },
+    where: { adminId },
     orderBy: { createdAt: "desc" },
   });
 
   if (row) {
     const plan = await resolvePlanForSubscription(row);
-    return {
-      id: row.id,
-      shopId: row.shopId,
-      resolvedPlanId: plan?.id ?? null,
-      planCode: plan?.code ?? row.plan,
-      planName: plan?.name ?? row.plan,
-      status: row.status,
-      duration: row.duration,
-      startDate: row.startDate,
-      endDate: row.endDate,
-      createdBy: row.createdBy,
-      remarks: row.remarks,
-      createdAt: row.createdAt,
-    };
+    const effectivePlan = await applyPendingDowngrade(row, plan, new Date());
+    return toRecord(row, effectivePlan);
   }
 
-  const shop = await db.shop.findUnique({ where: { id: shopId }, select: { createdAt: true } });
-  const startDate = shop?.createdAt ?? new Date();
+  const admin = await db.admin.findUnique({ where: { id: adminId }, select: { createdAt: true } });
+  const startDate = admin?.createdAt ?? new Date();
   const freePlan = await db.plan.findUnique({ where: { code: "FREE" } });
   return {
     id: null,
-    shopId,
+    adminId,
     resolvedPlanId: freePlan?.id ?? null,
     planCode: "FREE",
     planName: freePlan?.name ?? "Free",
@@ -96,16 +143,57 @@ export async function getCurrentSubscription(shopId: string): Promise<Subscripti
     createdBy: null,
     remarks: null,
     createdAt: startDate,
+    cancelAtPeriodEnd: false,
+    pendingPlanId: null,
+    pendingBillingCycle: null,
   };
 }
 
-/** Creates the initial trial Subscription row for a newly signed-up shop. */
-export async function createInitialSubscription(shopId: string) {
+/**
+ * Batched "latest Subscription per admin" for list views that show many businesses at
+ * once (Super Admin Businesses list, Super Admin Subscriptions list) — avoids an N+1 of
+ * getCurrentSubscription() calls, one shared implementation instead of each view
+ * inlining its own resolution. Admins with zero Subscription rows (pre-signup-hook
+ * stragglers, if any) are simply absent from the returned Map; callers should fall back
+ * to a virtual FREE/TRIAL display the same way getCurrentSubscription does, keyed off
+ * whatever admin/shop data they already have loaded.
+ */
+export async function getLatestSubscriptionsByAdminIds(adminIds: string[]): Promise<Map<string, SubscriptionRecord>> {
+  if (adminIds.length === 0) return new Map();
+
+  const [rows, plans] = await Promise.all([
+    db.subscription.findMany({
+      where: { adminId: { in: adminIds } },
+      orderBy: { createdAt: "desc" },
+    }),
+    db.plan.findMany(),
+  ]);
+
+  const planById = new Map<string, (typeof plans)[number]>(plans.map((p: (typeof plans)[number]) => [p.id, p]));
+  const planByCode = new Map<string, (typeof plans)[number]>(plans.map((p: (typeof plans)[number]) => [p.code, p]));
+  const now = new Date();
+
+  const result = new Map<string, SubscriptionRecord>();
+  for (const row of rows) {
+    if (!row.adminId || result.has(row.adminId)) continue; // keep only the latest (first) per admin
+    const plan = (row.planId ? planById.get(row.planId) : undefined) ?? planByCode.get(row.plan) ?? null;
+    const effectivePlan = await applyPendingDowngrade(row, plan, now);
+    result.set(row.adminId, toRecord(row, effectivePlan));
+  }
+  return result;
+}
+
+/**
+ * Creates the initial trial Subscription row for a newly signed-up admin. Billing is
+ * account-level (adminId) as of multi-business support — new rows never set shopId
+ * (legacy, read-only going forward).
+ */
+export async function createInitialSubscription(adminId: string) {
   const freePlan = await db.plan.findUnique({ where: { code: "FREE" } });
   const startDate = new Date();
   return db.subscription.create({
     data: {
-      shopId,
+      adminId,
       plan: "FREE",
       planId: freePlan?.id,
       status: "TRIAL",
@@ -155,11 +243,13 @@ export interface SubscriptionSummary {
   endDate: Date | null;
   daysRemaining: number | null;
   showExpiryWarning: boolean;
+  cancelAtPeriodEnd: boolean;
+  pendingPlanId: string | null;
 }
 
 /** Read-only subscription view for the business owner dashboard (no billing/history). */
-export async function getSubscriptionSummaryForBusiness(shopId: string): Promise<SubscriptionSummary> {
-  const sub = await getCurrentSubscription(shopId);
+export async function getSubscriptionSummaryForBusiness(adminId: string): Promise<SubscriptionSummary> {
+  const sub = await getCurrentSubscription(adminId);
   const status = computeDisplayStatus(sub);
   const daysRemaining = computeDaysRemaining(sub.endDate);
 
@@ -171,5 +261,7 @@ export async function getSubscriptionSummaryForBusiness(shopId: string): Promise
     endDate: sub.endDate,
     daysRemaining,
     showExpiryWarning: daysRemaining !== null && daysRemaining >= 0 && daysRemaining <= EXPIRY_WARNING_DAYS,
+    cancelAtPeriodEnd: sub.cancelAtPeriodEnd,
+    pendingPlanId: sub.pendingPlanId,
   };
 }

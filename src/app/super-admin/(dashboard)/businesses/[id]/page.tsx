@@ -161,6 +161,7 @@ export default async function BusinessDetailPage({
             current={currentForClient}
             history={historyForClient}
             plans={plansForClient}
+            siblingShopCount={subscriptionDetail.siblingShopCount}
           />
         </TabsContent>
 

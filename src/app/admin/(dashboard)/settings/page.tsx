@@ -38,7 +38,7 @@ export default async function SettingsPage() {
 
   const [admin, rawSubscription, enabledFeatureKeys, allFeatures, itemSettings] = await Promise.all([
     db.admin.findUnique({ where: { id: session.adminId }, select: { id: true, createdAt: true } }),
-    getCurrentSubscription(session.shopId),
+    getCurrentSubscription(session.adminId),
     resolveFeatures(session.shopId),
     db.feature.findMany({ where: { isActive: true }, select: { key: true, label: true } }),
     getOrCreateItemSettings(session.shopId),
@@ -252,6 +252,8 @@ export default async function SettingsPage() {
             endDate: rawSubscription.endDate,
             daysRemaining,
             showExpiryWarning: daysRemaining !== null && daysRemaining >= 0 && daysRemaining <= EXPIRY_WARNING_DAYS,
+            cancelAtPeriodEnd: rawSubscription.cancelAtPeriodEnd,
+            pendingPlanId: rawSubscription.pendingPlanId,
           }}
           duration={rawSubscription.duration}
           enabledFeatureLabels={enabledFeatureLabels}

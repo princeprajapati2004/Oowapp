@@ -20,6 +20,17 @@ export async function createNotification(
   return notification;
 }
 
+/** Billing/subscription events are account-level, but the notification bell is
+ * shop-scoped UI — fans the same notification out to every shop the admin owns, so
+ * the owner sees it regardless of which business they're currently viewing. */
+export async function notifyAdminShops(
+  adminId: string,
+  input: { type: NotificationType; title: string; body: string; link?: string | null }
+) {
+  const shops = await db.shop.findMany({ where: { adminId }, select: { id: true } });
+  await Promise.all(shops.map((shop: (typeof shops)[number]) => createNotification(shop.id, input)));
+}
+
 export async function listNotifications(shopId: string) {
   return db.notification.findMany({ where: { shopId }, orderBy: { createdAt: "desc" } });
 }

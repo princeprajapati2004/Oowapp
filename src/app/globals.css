@@ -49,6 +49,12 @@
   --radius-2xl: calc(var(--radius) * 1.8);
   --radius-3xl: calc(var(--radius) * 2.2);
   --radius-4xl: calc(var(--radius) * 2.6);
+
+  /* Desktop POS layout breakpoints (Create Order screen) — named to match
+     the product spec's own ranges instead of overloading Tailwind's default
+     lg/xl, which don't land on 1200/1600. */
+  --breakpoint-pos: 1200px;
+  --breakpoint-pos-xl: 1600px;
 }
 
 :root {

@@ -17,10 +17,17 @@ export async function POST(request: Request) {
 
     const admin = await db.admin.findUnique({
       where: { email: input.email },
-      select: { id: true, email: true, emailVerified: true, shop: { select: { id: true, businessName: true } } },
+      select: {
+        id: true,
+        email: true,
+        emailVerified: true,
+        shops: { select: { id: true, businessName: true }, orderBy: { createdAt: "asc" }, take: 1 },
+      },
     });
 
-    if (!admin || !admin.shop) {
+    const firstShop = admin?.shops[0];
+
+    if (!admin || !firstShop) {
       return NextResponse.json(
         { error: "Your account does not exist. Please set up your shop first with registration." },
         { status: 400 }
@@ -42,7 +49,7 @@ export async function POST(request: Request) {
       );
     }
 
-    await sendLoginOtp(admin.id, admin.email, admin.shop.businessName);
+    await sendLoginOtp(admin.id, admin.email, firstShop.businessName);
 
     return NextResponse.json({ ok: true });
   } catch (error) {

@@ -125,6 +125,61 @@ OOWAPP · oowapp.in
   return { html, text };
 }
 
+export function buildSubscriptionReceiptTemplate(opts: {
+  planName: string;
+  billingCycle: "MONTHLY" | "ANNUAL";
+  totalAmountFormatted: string;
+  invoiceNumber: string;
+}): EmailTemplate {
+  const cycleLabel = opts.billingCycle === "ANNUAL" ? "Annual" : "Monthly";
+  const html = `<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>Subscription receipt — OOWAPP</title>
+<style>${sharedStyles}</style></head>
+<body>
+<div class="wrapper">
+  <div class="header">
+    <img src="${BASE_URL}/logo_1.webp" alt="OOWAPP" />
+    <h1>OOWAPP</h1>
+  </div>
+  <div class="body">
+    <p class="greeting">Payment received — thank you!</p>
+    <p class="text">
+      Your <strong>${escapeHtml(opts.planName)}</strong> (${cycleLabel}) subscription is now active.
+    </p>
+    <div class="otp-box">
+      <div style="font-size:28px;font-weight:700;color:#065f46;">${opts.totalAmountFormatted}</div>
+      <p class="otp-expiry">Invoice ${escapeHtml(opts.invoiceNumber)}</p>
+    </div>
+    <p class="text" style="margin:0;font-size:13px;color:#6b7280;">
+      You can view and download this invoice any time from Subscription &amp; Billing in your dashboard.
+    </p>
+  </div>
+  <hr class="divider" />
+  <div class="footer">
+    <p>This is an automated message from OOWAPP</p>
+    <p><a href="${BASE_URL}">oowapp.in</a></p>
+    <p style="margin-top:8px;">© ${new Date().getFullYear()} OOWAPP. All rights reserved.</p>
+  </div>
+</div>
+</body>
+</html>`;
+
+  const text = `Payment received — thank you!
+
+Your ${opts.planName} (${cycleLabel}) subscription is now active.
+Amount: ${opts.totalAmountFormatted}
+Invoice: ${opts.invoiceNumber}
+
+You can view and download this invoice any time from Subscription & Billing in your dashboard.
+
+---
+OOWAPP · oowapp.in
+© ${new Date().getFullYear()} OOWAPP. All rights reserved.`;
+
+  return { html, text };
+}
+
 function escapeHtml(str: string): string {
   return str
     .replace(/&/g, "&amp;")

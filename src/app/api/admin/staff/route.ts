@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requireAdminSession } from "@/lib/session";
 import { assertFeatureEnabled } from "@/lib/services/feature-permission";
+import { checkSubscriptionLimit } from "@/lib/services/subscription-limits";
 import { handleApiError } from "@/lib/api-utils";
 import { hashPassword } from "@/lib/auth";
 import { db } from "@/lib/db";
@@ -46,6 +47,7 @@ export async function POST(request: Request) {
   try {
     const session = await requireAdminSession();
     await assertFeatureEnabled(session.shopId, "multi_staff");
+    await checkSubscriptionLimit(session.adminId, "USERS", 1);
     const body = await request.json();
     const input = createStaffSchema.parse(body);
 

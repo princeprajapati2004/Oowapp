@@ -8,7 +8,7 @@ export async function GET() {
   try {
     const session = await requireAdminSession();
     const [summary, features] = await Promise.all([
-      getSubscriptionSummaryForBusiness(session.shopId),
+      getSubscriptionSummaryForBusiness(session.adminId),
       resolveFeatures(session.shopId),
     ]);
 

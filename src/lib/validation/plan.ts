@@ -10,7 +10,13 @@ export const planSchema = z.object({
   name: z.string().trim().min(1, "Name is required").max(60),
   description: z.string().trim().max(300).optional().nullable(),
   isActive: z.boolean().default(true),
+  isArchived: z.boolean().default(false),
   sortOrder: z.coerce.number().int().default(0),
+  monthlyPrice: z.coerce.number().min(0).optional().nullable(),
+  annualPrice: z.coerce.number().min(0).optional().nullable(),
+  currency: z.string().trim().length(3).default("INR"),
+  isPopular: z.boolean().default(false),
+  trialDays: z.coerce.number().int().min(0).default(15),
 });
 
 export type PlanInput = z.infer<typeof planSchema>;
@@ -44,3 +50,17 @@ export const planFeaturesSchema = z.object({
 });
 
 export type PlanFeaturesInput = z.infer<typeof planFeaturesSchema>;
+
+const LIMIT_KEYS = ["BUSINESSES", "USERS", "PRODUCTS", "GODOWNS", "STORAGE_MB", "MONTHLY_ORDERS", "CUSTOMERS", "INVOICES"] as const;
+
+export const planLimitsSchema = z.object({
+  limits: z.array(
+    z.object({
+      limitKey: z.enum(LIMIT_KEYS),
+      // null = unlimited.
+      limitValue: z.coerce.number().int().min(0).nullable(),
+    })
+  ),
+});
+
+export type PlanLimitsInput = z.infer<typeof planLimitsSchema>;

@@ -1,7 +1,7 @@
 import { db } from "@/lib/db";
 import { ForbiddenError } from "@/lib/session";
 import { NotFoundError } from "@/lib/api-utils";
-import { getCurrentSubscription, computeDisplayStatus, isAccessGranting } from "@/lib/services/subscription";
+import { getCurrentSubscription, resolveAdminIdForShop, computeDisplayStatus, isAccessGranting } from "@/lib/services/subscription";
 
 export class FeatureNotEnabledError extends ForbiddenError {
   constructor(featureKey: string) {
@@ -22,11 +22,15 @@ export class FeatureNotEnabledError extends ForbiddenError {
  * this is the single choke point every premium route/page must call through.
  */
 export async function resolveFeatures(shopId: string): Promise<Record<string, boolean>> {
-  const [features, subscription, overrides] = await Promise.all([
+  const [features, adminId, overrides] = await Promise.all([
     db.feature.findMany({ where: { isActive: true } }),
-    getCurrentSubscription(shopId),
+    resolveAdminIdForShop(shopId),
     db.businessFeaturePermission.findMany({ where: { shopId } }),
   ]);
+  // Subscription/plan resolution is account-level (adminId) — BusinessFeaturePermission
+  // overrides above stay shop-scoped by design (a Super Admin can grant one specific
+  // shop an extra feature even when the owning account's plan doesn't include it).
+  const subscription = await getCurrentSubscription(adminId);
 
   const result: Record<string, boolean> = {};
   for (const feature of features) result[feature.key] = false;

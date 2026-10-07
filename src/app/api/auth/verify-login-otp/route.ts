@@ -7,6 +7,7 @@ import { verifyLoginOtpSchema } from "@/lib/validation/auth";
 import { verifyOtp } from "@/lib/services/email-otp";
 import { writeAuditLog, extractRequestMeta } from "@/lib/services/audit-log";
 import { checkRateLimit } from "@/lib/rate-limit";
+import { pickActiveShop } from "@/lib/services/shop";
 
 export async function POST(request: Request) {
   try {
@@ -21,10 +22,19 @@ export async function POST(request: Request) {
 
     const admin = await db.admin.findUnique({
       where: { email: input.email },
-      include: { shop: true },
+      include: { shops: true },
     });
 
-    if (!admin || !admin.shop) {
+    if (!admin) {
+      return NextResponse.json(
+        { error: "Your account does not exist. Please set up your shop first with registration." },
+        { status: 400 }
+      );
+    }
+
+    const activeShop = pickActiveShop(admin.shops, admin.lastActiveShopId);
+
+    if (!activeShop) {
       return NextResponse.json(
         { error: "Your account does not exist. Please set up your shop first with registration." },
         { status: 400 }
@@ -40,9 +50,12 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: result.error }, { status: 400 });
     }
 
-    await db.shop.update({ where: { id: admin.shop.id }, data: { lastLoginAt: new Date() } });
+    await db.shop.update({ where: { id: activeShop.id }, data: { lastLoginAt: new Date() } });
+    if (admin.lastActiveShopId !== activeShop.id) {
+      await db.admin.update({ where: { id: admin.id }, data: { lastActiveShopId: activeShop.id } });
+    }
 
-    const token = await signSession({ adminId: admin.id, shopId: admin.shop.id });
+    const token = await signSession({ adminId: admin.id, shopId: activeShop.id });
     const cookieStore = await cookies();
     cookieStore.set(SESSION_COOKIE, token, {
       httpOnly: true,
@@ -56,13 +69,13 @@ export async function POST(request: Request) {
       action: "ADMIN_LOGIN",
       actorType: "admin",
       actorId: admin.id,
-      shopId: admin.shop.id,
+      shopId: activeShop.id,
       ipAddress,
       userAgent,
       requestId,
     });
 
-    return NextResponse.json({ shopSlug: admin.shop.slug });
+    return NextResponse.json({ shopSlug: activeShop.slug });
   } catch (error) {
     return handleApiError(error);
   }

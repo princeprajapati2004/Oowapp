@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Building2, Search } from "lucide-react";
 import { PlatformAnalyticsService } from "@/lib/services/platform-analytics";
+import { getLatestSubscriptionsByAdminIds } from "@/lib/services/subscription";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { formatDate } from "@/lib/utils/date";
 
@@ -20,6 +21,10 @@ export default async function BusinessesPage({
     search,
     status,
   });
+
+  // Account-level — resolve once per admin so two businesses under the same
+  // account show the same plan (see getLatestSubscriptionsByAdminIds).
+  const subscriptionByAdmin = await getLatestSubscriptionsByAdminIds([...new Set<string>(shops.map((s: (typeof shops)[number]) => s.adminId))]);
 
   return (
     <div className="space-y-6 max-w-6xl">
@@ -111,7 +116,7 @@ export default async function BusinessesPage({
                         {shop._count.orders}
                       </td>
                       <td className="px-4 py-3">
-                        <PlanBadge plan={shop.subscriptions[0]?.plan ?? "FREE"} />
+                        <PlanBadge plan={subscriptionByAdmin.get(shop.adminId)?.planCode ?? "FREE"} />
                       </td>
                       <td className="px-4 py-3 text-muted-foreground whitespace-nowrap">
                         {formatDate(shop.createdAt)}
@@ -174,13 +179,16 @@ function StatusBadge({ status }: { status: string }) {
 function PlanBadge({ plan }: { plan: string }) {
   const map: Record<string, string> = {
     FREE: "text-muted-foreground",
+    MOON_STAR: "text-blue-600 dark:text-blue-400",
+    SUPER_STAR: "text-violet-600 dark:text-violet-400",
+    ENTERPRISE: "text-amber-600 dark:text-amber-400",
+    // Retired codes — only ever shown for historical subscribers still on them.
     STARTER: "text-blue-600 dark:text-blue-400",
     PRO: "text-violet-600 dark:text-violet-400",
-    ENTERPRISE: "text-amber-600 dark:text-amber-400",
   };
   return (
     <span className={`text-xs font-medium ${map[plan] ?? ""}`}>
-      {plan}
+      {plan.replace(/_/g, " ")}
     </span>
   );
 }

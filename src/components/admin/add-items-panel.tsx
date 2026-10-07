@@ -11,6 +11,7 @@ import { cn } from "@/lib/utils";
 import {
   type Product,
   type CartItem,
+  type ItemSettings,
   highlightMatch,
   NEW_BADGE_WINDOW_MS,
   LOW_STOCK_THRESHOLD,
@@ -36,6 +37,19 @@ interface AddItemsPanelProps {
   onCommitSearch: (query: string) => void;
   onClose: () => void;
   showImages?: boolean;
+  // "overlay" (default) is the existing full-screen modal opened via "Add
+  // Items" on mobile/tablet. "inline" renders the same search/category/grid
+  // content as a plain block, permanently docked in the desktop POS layout's
+  // left pane (create-order-page.tsx) — no header/close/Done chrome, since
+  // there's nothing to dismiss.
+  variant?: "overlay" | "inline";
+  // "list" (default) is the existing row layout. "grid" renders image-first
+  // product cards for the desktop POS pane — same filtered data and handlers,
+  // just different per-product markup.
+  density?: "list" | "grid";
+  // Item Master visibility toggles — gates the grid card's optional MRP/code
+  // fields so only shop-enabled fields ever show (see ItemSettings).
+  itemSettings?: ItemSettings | null;
 }
 
 function stockLabel(product: Product) {
@@ -63,7 +77,11 @@ export function AddItemsPanel({
   onCommitSearch,
   onClose,
   showImages = true,
+  variant = "overlay",
+  density = "list",
+  itemSettings,
 }: AddItemsPanelProps) {
+  const isInline = variant === "inline";
   const [search, setSearch] = useState("");
   const [searchFocused, setSearchFocused] = useState(false);
   const [activeCategory, setActiveCategory] = useState("all");
@@ -74,6 +92,7 @@ export function AddItemsPanel({
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
 
   const voiceSupported = useMemo(() => getSpeechRecognitionCtor() !== null, []);
   const barcodeSupported = useMemo(
@@ -90,6 +109,26 @@ export function AddItemsPanel({
       recognitionRef.current?.stop();
     };
   }, []);
+
+  // "/" focuses the search box (unless already typing somewhere), Escape
+  // backs out of the barcode scanner sub-overlay — section 25's keyboard
+  // support, scoped to this panel so it works identically whether it's the
+  // mobile overlay or the desktop inline pane.
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key === "/") {
+        const target = e.target as HTMLElement | null;
+        const tag = target?.tagName;
+        if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || target?.isContentEditable) return;
+        e.preventDefault();
+        searchInputRef.current?.focus();
+      } else if (e.key === "Escape" && scannerOpen) {
+        closeScanner();
+      }
+    }
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [scannerOpen]);
 
   const categories = useMemo(() => {
     const map = new Map<string, string>();
@@ -241,23 +280,25 @@ export function AddItemsPanel({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col bg-background">
-      {/* Header */}
-      <header className="flex shrink-0 items-center gap-3 border-b px-4 py-3">
-        <button
-          onClick={onClose}
-          aria-label="Close item selection"
-          className="flex size-9 shrink-0 items-center justify-center rounded-full transition-colors hover:bg-muted"
-        >
-          <ArrowLeft className="size-5" />
-        </button>
-        <div className="min-w-0 flex-1">
-          <h2 className="text-base font-semibold">Select Items</h2>
-          <p className="text-xs text-muted-foreground">
-            {selectedCount > 0 ? `${selectedCount} item${selectedCount !== 1 ? "s" : ""} selected` : "Tap items to add them"}
-          </p>
-        </div>
-      </header>
+    <div className={isInline ? "flex h-full flex-col bg-background" : "fixed inset-0 z-50 flex flex-col bg-background"}>
+      {/* Header — overlay only; the inline desktop pane has nothing to close */}
+      {!isInline && (
+        <header className="flex shrink-0 items-center gap-3 border-b px-4 py-3">
+          <button
+            onClick={onClose}
+            aria-label="Close item selection"
+            className="flex size-9 shrink-0 items-center justify-center rounded-full transition-colors hover:bg-muted"
+          >
+            <ArrowLeft className="size-5" />
+          </button>
+          <div className="min-w-0 flex-1">
+            <h2 className="text-base font-semibold">Select Items</h2>
+            <p className="text-xs text-muted-foreground">
+              {selectedCount > 0 ? `${selectedCount} item${selectedCount !== 1 ? "s" : ""} selected` : "Tap items to add them"}
+            </p>
+          </div>
+        </header>
+      )}
 
       {/* Search + filters */}
       <div className="shrink-0 space-y-2.5 border-b px-4 py-3">
@@ -265,15 +306,16 @@ export function AddItemsPanel({
           <div className="relative flex-1">
             <Search className="absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
             <Input
+              ref={searchInputRef}
               aria-label="Search products"
-              placeholder="Search products or scan barcode..."
+              placeholder="Search products or scan barcode... (Press / to focus)"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               onFocus={() => setSearchFocused(true)}
               onBlur={() => setTimeout(() => setSearchFocused(false), 150)}
               onKeyDown={(e) => { if (e.key === "Enter") onCommitSearch(search); }}
               className="h-10 pr-8 pl-8"
-              autoFocus
+              autoFocus={!isInline}
             />
             {search && (
               <button
@@ -395,6 +437,98 @@ export function AddItemsPanel({
               Clear filters
             </button>
           </div>
+        ) : density === "grid" ? (
+          <div
+            className="grid grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-3"
+            role="list"
+            aria-label="Products"
+          >
+            {filtered.map((product) => {
+              const inCart = cart.find((i) => i.productId === product.id);
+              const mrpNum = product.mrp != null ? Number(product.mrp) : null;
+              const showMrp =
+                itemSettings?.mrpEnabled !== false && mrpNum != null && mrpNum > Number(product.price);
+              const showCode = !!itemSettings?.productCodeEnabled && !!product.productCode;
+              return (
+                <div
+                  key={product.id}
+                  role="button"
+                  tabIndex={0}
+                  title={product.name}
+                  onClick={() => onAddToCart(product)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      onAddToCart(product);
+                    }
+                  }}
+                  className="flex cursor-pointer flex-col overflow-hidden rounded-xl border bg-card shadow-sm transition-shadow outline-none hover:shadow-md focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  {showImages && (
+                    <div className="relative aspect-square w-full shrink-0 overflow-hidden bg-muted">
+                      {product.imageUrl ? (
+                        <Image src={product.imageUrl} alt={product.name} fill sizes="200px" className="object-cover" unoptimized />
+                      ) : (
+                        <div className="flex size-full items-center justify-center">
+                          <ImageOff className="size-6 text-muted-foreground/40" />
+                        </div>
+                      )}
+                      {inCart && (
+                        <span className="absolute top-1.5 right-1.5 flex min-w-5 items-center justify-center rounded-full bg-primary px-1.5 py-0.5 text-[11px] font-bold text-primary-foreground shadow">
+                          {inCart.quantity}
+                        </span>
+                      )}
+                    </div>
+                  )}
+
+                  <div className="flex flex-1 flex-col gap-1 p-2.5">
+                    <p className="line-clamp-2 text-sm font-medium leading-snug">
+                      {highlightMatch(product.name, search)}
+                    </p>
+                    <div className="flex items-baseline gap-1.5">
+                      <span className="text-sm font-semibold">{formatCurrency(Number(product.price), currency)}</span>
+                      {showMrp && (
+                        <span className="text-xs text-muted-foreground line-through">
+                          {formatCurrency(mrpNum!, currency)}
+                        </span>
+                      )}
+                    </div>
+                    {showCode && <p className="truncate text-[10px] text-muted-foreground">#{product.productCode}</p>}
+                    <div className="mt-0.5">{productBadges(product)}</div>
+
+                    <div className="mt-auto pt-1.5" onClick={(e) => e.stopPropagation()}>
+                      {inCart ? (
+                        <div className="flex items-center justify-between gap-1.5 rounded-md border bg-muted/40 p-1">
+                          <button
+                            onClick={() => onUpdateQty(product.id, -1)}
+                            aria-label={`Decrease quantity of ${product.name}`}
+                            className="flex size-7 items-center justify-center rounded-md transition-colors hover:bg-background active:scale-95"
+                          >
+                            <Minus className="size-3.5" />
+                          </button>
+                          <span className="text-sm font-semibold tabular-nums">{inCart.quantity}</span>
+                          <button
+                            onClick={() => onUpdateQty(product.id, 1)}
+                            aria-label={`Increase quantity of ${product.name}`}
+                            className="flex size-7 items-center justify-center rounded-md transition-colors hover:bg-background active:scale-95"
+                          >
+                            <Plus className="size-3.5" />
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          onClick={() => onAddToCart(product)}
+                          className="flex h-9 w-full items-center justify-center gap-1 rounded-md bg-primary/10 text-sm font-semibold text-primary transition-all hover:bg-primary/20 active:scale-95"
+                        >
+                          <Plus className="size-3.5" /> Add
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         ) : (
           <div className="space-y-2" role="list" aria-label="Products">
             {filtered.map((product) => {
@@ -459,12 +593,15 @@ export function AddItemsPanel({
         )}
       </div>
 
-      {/* Footer */}
-      <div className="shrink-0 border-t px-4 py-3">
-        <Button onClick={onClose} className="h-12 w-full text-base font-semibold">
-          Done{selectedCount > 0 ? ` · ${selectedCount} item${selectedCount !== 1 ? "s" : ""}` : ""}
-        </Button>
-      </div>
+      {/* Footer — overlay only; the desktop inline pane has no "Done" step,
+          the cart panel's Create Order button is the natural end-point */}
+      {!isInline && (
+        <div className="shrink-0 border-t px-4 py-3">
+          <Button onClick={onClose} className="h-12 w-full text-base font-semibold">
+            Done{selectedCount > 0 ? ` · ${selectedCount} item${selectedCount !== 1 ? "s" : ""}` : ""}
+          </Button>
+        </div>
+      )}
 
       {scannerOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/85 p-4">

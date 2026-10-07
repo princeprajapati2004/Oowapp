@@ -76,24 +76,27 @@ export default async function SuperAdminDashboardPage() {
             <p className="text-sm text-muted-foreground py-4 text-center">No signups yet.</p>
           ) : (
             <div className="divide-y">
-              {recentSignups.map((admin: (typeof recentSignups)[number]) => (
-                <div key={admin.id} className="flex items-center justify-between py-3 gap-4">
-                  <div className="min-w-0">
-                    <p className="text-sm font-medium truncate">
-                      {admin.shop?.businessName ?? "—"}
-                    </p>
-                    <p className="text-xs text-muted-foreground truncate">{admin.email}</p>
+              {recentSignups.map((admin: (typeof recentSignups)[number]) => {
+                const shop = admin.shops[0];
+                return (
+                  <div key={admin.id} className="flex items-center justify-between py-3 gap-4">
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium truncate">
+                        {shop?.businessName ?? "—"}
+                      </p>
+                      <p className="text-xs text-muted-foreground truncate">{admin.email}</p>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <StatusBadge status={shop?.status ?? "ACTIVE"} />
+                      <p className="text-xs text-muted-foreground mt-1">
+                        {shop?.createdAt
+                          ? formatDistanceToNow(new Date(shop.createdAt))
+                          : "—"}
+                      </p>
+                    </div>
                   </div>
-                  <div className="text-right shrink-0">
-                    <StatusBadge status={admin.shop?.status ?? "ACTIVE"} />
-                    <p className="text-xs text-muted-foreground mt-1">
-                      {admin.shop?.createdAt
-                        ? formatDistanceToNow(new Date(admin.shop.createdAt))
-                        : "—"}
-                    </p>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </CardContent>

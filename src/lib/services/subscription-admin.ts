@@ -4,6 +4,7 @@ import { NotFoundError } from "@/lib/api-utils";
 import type { SubscriptionDuration, SubscriptionPlan as LegacyPlanEnum } from "@/generated/prisma/client";
 import {
   getCurrentSubscription,
+  getLatestSubscriptionsByAdminIds,
   computeDisplayStatus,
   computeDaysRemaining,
   addDurationDays,
@@ -16,10 +17,19 @@ import {
 // src/lib/services/subscription.ts (the read-only business-owner view + core resolution
 // helpers from Phase 1) so that file never needs to change for this work — this module
 // only adds new capability on top of it.
+//
+// Every function here is called with a shopId (the Super Admin UI navigates "by
+// business," URL param included) but resolves and mutates by the owning adminId
+// internally — Subscription is account-level (one plan covers every shop an admin
+// owns), so changing "a shop's" plan here really changes the whole account's plan.
+// siblingShopCount (returned by resolveShopAndAdmin/getSubscriptionDetailForSuperAdmin)
+// is how the UI surfaces "this affects N businesses" instead of silently doing it.
 
-async function assertShopExists(shopId: string) {
-  const shop = await db.shop.findUnique({ where: { id: shopId }, select: { id: true } });
+async function resolveShopAndAdmin(shopId: string): Promise<{ adminId: string; businessName: string; siblingShopCount: number }> {
+  const shop = await db.shop.findUnique({ where: { id: shopId }, select: { adminId: true, businessName: true } });
   if (!shop) throw new NotFoundError("Business not found");
+  const siblingShopCount = await db.shop.count({ where: { adminId: shop.adminId } });
+  return { adminId: shop.adminId, businessName: shop.businessName, siblingShopCount };
 }
 
 async function resolvePlanByCode(code: string) {
@@ -56,14 +66,14 @@ export async function createSubscription(
   shopId: string,
   opts: MutationActor & { planCode: string; duration: SubscriptionDuration; endDate?: Date }
 ) {
-  await assertShopExists(shopId);
+  const { adminId } = await resolveShopAndAdmin(shopId);
   const plan = await resolvePlanByCode(opts.planCode);
   const startDate = new Date();
   const endDate = resolveEndDate(startDate, opts.duration, opts.endDate);
 
   return db.subscription.create({
     data: {
-      shopId,
+      adminId,
       plan: legacyPlanColumnValue(plan.code),
       planId: plan.id,
       status: "ACTIVE",
@@ -81,14 +91,14 @@ export async function renewSubscription(
   shopId: string,
   opts: MutationActor & { duration: SubscriptionDuration; endDate?: Date }
 ) {
-  await assertShopExists(shopId);
-  const current = await getCurrentSubscription(shopId);
+  const { adminId } = await resolveShopAndAdmin(shopId);
+  const current = await getCurrentSubscription(adminId);
   const startDate = new Date();
   const endDate = resolveEndDate(startDate, opts.duration, opts.endDate);
 
   return db.subscription.create({
     data: {
-      shopId,
+      adminId,
       plan: legacyPlanColumnValue(current.planCode),
       planId: current.resolvedPlanId,
       status: "ACTIVE",
@@ -106,14 +116,14 @@ export async function extendSubscription(
   shopId: string,
   opts: MutationActor & { duration: SubscriptionDuration; endDate?: Date }
 ) {
-  await assertShopExists(shopId);
-  const current = await getCurrentSubscription(shopId);
+  const { adminId } = await resolveShopAndAdmin(shopId);
+  const current = await getCurrentSubscription(adminId);
   const base = current.endDate && current.endDate > new Date() ? current.endDate : new Date();
   const endDate = resolveEndDate(base, opts.duration, opts.endDate);
 
   return db.subscription.create({
     data: {
-      shopId,
+      adminId,
       plan: legacyPlanColumnValue(current.planCode),
       planId: current.resolvedPlanId,
       status: current.status === "SUSPENDED" ? "SUSPENDED" : "ACTIVE",
@@ -128,13 +138,13 @@ export async function extendSubscription(
 }
 
 export async function changePlan(shopId: string, opts: MutationActor & { planCode: string }) {
-  await assertShopExists(shopId);
-  const current = await getCurrentSubscription(shopId);
+  const { adminId } = await resolveShopAndAdmin(shopId);
+  const current = await getCurrentSubscription(adminId);
   const plan = await resolvePlanByCode(opts.planCode);
 
   return db.subscription.create({
     data: {
-      shopId,
+      adminId,
       plan: legacyPlanColumnValue(plan.code),
       planId: plan.id,
       status: current.status,
@@ -149,12 +159,12 @@ export async function changePlan(shopId: string, opts: MutationActor & { planCod
 }
 
 export async function suspendSubscription(shopId: string, opts: MutationActor) {
-  await assertShopExists(shopId);
-  const current = await getCurrentSubscription(shopId);
+  const { adminId } = await resolveShopAndAdmin(shopId);
+  const current = await getCurrentSubscription(adminId);
 
   return db.subscription.create({
     data: {
-      shopId,
+      adminId,
       plan: legacyPlanColumnValue(current.planCode),
       planId: current.resolvedPlanId,
       status: "SUSPENDED",
@@ -169,15 +179,15 @@ export async function suspendSubscription(shopId: string, opts: MutationActor) {
 }
 
 export async function resumeSubscription(shopId: string, opts: MutationActor) {
-  await assertShopExists(shopId);
-  const current = await getCurrentSubscription(shopId);
+  const { adminId } = await resolveShopAndAdmin(shopId);
+  const current = await getCurrentSubscription(adminId);
   if (current.status !== "SUSPENDED") {
     throw new Error("Subscription is not currently suspended.");
   }
 
   return db.subscription.create({
     data: {
-      shopId,
+      adminId,
       plan: legacyPlanColumnValue(current.planCode),
       planId: current.resolvedPlanId,
       status: "ACTIVE",
@@ -192,12 +202,12 @@ export async function resumeSubscription(shopId: string, opts: MutationActor) {
 }
 
 export async function expireSubscription(shopId: string, opts: MutationActor) {
-  await assertShopExists(shopId);
-  const current = await getCurrentSubscription(shopId);
+  const { adminId } = await resolveShopAndAdmin(shopId);
+  const current = await getCurrentSubscription(adminId);
 
   return db.subscription.create({
     data: {
-      shopId,
+      adminId,
       plan: legacyPlanColumnValue(current.planCode),
       planId: current.resolvedPlanId,
       status: "EXPIRED",
@@ -212,11 +222,11 @@ export async function expireSubscription(shopId: string, opts: MutationActor) {
 }
 
 export async function getSubscriptionDetailForSuperAdmin(shopId: string) {
-  await assertShopExists(shopId);
+  const { adminId, siblingShopCount } = await resolveShopAndAdmin(shopId);
   const [current, historyRows] = await Promise.all([
-    getCurrentSubscription(shopId),
+    getCurrentSubscription(adminId),
     db.subscription.findMany({
-      where: { shopId },
+      where: { adminId },
       orderBy: { createdAt: "desc" },
       include: { planRef: true },
     }),
@@ -228,6 +238,7 @@ export async function getSubscriptionDetailForSuperAdmin(shopId: string) {
       displayStatus: computeDisplayStatus(current),
       daysRemaining: computeDaysRemaining(current.endDate),
     },
+    siblingShopCount,
     history: historyRows.map((row: (typeof historyRows)[number]) => ({
       id: row.id,
       planCode: row.planRef?.code ?? row.plan,
@@ -273,40 +284,23 @@ export async function listBusinessSubscriptions(filters: SubscriptionListFilters
     orderBy: { createdAt: "desc" },
     include: { admin: { select: { email: true } } },
   });
-  const shopIds = shops.map((s: (typeof shops)[number]) => s.id);
 
-  // Batched instead of one getCurrentSubscription() call per shop — this list can span
-  // every business on the platform, and N+1 queries against a remote pooled Postgres
-  // made the page slow enough to trip Turbopack dev-mode's RSC stream handling.
-  const [allSubs, plans] = await Promise.all([
-    db.subscription.findMany({
-      where: { shopId: { in: shopIds } },
-      orderBy: { createdAt: "desc" },
-      include: { planRef: true },
-    }),
-    db.plan.findMany(),
-  ]);
-
-  const latestByShop = new Map<string, (typeof allSubs)[number]>();
-  for (const sub of allSubs) {
-    if (!latestByShop.has(sub.shopId)) latestByShop.set(sub.shopId, sub);
-  }
-  const planByCode = new Map(plans.map((p: (typeof plans)[number]) => [p.code, p]));
-  const freePlan = planByCode.get("FREE");
+  // Subscription is account-level — resolve once per admin, not once per shop, so two
+  // businesses under the same account correctly show the same plan (see
+  // getLatestSubscriptionsByAdminIds's doc comment for why this replaced an earlier,
+  // independent shopId-keyed inline resolution here).
+  const adminIds = [...new Set<string>(shops.map((s: (typeof shops)[number]) => s.adminId))];
+  const subscriptionByAdmin = await getLatestSubscriptionsByAdminIds(adminIds);
 
   let rows = shops.map((shop: (typeof shops)[number]) => {
-    const latest = latestByShop.get(shop.id);
-    const startDate = latest?.startDate ?? shop.createdAt;
-    const record = {
-      status: latest?.status ?? ("TRIAL" as const),
-      endDate: latest?.endDate ?? addDurationDays(startDate, DEFAULT_TRIAL_DURATION),
-    };
-    // Mirrors getCurrentSubscription's resolution order: planId FK first, then the
-    // legacy plan-code bridge fallback, then FREE for shops with no row at all.
-    const resolvedPlan = latest?.planRef ?? (latest ? planByCode.get(latest.plan) : freePlan) ?? null;
+    const sub = subscriptionByAdmin.get(shop.adminId);
+    const startDate = sub?.startDate ?? shop.createdAt;
+    const endDate = sub?.endDate ?? addDurationDays(startDate, DEFAULT_TRIAL_DURATION);
+    const record = { status: sub?.status ?? ("TRIAL" as const), endDate };
 
     return {
       shopId: shop.id,
+      adminId: shop.adminId,
       slug: shop.slug,
       logoUrl: shop.logoUrl,
       businessName: shop.businessName,
@@ -314,14 +308,14 @@ export async function listBusinessSubscriptions(filters: SubscriptionListFilters
       businessType: shop.businessType as string,
       phone: shop.phone,
       email: shop.admin.email,
-      resolvedPlanId: resolvedPlan?.id ?? null,
-      planCode: resolvedPlan?.code ?? latest?.plan ?? "FREE",
-      planName: resolvedPlan?.name ?? latest?.plan ?? "Free",
+      resolvedPlanId: sub?.resolvedPlanId ?? null,
+      planCode: sub?.planCode ?? "FREE",
+      planName: sub?.planName ?? "Free",
       status: computeDisplayStatus(record),
       accountStatus: shop.status as string,
       startDate,
-      endDate: record.endDate,
-      daysRemaining: computeDaysRemaining(record.endDate),
+      endDate,
+      daysRemaining: computeDaysRemaining(endDate),
       enabledFeatures: [] as string[],
     };
   });

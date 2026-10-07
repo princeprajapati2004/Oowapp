@@ -1,8 +1,9 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { toast } from "sonner";
-import { AlertTriangle, Check, Copy } from "lucide-react";
+import { AlertTriangle, Check, Copy, ArrowRight } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -136,8 +137,8 @@ export function SubscriptionBillingSection({
         <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-900/50 dark:bg-amber-900/20 dark:text-amber-400">
           <AlertTriangle className="mt-0.5 size-4 shrink-0" />
           <p>
-            Subscription expires {remainingDisplay === 0 ? "today" : `in ${remainingDisplay} day${remainingDisplay === 1 ? "" : "s"}`}.
-            Please contact support to renew your subscription.
+            Subscription expires {remainingDisplay === 0 ? "today" : `in ${remainingDisplay} day${remainingDisplay === 1 ? "" : "s"}`}.{" "}
+            <Link href="/admin/subscription" className="underline underline-offset-2">Renew now</Link>.
           </p>
         </div>
       )}
@@ -166,10 +167,13 @@ export function SubscriptionBillingSection({
         )}
       </div>
 
-      <div className="rounded-lg border border-dashed bg-muted/30 px-3 py-2.5 text-sm text-muted-foreground">
-        Subscriptions on OowApp are managed directly by our team. To upgrade, renew, or make changes to your
-        plan or billing, please contact your OowApp support contact.
-      </div>
+      <Link
+        href="/admin/subscription"
+        className="flex items-center justify-between gap-2 rounded-lg border bg-muted/30 px-3 py-2.5 text-sm font-medium transition-colors hover:bg-muted/50"
+      >
+        <span>Manage Subscription — usage, plans, billing, and invoices</span>
+        <ArrowRight className="size-4 shrink-0" />
+      </Link>
 
       <div className="border-t pt-4">
         <p className="mb-3 text-xs font-semibold tracking-wide text-muted-foreground uppercase">Account</p>

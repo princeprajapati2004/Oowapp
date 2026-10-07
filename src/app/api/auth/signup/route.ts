@@ -19,11 +19,11 @@ export async function POST(request: Request) {
 
     const existing = await db.admin.findUnique({
       where: { email: input.email },
-      select: { id: true, emailVerified: true, shop: { select: { id: true } } },
+      select: { id: true, emailVerified: true, shops: { select: { id: true }, take: 1 } },
     });
 
     if (existing) {
-      if (existing.emailVerified && existing.shop) {
+      if (existing.emailVerified && existing.shops.length > 0) {
         return NextResponse.json(
           { error: "An account with this email already exists. Please log in instead." },
           { status: 409 }

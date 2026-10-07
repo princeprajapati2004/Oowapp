@@ -21,6 +21,12 @@ export interface Product {
   // Number() before use, same convention as `price` elsewhere in this file.
   offerType?: "PERCENTAGE" | "FLAT" | null;
   offerValue?: number | string | null;
+  // Already present on every /api/admin/products response (Prisma returns
+  // full rows, no `select`) — just not previously typed on this shared
+  // shape. Decimal fields serialize as strings, same convention as `price`.
+  mrp?: number | string | null;
+  unit?: string | null;
+  productCode?: string | null;
 }
 
 // Carries a couple of display-only fields (imageUrl, categoryName) snapshotted
@@ -40,6 +46,17 @@ export interface CartItem {
   // computed offer and showing a stale discount would be misleading.
   originalPrice?: number | null;
   offerDiscount?: number | null;
+}
+
+// Optional-field visibility toggles (see ItemSettings in schema.prisma) —
+// controls which optional product attributes the desktop POS grid card is
+// allowed to show, same settings the Product form itself already respects.
+export interface ItemSettings {
+  mrpEnabled: boolean;
+  stockEnabled: boolean;
+  barcodeEnabled: boolean;
+  productCodeEnabled: boolean;
+  offerEnabled: boolean;
 }
 
 export interface Tax {

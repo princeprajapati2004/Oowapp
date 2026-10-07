@@ -132,6 +132,38 @@ enum SubscriptionActionType {
   SUSPENDED
   RESUMED
   EXPIRED
+  // Owner scheduled a downgrade that will take effect at the end of the
+  // current billing period (usage didn't fit the new plan's limits today) —
+  // see subscription-billing.ts::scheduleDowngrade. The row itself keeps the
+  // current plan/dates; only pendingPlanId/pendingBillingCycle are set.
+  DOWNGRADE_SCHEDULED
+}
+
+// Numeric per-plan caps (distinct from the boolean PlanFeature toggles) —
+// see PlanLimit below and subscription-limits.ts::checkSubscriptionLimit.
+enum LimitKey {
+  BUSINESSES
+  USERS
+  PRODUCTS
+  GODOWNS
+  STORAGE_MB
+  MONTHLY_ORDERS
+  CUSTOMERS
+  INVOICES
+}
+
+enum BillingCycle {
+  MONTHLY
+  ANNUAL
+}
+
+enum TransactionStatus {
+  INITIATED
+  SUCCESS
+  FAILED
+  PENDING
+  CANCELLED
+  REFUNDED
 }
 
 enum OrderStatus {
@@ -302,6 +334,12 @@ enum NotificationType {
   ORDER_STATUS_CHANGED
   TABLE_OCCUPIED
   TABLE_RELEASED
+  // Subscription/billing — account-level events, fanned out to every shop the
+  // admin owns (the notification bell is shop-scoped UI; billing isn't).
+  SUBSCRIPTION_ACTIVATED
+  SUBSCRIPTION_PAYMENT_FAILED
+  SUBSCRIPTION_EXPIRING
+  SUBSCRIPTION_USAGE_LIMIT_REACHED
 }
 
 enum MenuImportSourceType {
@@ -345,6 +383,7 @@ enum AuditAction {
   PASSWORD_RESET_COMPLETED
   ONBOARDING_COMPLETED
   // Business lifecycle
+  SHOP_CREATED
   SHOP_UPDATED
   SHOP_SUSPENDED
   SHOP_ACTIVATED
@@ -381,6 +420,19 @@ enum AuditAction {
   // Platform
   PLATFORM_SETTINGS_UPDATED
   SUBSCRIPTION_CHANGED
+  // Subscription plans & billing — SUBSCRIPTION_CHANGED above stays the
+  // catch-all for lifecycle mutations (create/renew/extend/suspend/resume/
+  // expire/change_plan/upgrade/downgrade/cancel, differentiated via
+  // metadata, matching the existing convention); these are the handful of
+  // genuinely distinct event *types* worth their own value.
+  PLAN_CREATED
+  PLAN_UPDATED
+  FEATURE_CREATED
+  SUBSCRIPTION_PAYMENT_SUCCEEDED
+  SUBSCRIPTION_PAYMENT_FAILED
+  SUBSCRIPTION_COUPON_CREATED
+  SUBSCRIPTION_COUPON_UPDATED
+  SUBSCRIPTION_COUPON_REDEEMED
 }
 
 // ─── Core Models ──────────────────────────────────────────────────────────────
@@ -402,7 +454,17 @@ model Admin {
   // Verifies Shop.whatsappNumber (collected at signup) — kept on Admin, not
   // Shop, to mirror emailVerified's placement as an owner-identity flag.
   createdAt     DateTime @default(now())
-  shop          Shop?
+  shops         Shop[]   @relation("ShopOwner")
+
+  // Which of this admin's shops to resume into on next login/dashboard load.
+  // Nullable: pre-multi-business admins backfill lazily (falls back to the
+  // earliest-created shop when unset) — see src/lib/services/shop.ts.
+  lastActiveShopId String?
+  lastActiveShop   Shop?   @relation("AdminLastActiveShop", fields: [lastActiveShopId], references: [id], onDelete: SetNull)
+
+  subscriptions Subscription[]
+  subscriptionTransactions      SubscriptionTransaction[]
+  subscriptionCouponRedemptions SubscriptionCouponRedemption[]
 
   emailVerifications EmailVerification[]
 
@@ -426,8 +488,12 @@ model EmailVerification {
 
 model Shop {
   id             String       @id @default(cuid())
-  adminId        String       @unique
-  admin          Admin        @relation(fields: [adminId], references: [id], onDelete: Cascade)
+  // No longer @unique as of multi-business support — one Admin may own
+  // several Shops. Subscription/billing lives on Admin, not Shop (see
+  // Subscription.adminId below).
+  adminId        String
+  admin          Admin        @relation("ShopOwner", fields: [adminId], references: [id], onDelete: Cascade)
+  lastActiveForAdmins Admin[] @relation("AdminLastActiveShop")
   slug           String       @unique
   businessName   String
   businessType   BusinessType @default(RESTAURANT)
@@ -595,6 +661,7 @@ model Shop {
   lossDamageRecords      LossDamageRecord[]
   purchases              Purchase[]
 
+  @@index([adminId])
   @@map("shops")
 }
 
@@ -1988,9 +2055,20 @@ model SuperAdmin {
 }
 
 model Subscription {
-  id        String                 @id @default(cuid())
-  shopId    String
-  shop      Shop                   @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  id     String @id @default(cuid())
+  // Authoritative as of multi-business support — billing is account-level
+  // (one plan covers all of an admin's shops), not per-shop. Nullable only
+  // because rows created before this migration don't have it set directly;
+  // backfilled from shop.adminId in the same migration, so in practice every
+  // row has one. New code must always set this.
+  adminId String?
+  admin   Admin?  @relation(fields: [adminId], references: [id], onDelete: Cascade)
+  // Legacy, read-only going forward — "which shop was active when this row
+  // was created," from the pre-multi-business era. Never set by new code;
+  // kept only so historical rows remain inspectable. Use adminId instead.
+  shopId String?
+  shop   Shop?   @relation(fields: [shopId], references: [id], onDelete: Cascade)
+
   plan      SubscriptionPlan       @default(FREE)
   planId    String?
   planRef   Plan?                  @relation(fields: [planId], references: [id], onDelete: SetNull)
@@ -2006,8 +2084,21 @@ model Subscription {
   createdAt DateTime               @default(now())
   updatedAt DateTime               @updatedAt
 
+  // Scheduled-downgrade intent (set by subscription-billing.ts::scheduleDowngrade
+  // when the owner's current usage doesn't fit the target plan's limits today).
+  // Never written by a read path — getCurrentSubscription() derives the
+  // *effective* plan purely at read time once `endDate` has passed, the same
+  // lazy-derivation convention computeDisplayStatus already uses for EXPIRED.
+  // A real new Subscription row only materializes the next time some other
+  // genuine mutation happens (a renewal/upgrade/SA action).
+  cancelAtPeriodEnd   Boolean       @default(false)
+  pendingPlanId       String?
+  pendingPlan         Plan?         @relation("SubscriptionPendingPlan", fields: [pendingPlanId], references: [id], onDelete: SetNull)
+  pendingBillingCycle BillingCycle?
+
+  @@index([adminId])
+  @@index([adminId, createdAt])
   @@index([shopId])
-  @@index([shopId, createdAt])
   @@map("subscriptions")
 }
 
@@ -2020,15 +2111,56 @@ model Plan {
   code        String   @unique
   name        String
   description String?
+  // isActive = temporarily disabled, can be reactivated, existing subscribers
+  // on it are unaffected either way (resolution never checks isActive).
+  // isArchived = permanently retired — hidden from the public plan list and
+  // every create/upgrade/downgrade picker, but still resolvable by `code`
+  // for historical subscribers/Subscription rows that already reference it.
+  // Distinct flags so "Disable" and "Archive" (see Super Admin Plans spec)
+  // are two independent admin actions, not one.
   isActive    Boolean  @default(true)
+  isArchived  Boolean  @default(false)
   sortOrder   Int      @default(0)
+
+  // Pricing — null means "not independently priced" (kept nullable so the
+  // pre-existing FREE/legacy plans don't need a backfill). Never read by the
+  // frontend as a hardcoded fallback; always sourced from these columns.
+  monthlyPrice Decimal? @db.Decimal(10, 2)
+  annualPrice  Decimal? @db.Decimal(10, 2)
+  currency     String   @default("INR")
+  // Shown as a "MOST POPULAR" badge on the pricing page.
+  isPopular    Boolean  @default(false)
+  trialDays    Int      @default(15)
+
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
   planFeatures  PlanFeature[]
+  planLimits    PlanLimit[]
   subscriptions Subscription[]
+  pendingSubscriptions Subscription[] @relation("SubscriptionPendingPlan")
+  transactions  SubscriptionTransaction[]
 
   @@map("plans")
+}
+
+// Numeric per-plan caps — boolean toggles live on PlanFeature instead; kept
+// as a separate table rather than overloading PlanFeature with a nullable
+// limitValue column, since limits use a small closed enum (LimitKey) rather
+// than the open-ended Feature catalog, and most PlanFeature rows would never
+// have one. See src/lib/services/subscription-limits.ts.
+model PlanLimit {
+  id         String   @id @default(cuid())
+  planId     String
+  plan       Plan     @relation(fields: [planId], references: [id], onDelete: Cascade)
+  limitKey   LimitKey
+  // null = unlimited.
+  limitValue Int?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([planId, limitKey])
+  @@map("plan_limits")
 }
 
 model Feature {
@@ -2075,6 +2207,107 @@ model BusinessFeaturePermission {
   @@unique([shopId, featureId])
   @@index([shopId])
   @@map("business_feature_permissions")
+}
+
+// One row per checkout attempt — doubles as the subscription invoice (one
+// successful transaction IS one invoice, no separate table). Idempotency for
+// the pay-then-verify flow and the webhook backup both hinge on
+// gatewayPaymentId's uniqueness and on activatedSubscriptionId being set
+// exactly once — see subscription-billing.ts::activateSubscriptionFromPayment.
+model SubscriptionTransaction {
+  id      String @id @default(cuid())
+  adminId String
+  admin   Admin  @relation(fields: [adminId], references: [id], onDelete: Cascade)
+  planId  String
+  plan    Plan   @relation(fields: [planId], references: [id])
+
+  billingCycle   BillingCycle
+  baseAmount     Decimal           @db.Decimal(10, 2)
+  discountAmount Decimal           @default(0) @db.Decimal(10, 2)
+  taxAmount      Decimal           @default(0) @db.Decimal(10, 2)
+  totalAmount    Decimal           @db.Decimal(10, 2)
+  currency       String            @default("INR")
+  status         TransactionStatus @default(INITIATED)
+
+  // Gateway identifiers — provider is free text so a future second gateway
+  // doesn't need a schema change, same convention as PartyPayment.method.
+  provider         String  @default("razorpay")
+  gatewayOrderId   String?
+  // Unique + nullable: the idempotency key a webhook retry or a client
+  // double-submit of the verify step both dedupe against.
+  gatewayPaymentId String? @unique
+
+  couponId String?
+  coupon   SubscriptionCoupon? @relation(fields: [couponId], references: [id], onDelete: SetNull)
+
+  // Set once payment is verified SUCCESS — sequential, assigned atomically
+  // (see PlatformSettings "subscription_invoice_seq_next", mirrors
+  // Shop.billNumberNext's convention).
+  invoiceNumber String? @unique
+
+  // Set exactly once, the moment activateSubscriptionFromPayment actually
+  // creates the resulting Subscription row — presence of this value IS the
+  // idempotency guard against double-activation on a verify/webhook race.
+  activatedSubscriptionId String? @unique
+
+  paidAt    DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  couponRedemption SubscriptionCouponRedemption?
+
+  @@index([adminId])
+  @@map("subscription_transactions")
+}
+
+// Admin-created discount code for OOWAPP's own subscription billing —
+// unrelated to the shop-customer-facing Coupon model (that one discounts a
+// shop's own orders; this one discounts what a business owner pays OOWAPP).
+model SubscriptionCoupon {
+  id            String          @id @default(cuid())
+  code          String          @unique
+  discountType  RewardValueType @default(PERCENTAGE)
+  discountValue Decimal         @db.Decimal(10, 2)
+  maxDiscountAmount Decimal?    @db.Decimal(10, 2)
+  minAmount     Decimal?        @db.Decimal(10, 2)
+  // Plan codes this coupon applies to — empty array means every plan. Native
+  // array, same convention as Product.imageUrls; coupons realistically never
+  // target more than a handful of plans, so no join table is warranted.
+  applicablePlanCodes String[] @default([])
+  startsAt      DateTime?
+  expiresAt     DateTime?
+  totalUsageLimit  Int?
+  perAdminLimit    Int?
+  usageCount    Int      @default(0)
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  transactions SubscriptionTransaction[]
+  redemptions  SubscriptionCouponRedemption[]
+
+  @@map("subscription_coupons")
+}
+
+// One row per order a subscription coupon was actually redeemed on — the
+// audit trail behind SubscriptionCoupon.usageCount and the enforcement
+// mechanism for perAdminLimit, mirroring the shop-customer CouponRedemption
+// model's same role/shape.
+model SubscriptionCouponRedemption {
+  id      String             @id @default(cuid())
+  couponId String
+  coupon  SubscriptionCoupon @relation(fields: [couponId], references: [id], onDelete: Cascade)
+  adminId String
+  admin   Admin              @relation(fields: [adminId], references: [id], onDelete: Cascade)
+
+  transactionId  String                  @unique
+  transaction    SubscriptionTransaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+  discountAmount Decimal                 @db.Decimal(10, 2)
+  createdAt      DateTime                @default(now())
+
+  @@index([couponId])
+  @@index([adminId])
+  @@map("subscription_coupon_redemptions")
 }
 
 model AuditLog {

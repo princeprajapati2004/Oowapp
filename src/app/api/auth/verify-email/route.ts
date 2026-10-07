@@ -14,6 +14,7 @@ import { handleApiError } from "@/lib/api-utils";
 import { verifyOtp } from "@/lib/services/email-otp";
 import { writeAuditLog, extractRequestMeta } from "@/lib/services/audit-log";
 import { checkRateLimit } from "@/lib/rate-limit";
+import { pickActiveShop } from "@/lib/services/shop";
 
 const schema = z.object({
   email: z.string().email(),
@@ -33,7 +34,7 @@ export async function POST(request: Request) {
 
     const admin = await db.admin.findUnique({
       where: { email: input.email },
-      include: { shop: true },
+      include: { shops: true },
     });
 
     if (!admin) {
@@ -42,12 +43,13 @@ export async function POST(request: Request) {
     }
 
     const cookieStore = await cookies();
+    const activeShop = pickActiveShop(admin.shops, admin.lastActiveShopId);
 
     // Already verified from a previous request (e.g. a retried submit) —
     // just route them to wherever they should be next instead of erroring.
     if (admin.emailVerified) {
-      if (admin.shop) {
-        const token = await signSession({ adminId: admin.id, shopId: admin.shop.id });
+      if (activeShop) {
+        const token = await signSession({ adminId: admin.id, shopId: activeShop.id });
         cookieStore.set(SESSION_COOKIE, token, {
           httpOnly: true,
           secure: process.env.NODE_ENV === "production",
@@ -55,7 +57,7 @@ export async function POST(request: Request) {
           path: "/",
           maxAge: SESSION_DURATION_SECONDS,
         });
-        return NextResponse.json({ shopSlug: admin.shop.slug });
+        return NextResponse.json({ shopSlug: activeShop.slug });
       }
       const pendingToken = await signPendingRegistration({ adminId: admin.id });
       cookieStore.set(PENDING_REGISTRATION_COOKIE, pendingToken, {
@@ -79,17 +81,17 @@ export async function POST(request: Request) {
       action: "EMAIL_VERIFIED",
       actorType: "admin",
       actorId: admin.id,
-      shopId: admin.shop?.id,
+      shopId: activeShop?.id,
       ipAddress,
       userAgent,
       requestId,
     });
 
-    if (admin.shop) {
+    if (activeShop) {
       // Defensive path — shouldn't happen in the current flow (Shop is only
       // created in complete-registration, after this), but keeps old
       // in-flight verification links from ever breaking.
-      const token = await signSession({ adminId: admin.id, shopId: admin.shop.id });
+      const token = await signSession({ adminId: admin.id, shopId: activeShop.id });
       cookieStore.set(SESSION_COOKIE, token, {
         httpOnly: true,
         secure: process.env.NODE_ENV === "production",
@@ -97,7 +99,7 @@ export async function POST(request: Request) {
         path: "/",
         maxAge: SESSION_DURATION_SECONDS,
       });
-      return NextResponse.json({ shopSlug: admin.shop.slug });
+      return NextResponse.json({ shopSlug: activeShop.slug });
     }
 
     const pendingToken = await signPendingRegistration({ adminId: admin.id });

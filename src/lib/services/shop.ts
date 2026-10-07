@@ -2,7 +2,7 @@ import { db } from "@/lib/db";
 import { slugify, randomSuffix } from "@/lib/utils/slugify";
 import { isDeliveryFirst, type BusinessType } from "@/lib/business-types";
 import { NotFoundError } from "@/lib/api-utils";
-import type { OrderMode, PrintFormat } from "@/generated/prisma/client";
+import type { OrderMode, PrintFormat, Shop } from "@/generated/prisma/client";
 
 async function generateUniqueSlug(businessName: string) {
   const base = slugify(businessName) || "shop";
@@ -49,10 +49,18 @@ export async function createShopForAdmin(
   });
 }
 
-export async function getShopByAdminId(adminId: string) {
-  const shop = await db.shop.findUnique({ where: { adminId } });
-  if (!shop) throw new NotFoundError("Shop not found");
-  return shop;
+export async function listShopsForAdmin(adminId: string) {
+  return db.shop.findMany({ where: { adminId }, orderBy: { createdAt: "asc" } });
+}
+
+// Which of an admin's shops to resume into — their last-active shop if it's
+// still theirs, else the earliest-created one. Shared by every session-
+// issuing auth route (login, email verification, registration) now that an
+// Admin can own more than one Shop.
+export function pickActiveShop(shops: Shop[], lastActiveShopId: string | null): Shop | null {
+  if (shops.length === 0) return null;
+  const lastActive = lastActiveShopId ? shops.find((s) => s.id === lastActiveShopId) : undefined;
+  return lastActive ?? shops[0];
 }
 
 export async function getShopById(shopId: string) {

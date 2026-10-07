@@ -1,22 +1,35 @@
 /**
- * Seed the Plan/Feature catalog and default plan-feature matrix (idempotent).
- * Run once, and again any time PLAN_CATALOG/FEATURE_CATALOG changes: npm run db:seed:plans
+ * Seed the Plan/Feature/PlanLimit catalog and default plan-feature matrix (idempotent).
+ * Run once, and again any time PLAN_CATALOG/FEATURE_CATALOG/PLAN_LIMIT_CATALOG changes:
+ * npm run db:seed:plans
  */
 
 import "dotenv/config";
 import { PrismaPg } from "@prisma/adapter-pg";
-import { PrismaClient } from "../src/generated/prisma/client";
-import { PLAN_CATALOG, FEATURE_CATALOG, DEFAULT_PLAN_FEATURES } from "../src/lib/plans-features-catalog";
+import { PrismaClient, type LimitKey } from "../src/generated/prisma/client";
+import { PLAN_CATALOG, FEATURE_CATALOG, DEFAULT_PLAN_FEATURES, PLAN_LIMIT_CATALOG } from "../src/lib/plans-features-catalog";
 
 const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL! });
 const db = new PrismaClient({ adapter });
 
 async function main() {
   for (const plan of PLAN_CATALOG) {
+    const data = {
+      name: plan.name,
+      description: plan.description,
+      sortOrder: plan.sortOrder,
+      isActive: plan.isActive,
+      isArchived: plan.isArchived,
+      monthlyPrice: plan.monthlyPrice,
+      annualPrice: plan.annualPrice,
+      currency: plan.currency,
+      isPopular: plan.isPopular,
+      trialDays: plan.trialDays,
+    };
     await db.plan.upsert({
       where: { code: plan.code },
-      update: { name: plan.name, description: plan.description, sortOrder: plan.sortOrder },
-      create: plan,
+      update: data,
+      create: { code: plan.code, ...data },
     });
   }
   console.log(`Seeded ${PLAN_CATALOG.length} plans.`);
@@ -49,6 +62,24 @@ async function main() {
     }
   }
   console.log(`Seeded ${planFeatureCount} plan-feature entries.`);
+
+  let planLimitCount = 0;
+  for (const [planCode, limits] of Object.entries(PLAN_LIMIT_CATALOG)) {
+    const plan = await db.plan.findUnique({ where: { code: planCode } });
+    if (!plan) {
+      console.warn(`Skipping limits for unknown plan code: ${planCode}`);
+      continue;
+    }
+    for (const [limitKey, limitValue] of Object.entries(limits) as [LimitKey, number | null][]) {
+      await db.planLimit.upsert({
+        where: { planId_limitKey: { planId: plan.id, limitKey } },
+        update: { limitValue },
+        create: { planId: plan.id, limitKey, limitValue },
+      });
+      planLimitCount += 1;
+    }
+  }
+  console.log(`Seeded ${planLimitCount} plan-limit entries.`);
 }
 
 main()

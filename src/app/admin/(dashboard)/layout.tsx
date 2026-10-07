@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { getAdminSession } from "@/lib/session";
-import { getShopById } from "@/lib/services/shop";
+import { getShopById, listShopsForAdmin } from "@/lib/services/shop";
 import { listNotifications } from "@/lib/services/notification";
 import { resolveFeatures } from "@/lib/services/feature-permission";
 import { AdminShell } from "@/components/admin/admin-shell";
@@ -36,6 +36,7 @@ export default async function DashboardLayout({
     throw err;
   }
 
+  const shops = await listShopsForAdmin(session.adminId);
   const notifications = await listNotifications(session.shopId).catch(() => []);
   // Nav visibility only (UX) — every gated page/API independently re-checks.
   const enabledFeatures = await resolveFeatures(session.shopId).catch(() => ({}));
@@ -64,8 +65,9 @@ export default async function DashboardLayout({
 
   return (
     <AdminShell
-      shopName={shop.businessName}
       shopSlug={shop.slug}
+      shops={shops.map((s: (typeof shops)[number]) => ({ id: s.id, businessName: s.businessName, slug: s.slug }))}
+      activeShopId={shop.id}
       initialNotifications={initialNotifications}
       notificationSoundEnabled={shop.notificationSoundEnabled}
       isFoodBusiness={foodBusiness}

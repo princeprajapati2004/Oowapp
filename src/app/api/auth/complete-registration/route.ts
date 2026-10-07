@@ -24,7 +24,7 @@ export async function POST(request: Request) {
       throw new UnauthorizedError("Your registration session has expired. Please start again.");
     }
 
-    const admin = await db.admin.findUnique({ where: { id: pending.adminId }, include: { shop: true } });
+    const admin = await db.admin.findUnique({ where: { id: pending.adminId }, include: { shops: true } });
     if (!admin || !admin.emailVerified) {
       throw new UnauthorizedError("Please verify your email first.");
     }
@@ -34,15 +34,18 @@ export async function POST(request: Request) {
     const { ipAddress, userAgent, requestId } = extractRequestMeta(request);
 
     // Already has a shop (e.g. a retried submit) — just log them in instead
-    // of erroring or creating a second shop for the same admin.
-    let shop = admin.shop;
+    // of erroring or creating a second shop for the same admin. Registration
+    // only ever creates the first shop; later businesses go through
+    // POST /api/admin/businesses once the admin is already signed in.
+    let shop = admin.shops[0];
     if (!shop) {
       shop = await createShopForAdmin(admin.id, {
         businessName: input.businessName,
         businessType: input.businessType,
         whatsappNumber: admin.phone ?? "",
       });
-      await createInitialSubscription(shop.id);
+      await createInitialSubscription(admin.id);
+      await db.admin.update({ where: { id: admin.id }, data: { lastActiveShopId: shop.id } });
 
       await writeAuditLog({
         action: "ADMIN_SIGNUP",

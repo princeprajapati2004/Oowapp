@@ -9,6 +9,7 @@ import {
   Building2,
   CreditCard,
   Layers,
+  Ticket,
   Menu,
   LogOut,
 } from "lucide-react";
@@ -24,6 +25,7 @@ const NAV_ITEMS = [
   { href: "/super-admin/businesses", label: "Businesses", icon: Building2, exact: false },
   { href: "/super-admin/subscriptions", label: "Subscriptions", icon: CreditCard, exact: false },
   { href: "/super-admin/plans", label: "Plans", icon: Layers, exact: false },
+  { href: "/super-admin/billing", label: "Coupons & Billing", icon: Ticket, exact: false },
 ];
 
 function NavLinks({ pathname, onNavigate }: { pathname: string; onNavigate?: () => void }) {

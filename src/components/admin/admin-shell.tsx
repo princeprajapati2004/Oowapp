@@ -33,6 +33,13 @@ import {
   Star,
   BarChart3,
   ShoppingCart,
+  Repeat,
+  FileText,
+  Truck,
+  FileDown,
+  Megaphone,
+  Warehouse,
+  DatabaseBackup,
   type LucideIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -41,6 +48,7 @@ import { ThemeToggle } from "@/components/shared/theme-toggle";
 import { InstallApp } from "@/components/shared/install-app";
 import { QuickActionsFab } from "@/components/admin/quick-actions-fab";
 import { NotificationBell } from "@/components/admin/notification-bell";
+import { BusinessSwitcher, type BusinessSwitcherShop } from "@/components/admin/business-switcher";
 import { cn } from "@/lib/utils";
 import { api } from "@/lib/api-client";
 import type { NotificationEventPayload } from "@/lib/hooks/use-order-events";
@@ -122,6 +130,10 @@ function buildNavEntries(foodBusiness: boolean, copy: ShellCopy): NavEntry[] {
         { href: "/admin/expenses", label: "Expenses", icon: Receipt, requiredFeature: "expenses" },
         { href: "/admin/purchases", label: "Purchases", icon: ShoppingCart },
         { href: "/admin/taxes", label: "Taxes", icon: Percent },
+        { href: "/admin/automated-billing", label: "Automated Billing", icon: Repeat, requiredFeature: "automated_billing" },
+        { href: "/admin/e-invoice", label: "E-Invoicing", icon: FileText, requiredFeature: "e_invoice" },
+        { href: "/admin/e-way-bill", label: "E-Way Bills", icon: Truck, requiredFeature: "e_way_bill" },
+        { href: "/admin/tally-export", label: "Tally Export", icon: FileDown, requiredFeature: "tally_export" },
       ],
     },
     {
@@ -131,6 +143,7 @@ function buildNavEntries(foodBusiness: boolean, copy: ShellCopy): NavEntry[] {
         { href: "/admin/coupons", label: "Coupons", icon: Ticket, requiredFeature: "coupons" },
         { href: "/admin/cashback", label: "Cashback", icon: Gift },
         { href: "/admin/referrals", label: "Referrals", icon: Share2 },
+        { href: "/admin/marketing", label: "Marketing & Promotion", icon: Megaphone, requiredFeature: "marketing" },
       ],
     },
     {
@@ -149,6 +162,8 @@ function buildNavEntries(foodBusiness: boolean, copy: ShellCopy): NavEntry[] {
       items: [
         { href: "/admin/qr", label: "QR Code", icon: QrCode },
         { href: "/admin/barcodes", label: "Barcodes", icon: Barcode, requiredFeature: "barcode_scanner" },
+        { href: "/admin/godowns", label: "Godowns", icon: Warehouse, requiredFeature: "godown" },
+        { href: "/admin/backup", label: "Data Backup", icon: DatabaseBackup, requiredFeature: "backup" },
       ],
     },
     { href: "/admin/settings", label: "Settings", icon: Settings },
@@ -388,8 +403,9 @@ function SidebarContent({
 // ── AdminShell ─────────────────────────────────────────────────────────────────
 
 export function AdminShell({
-  shopName,
   shopSlug,
+  shops,
+  activeShopId,
   initialNotifications,
   notificationSoundEnabled,
   isFoodBusiness,
@@ -397,8 +413,9 @@ export function AdminShell({
   copy,
   children,
 }: {
-  shopName: string;
   shopSlug: string;
+  shops: BusinessSwitcherShop[];
+  activeShopId: string;
   initialNotifications: NotificationEventPayload[];
   notificationSoundEnabled: boolean;
   isFoodBusiness: boolean;
@@ -433,10 +450,7 @@ export function AdminShell({
             height={28}
             className="rounded-md shrink-0"
           />
-          <div className="min-w-0 flex-1">
-            <p className="text-sm font-semibold leading-tight truncate">{shopName}</p>
-            <p className="text-[11px] text-muted-foreground truncate">/order/{shopSlug}</p>
-          </div>
+          <BusinessSwitcher shops={shops} activeShopId={activeShopId} />
         </div>
         <div className="flex-1 overflow-y-auto p-3">
           <SidebarContent
@@ -466,7 +480,8 @@ export function AdminShell({
                     height={24}
                     className="rounded-md shrink-0"
                   />
-                  <SheetTitle className="text-sm font-semibold truncate">{shopName}</SheetTitle>
+                  <SheetTitle className="sr-only">Navigation menu</SheetTitle>
+                  <BusinessSwitcher shops={shops} activeShopId={activeShopId} />
                 </div>
                 <div className="flex-1 overflow-y-auto p-3">
                   <SidebarContent

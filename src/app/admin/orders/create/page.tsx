@@ -46,6 +46,7 @@ export default async function CreateManualOrderPage({
       initialTableNumber={initialTableNumber}
       showProductImages={(shopAny.showProductImages as boolean) ?? true}
       returnToHistory={returnTo === "history"}
+      businessName={shop.businessName}
     />
   );
 }

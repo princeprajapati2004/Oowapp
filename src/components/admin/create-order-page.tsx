@@ -40,6 +40,7 @@ import {
   type Tax,
   type PastCustomer,
   type PaymentMethod,
+  type ItemSettings,
   PAYMENT_METHODS,
   getBarcodeDetectorCtor,
 } from "@/lib/types/manual-order";
@@ -126,6 +127,7 @@ export function CreateOrderPage({
   initialTableNumber,
   showProductImages = true,
   returnToHistory = false,
+  businessName,
 }: {
   currency: string;
   shopSlug: string;
@@ -137,6 +139,9 @@ export function CreateOrderPage({
   // Default (false) keeps every other existing entry point's behavior
   // unchanged (e.g. the Cash Counter's link into this same page).
   returnToHistory?: boolean;
+  // Desktop-only header sublabel (section 4) — optional so every existing
+  // call site keeps working unchanged without passing it.
+  businessName?: string;
 }) {
   const router = useRouter();
 
@@ -145,6 +150,7 @@ export function CreateOrderPage({
   const [customers, setCustomers] = useState<PastCustomer[]>([]);
   const [tables, setTables] = useState<TableBoardEntry[]>([]);
   const [popularProductIds, setPopularProductIds] = useState<string[]>([]);
+  const [itemSettings, setItemSettings] = useState<ItemSettings | null>(null);
   const [loadingProducts, setLoadingProducts] = useState(true);
   // Set inside the products fetch's .then() below (never read Date.now()
   // during render — React's purity rules disallow it) — passed down so the
@@ -270,6 +276,14 @@ export function CreateOrderPage({
     api
       .get<{ tables: TableBoardEntry[] }>("/api/admin/table-sessions")
       .then((res) => setTables(res.tables))
+      .catch(() => {});
+    // Drives which optional fields (MRP, product code, …) the desktop POS
+    // grid card is allowed to show — see ItemSettings in schema.prisma.
+    // Absent on failure just means the card stays conservative (no optional
+    // fields), never fabricated.
+    api
+      .get<ItemSettings>("/api/admin/item-settings")
+      .then(setItemSettings)
       .catch(() => {});
   }, []);
 
@@ -702,8 +716,408 @@ export function CreateOrderPage({
     }
   }
 
+  // Customer / order type / table / payment / discount / charges / notes —
+  // defined once, rendered twice by the JSX below: inside a collapsible
+  // Accordion on mobile (unchanged behavior), and inside an always-expanded
+  // plain card on desktop (section 12-19). Keeping this as a single closure
+  // over the component's own state means every field keeps exactly one
+  // implementation regardless of how many breakpoints render it.
+  function renderOrderDetailsFields() {
+    return (
+      <>
+        {/* Customer */}
+        <div className="grid grid-cols-2 gap-2">
+          <div className="relative space-y-1">
+            <Label className="text-xs">Customer Name</Label>
+            <div className="flex items-center gap-1.5">
+              {customerName.trim() && (
+                <span
+                  className={cn(
+                    "flex size-6 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold",
+                    avatarColor(customerName)
+                  )}
+                  aria-hidden
+                >
+                  {initialsOf(customerName)}
+                </span>
+              )}
+              <Input
+                value={customerName}
+                onChange={(e) => setCustomerName(e.target.value)}
+                onFocus={() => setShowCustomerSuggestions(true)}
+                onBlur={() => setShowCustomerSuggestions(false)}
+                placeholder="Walk-in or search…"
+                className="h-8 text-sm"
+                autoComplete="off"
+              />
+            </div>
+            {showCustomerSuggestions && customerMatches.length > 0 && (
+              <div className="absolute top-full left-0 z-10 mt-1 w-64 overflow-hidden rounded-lg border bg-popover shadow-md">
+                {customerMatches.map((c, i) => {
+                  const phone = c.customerPhone ?? "";
+                  return (
+                    <button
+                      type="button"
+                      key={`${phone}-${i}`}
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        setCustomerName(c.customerName || "");
+                        setCustomerPhone(phone);
+                        setShowCustomerSuggestions(false);
+                      }}
+                      className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-xs hover:bg-muted"
+                    >
+                      <span
+                        className={cn(
+                          "flex size-5 shrink-0 items-center justify-center rounded-full text-[9px] font-semibold",
+                          avatarColor(c.customerName || "?")
+                        )}
+                      >
+                        {initialsOf(c.customerName || "?")}
+                      </span>
+                      <span className="flex min-w-0 flex-1 flex-col items-start">
+                        <span className="truncate font-medium">{c.customerName || "Unnamed"}</span>
+                        {phone && <span className="text-muted-foreground">{phone}</span>}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs">Phone Number</Label>
+            <Input value={customerPhone} onChange={(e) => setCustomerPhone(e.target.value)} placeholder="Optional" className="h-8 text-sm" />
+          </div>
+        </div>
+
+        {matchedCustomer && (
+          <div className="flex items-center justify-between rounded-md bg-muted/40 px-2 py-1.5 text-xs">
+            <button
+              type="button"
+              onClick={() => setShowCustomerNotes((v) => !v)}
+              className="flex items-center gap-1 font-medium text-muted-foreground hover:text-foreground"
+            >
+              Notes <ChevronDown className={cn("size-3 transition-transform", showCustomerNotes && "rotate-180")} />
+            </button>
+            <a
+              href={`/admin/orders?q=${encodeURIComponent(customerPhone.trim())}`}
+              target="_blank"
+              rel="noreferrer"
+              className="flex items-center gap-1 font-medium text-primary hover:underline"
+            >
+              Order history <ExternalLink className="size-3" />
+            </a>
+          </div>
+        )}
+        {matchedCustomer && showCustomerNotes && (
+          <textarea
+            defaultValue={customerNotesMap[customerPhone.trim()] ?? ""}
+            onBlur={(e) => saveCustomerNote(customerPhone.trim(), e.target.value)}
+            placeholder="e.g. Regular customer, prefers less spicy…"
+            className="w-full rounded-md border bg-transparent px-2 py-1.5 text-xs outline-none focus-visible:border-ring"
+            rows={2}
+          />
+        )}
+
+        {/* Order Type */}
+        <div className="space-y-1.5">
+          <Label className="text-xs">Order Type</Label>
+          <div className="flex overflow-hidden rounded-md border text-xs">
+            {([
+              { value: "DINE_IN", label: "Dine-in" },
+              { value: "TAKEAWAY", label: "Takeaway" },
+              { value: "DELIVERY", label: "Delivery" },
+            ] as const).map((t) => (
+              <button
+                key={t.value}
+                onClick={() => setOrderType(t.value)}
+                className={cn(
+                  "flex-1 px-2.5 py-1.5 font-medium transition-colors",
+                  orderType === t.value ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted"
+                )}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {orderType === "DINE_IN" && (
+          <div className="space-y-1">
+            <Label className="text-xs">Table Number</Label>
+            {tables.length === 0 ? (
+              <Input value={tableNumber} onChange={(e) => setTableNumber(e.target.value)} placeholder="e.g. Table 4" className="h-8 text-sm" />
+            ) : (
+              <Select
+                value={tableNumber}
+                onValueChange={(v) => v && setTableNumber(v as string)}
+              >
+                <SelectTrigger className="h-8 w-full text-sm" size="sm">
+                  <SelectValue placeholder="Select Table">
+                    {(value: string | null) => (value ? `Table ${value}` : "Select Table")}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  {tables.map((t) => {
+                    const manualLabel =
+                      t.manualState === "RESERVED" ? "Reserved" : t.manualState === "CLEANING" ? "Cleaning" : "Disabled";
+                    const label = t.occupied && t.session ? t.session.label : t.manualState ? manualLabel : "Available";
+                    const disabled = !t.occupied && (t.manualState === "DISABLED" || t.manualState === "CLEANING");
+                    return (
+                      <SelectItem key={t.tableNumber} value={t.tableNumber} disabled={disabled}>
+                        <span className="flex flex-1 items-center justify-between gap-2">
+                          <span>Table {t.tableNumber}</span>
+                          <span
+                            className={cn(
+                              "rounded-full px-1.5 py-0.5 text-[10px] font-semibold",
+                              t.occupied
+                                ? TABLE_LABEL_BADGE[label]
+                                : t.manualState
+                                  ? "bg-slate-200 text-slate-700 dark:bg-slate-800 dark:text-slate-300"
+                                  : "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400"
+                            )}
+                          >
+                            {label}
+                          </span>
+                        </span>
+                      </SelectItem>
+                    );
+                  })}
+                </SelectContent>
+              </Select>
+            )}
+
+            {loadingTablePreview && (
+              <p className="text-xs text-muted-foreground">Loading this table&apos;s current order…</p>
+            )}
+            {occupiedTablePreview && (
+              <div className="space-y-1.5 rounded-lg border bg-muted/30 p-2.5 text-xs">
+                <div className="flex items-center justify-between font-medium">
+                  <span>Already on this table — {occupiedTablePreview.label}</span>
+                  <span>{formatCurrency(occupiedTablePreview.grandTotal, currency)}</span>
+                </div>
+                <ul className="space-y-0.5 text-muted-foreground">
+                  {occupiedTablePreview.items.map((item) => (
+                    <li key={item.name}>
+                      {item.quantity}× {item.name}
+                    </li>
+                  ))}
+                </ul>
+                <p className="text-muted-foreground">
+                  New items you add below will join this table&apos;s running order — Payment Method is locked
+                  to Pending so this can&apos;t become a separate bill for the same visit.
+                </p>
+              </div>
+            )}
+          </div>
+        )}
+        {orderType === "DELIVERY" && (
+          <>
+            <div className="space-y-1">
+              <Label className="text-xs">Delivery Address</Label>
+              <Input value={deliveryAddress} onChange={(e) => setDeliveryAddress(e.target.value)} placeholder="Street, area, landmark…" className="h-8 text-sm" />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">Delivery Instructions</Label>
+              <Input value={deliveryInstructions} onChange={(e) => setDeliveryInstructions(e.target.value)} placeholder="e.g. Leave at the gate" className="h-8 text-sm" />
+            </div>
+          </>
+        )}
+
+        {/* Payment Method */}
+        <div className="space-y-1.5">
+          <Label className="text-xs">Payment Method</Label>
+          {occupiedTablePreview && (
+            <p className="text-xs text-muted-foreground">
+              Locked to Pending — this table already has an open tab.
+            </p>
+          )}
+          <div className="flex flex-wrap gap-1.5">
+            {PAYMENT_METHODS.map((m) => (
+              <button
+                key={m.value}
+                onClick={() => setPaymentMethod(m.value)}
+                disabled={!!occupiedTablePreview && m.value !== "PENDING"}
+                aria-pressed={paymentMethod === m.value}
+                className={cn(
+                  "rounded-md border px-2.5 py-1 text-xs font-medium transition-colors",
+                  paymentMethod === m.value ? "border-primary bg-primary/10 text-primary" : "text-muted-foreground hover:bg-muted",
+                  !!occupiedTablePreview && m.value !== "PENDING" && "opacity-40 cursor-not-allowed hover:bg-transparent"
+                )}
+              >
+                {m.label}
+              </button>
+            ))}
+          </div>
+          {paymentMethod === "SPLIT" && (
+            <div className="space-y-1.5 rounded-md border bg-muted/30 p-2">
+              {splitAmounts.map((row, idx) => (
+                <div key={idx} className="flex items-center gap-1.5">
+                  <select
+                    value={row.method}
+                    onChange={(e) => {
+                      const next = [...splitAmounts];
+                      next[idx] = { ...next[idx], method: e.target.value };
+                      setSplitAmounts(next);
+                    }}
+                    className="h-7 rounded-md border bg-transparent px-1.5 text-xs"
+                  >
+                    {["Cash", "UPI", "Card", "Wallet", "Online"].map((m) => (
+                      <option key={m} value={m}>{m}</option>
+                    ))}
+                  </select>
+                  <Input
+                    type="number"
+                    min="0"
+                    placeholder="Amount"
+                    value={row.amount}
+                    onChange={(e) => {
+                      const next = [...splitAmounts];
+                      next[idx] = { ...next[idx], amount: e.target.value };
+                      setSplitAmounts(next);
+                    }}
+                    className="h-7 flex-1 text-xs"
+                  />
+                </div>
+              ))}
+              <button
+                type="button"
+                onClick={() => setSplitAmounts((prev) => [...prev, { method: "Cash", amount: "" }])}
+                className="text-xs font-medium text-primary hover:underline"
+              >
+                + Add split
+              </button>
+              <p className="text-[10px] text-muted-foreground">Must total {formatCurrency(estimatedTotal, currency)}</p>
+            </div>
+          )}
+        </div>
+
+        {/* Discount */}
+        <div className="space-y-1.5">
+          <Label className="text-xs">Discount</Label>
+          <div className="flex gap-2">
+            <div className="flex overflow-hidden rounded-md border text-xs">
+              {(["", "PERCENTAGE", "FIXED"] as const).map((t) => (
+                <button
+                  key={t}
+                  onClick={() => setDiscountType(t)}
+                  className={cn(
+                    "px-2.5 py-1.5 font-medium transition-colors",
+                    discountType === t ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted"
+                  )}
+                >
+                  {t === "" ? "None" : t === "PERCENTAGE" ? "%" : "₹"}
+                </button>
+              ))}
+            </div>
+            {discountType && (
+              <Input
+                type="number"
+                min="0"
+                placeholder={discountType === "PERCENTAGE" ? "10" : "50"}
+                value={discountValue}
+                onChange={(e) => setDiscountValue(e.target.value)}
+                className="h-8 flex-1 text-sm"
+              />
+            )}
+          </div>
+        </div>
+
+        {/* Additional Charges */}
+        <div className="space-y-1.5">
+          <div className="flex items-center justify-between">
+            <Label className="text-xs">Additional Charges</Label>
+            <button
+              type="button"
+              onClick={() => addCharge()}
+              className="text-xs font-medium text-primary hover:underline"
+            >
+              + Add charge
+            </button>
+          </div>
+          {charges.length === 0 ? (
+            <p className="text-xs text-muted-foreground">
+              e.g. delivery, packaging, or service charge — shown separately from the item total.
+            </p>
+          ) : (
+            <div className="space-y-1.5">
+              {charges.map((charge, index) => (
+                <div key={index} className="flex items-center gap-1.5">
+                  <Input
+                    value={charge.label}
+                    onChange={(e) => updateCharge(index, { label: e.target.value })}
+                    placeholder="e.g. Delivery charge"
+                    maxLength={40}
+                    className="h-8 flex-1 text-sm"
+                  />
+                  <Input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={charge.amount}
+                    onChange={(e) => updateCharge(index, { amount: e.target.value })}
+                    placeholder="Amount"
+                    className="h-8 w-24 text-sm"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => removeCharge(index)}
+                    aria-label="Remove charge"
+                    className="flex size-8 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-destructive"
+                  >
+                    <X className="size-3.5" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Special Instructions / Notes */}
+        <div className="space-y-1">
+          <Label className="text-xs">Special Instructions</Label>
+          <Input value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Any special instructions..." className="h-8 text-sm" />
+          <div className="flex flex-wrap gap-1 pt-0.5">
+            {QUICK_NOTES.map((phrase) => (
+              <button
+                key={phrase}
+                type="button"
+                onClick={() => addQuickNote(phrase)}
+                className="rounded-full border px-2 py-0.5 text-[11px] text-muted-foreground transition-colors hover:bg-muted"
+              >
+                + {phrase}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-2">
+          <div className="space-y-1">
+            <Label className="text-xs">Reference Number</Label>
+            <Input value={referenceNumber} onChange={(e) => setReferenceNumber(e.target.value)} placeholder="Optional" className="h-8 text-sm" />
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs">Coupon Code</Label>
+            <Input value={couponCode} onChange={(e) => setCouponCode(e.target.value)} placeholder="Optional" className="h-8 text-sm" />
+          </div>
+        </div>
+
+        <div className="space-y-1 rounded-md border border-dashed bg-muted/30 p-2.5">
+          <Label className="text-xs">Internal Staff Notes</Label>
+          <Textarea
+            value={internalStaffNotes}
+            onChange={(e) => setInternalStaffNotes(e.target.value)}
+            placeholder="Only visible to staff on this device — never saved to the order or shown to the customer."
+            className="min-h-14 bg-background text-xs"
+          />
+        </div>
+      </>
+    );
+  }
+
   return (
-    <div className="flex min-h-screen flex-col bg-background">
+    <div className="flex min-h-screen flex-col bg-background md:h-screen md:overflow-hidden">
       {/* Header */}
       <header className="sticky top-0 z-20 flex shrink-0 items-center gap-3 border-b bg-background/98 px-4 py-3 backdrop-blur-sm">
         <button
@@ -713,11 +1127,52 @@ export function CreateOrderPage({
         >
           <ArrowLeft className="size-5" />
         </button>
-        <h1 className="text-base font-semibold">Create Manual Order</h1>
+        <div className="min-w-0 flex-1">
+          <h1 className="text-base font-semibold">Create Manual Order</h1>
+          {businessName && <p className="hidden truncate text-xs text-muted-foreground md:block">{businessName}</p>}
+        </div>
+        {/* Live summary — desktop only; same values the mobile footer already shows */}
+        <div className="hidden shrink-0 text-sm md:block">
+          {cart.length > 0 ? (
+            <>
+              <span className="font-medium">{totalQty} item{totalQty !== 1 ? "s" : ""}</span>
+              <span className="text-muted-foreground"> · {formatCurrency(estimatedTotal, currency)}</span>
+            </>
+          ) : (
+            <span className="text-muted-foreground">No items</span>
+          )}
+        </div>
       </header>
 
+      {/* Desktop/tablet: product browser (left) + cart/checkout (right), each
+          scrolling independently (section 15). Mobile keeps the single
+          scrolling column below unchanged — every class added here is
+          md:/pos:/pos-xl:-prefixed. */}
+      <div className="flex-1 md:flex md:min-h-0 md:flex-row md:overflow-hidden">
+        <section className="hidden md:flex md:min-w-0 md:flex-1 md:flex-col md:overflow-hidden md:border-r">
+          <AddItemsPanel
+            variant="inline"
+            density="grid"
+            currency={currency}
+            products={products}
+            loadingProducts={loadingProducts}
+            catalogLoadedAt={catalogLoadedAt}
+            cart={cart}
+            popularProductIds={popularProductIds}
+            recentlyViewedIds={recentlyViewedIds}
+            recentSearches={recentSearches}
+            onAddToCart={addToCart}
+            onUpdateQty={updateQty}
+            onCommitSearch={commitSearch}
+            onClose={() => {}}
+            showImages={showProductImages}
+            itemSettings={itemSettings}
+          />
+        </section>
+
+        <div className="flex flex-1 flex-col md:min-h-0 md:w-[380px] pos:w-[400px] pos-xl:w-[440px] md:flex-none md:overflow-hidden">
       {/* Body */}
-      <main className="mx-auto w-full max-w-2xl flex-1 space-y-4 px-4 py-4">
+      <main className="mx-auto w-full max-w-2xl flex-1 space-y-4 px-4 py-4 md:mx-0 md:max-w-none md:flex-1 md:overflow-y-auto">
         {draftBanner && (
           <div className="flex items-center justify-between gap-3 rounded-lg border border-dashed bg-muted/40 px-3 py-2 text-xs">
             <span className="text-muted-foreground">
@@ -737,26 +1192,37 @@ export function CreateOrderPage({
 
         {/* Order items */}
         {cart.length === 0 ? (
-          <div className="space-y-2">
-            <button
-              onClick={() => setAddItemsOpen(true)}
-              className="flex w-full flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed p-10 text-center transition-colors hover:border-primary hover:bg-primary/5"
-            >
+          <>
+            {/* Mobile/tablet: no inline product pane yet, so give a way in */}
+            <div className="space-y-2 md:hidden">
+              <button
+                onClick={() => setAddItemsOpen(true)}
+                className="flex w-full flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed p-10 text-center transition-colors hover:border-primary hover:bg-primary/5"
+              >
+                <div className="flex size-12 items-center justify-center rounded-full bg-primary/10">
+                  <PackagePlus className="size-6 text-primary" />
+                </div>
+                <p className="font-semibold">Add Items</p>
+                <p className="text-xs text-muted-foreground">Search or browse your menu</p>
+              </button>
+              {barcodeScanSupported && (
+                <button
+                  onClick={() => setScanItemsOpen(true)}
+                  className="flex w-full items-center justify-center gap-2 rounded-xl border px-4 py-2.5 text-sm font-medium text-muted-foreground transition-colors hover:border-primary hover:text-primary"
+                >
+                  <ScanLine className="size-4" /> Scan Items
+                </button>
+              )}
+            </div>
+            {/* Desktop: the product grid is already visible on the left */}
+            <div className="hidden flex-col items-center justify-center gap-1.5 rounded-2xl border-2 border-dashed p-10 text-center md:flex">
               <div className="flex size-12 items-center justify-center rounded-full bg-primary/10">
                 <PackagePlus className="size-6 text-primary" />
               </div>
-              <p className="font-semibold">Add Items</p>
-              <p className="text-xs text-muted-foreground">Search or browse your menu</p>
-            </button>
-            {barcodeScanSupported && (
-              <button
-                onClick={() => setScanItemsOpen(true)}
-                className="flex w-full items-center justify-center gap-2 rounded-xl border px-4 py-2.5 text-sm font-medium text-muted-foreground transition-colors hover:border-primary hover:text-primary"
-              >
-                <ScanLine className="size-4" /> Scan Items
-              </button>
-            )}
-          </div>
+              <p className="font-semibold">Cart is empty</p>
+              <p className="text-xs text-muted-foreground">Tap a product on the left to add it</p>
+            </div>
+          </>
         ) : (
           <div className="space-y-3 rounded-2xl border bg-card p-3 shadow-sm">
             <div className="flex items-center justify-between px-1">
@@ -764,7 +1230,7 @@ export function CreateOrderPage({
               <div className="flex items-center gap-3">
                 <button
                   onClick={() => setAddItemsOpen(true)}
-                  className="text-xs font-medium text-primary hover:underline"
+                  className="text-xs font-medium text-primary hover:underline md:hidden"
                 >
                   + Add more
                 </button>
@@ -906,408 +1372,29 @@ export function CreateOrderPage({
           </div>
         )}
 
-        {/* Additional Details — collapsed by default */}
-        <div className="rounded-2xl border bg-card px-4 shadow-sm">
+        {/* Additional Details — collapsed accordion on mobile/tablet */}
+        <div className="rounded-2xl border bg-card px-4 shadow-sm md:hidden">
           <Accordion>
             <AccordionItem value="details" className="border-b-0">
               <AccordionTrigger>Additional Details</AccordionTrigger>
               <AccordionContent>
-                <div className="space-y-4">
-                  {/* Customer */}
-                  <div className="grid grid-cols-2 gap-2">
-                    <div className="relative space-y-1">
-                      <Label className="text-xs">Customer Name</Label>
-                      <div className="flex items-center gap-1.5">
-                        {customerName.trim() && (
-                          <span
-                            className={cn(
-                              "flex size-6 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold",
-                              avatarColor(customerName)
-                            )}
-                            aria-hidden
-                          >
-                            {initialsOf(customerName)}
-                          </span>
-                        )}
-                        <Input
-                          value={customerName}
-                          onChange={(e) => setCustomerName(e.target.value)}
-                          onFocus={() => setShowCustomerSuggestions(true)}
-                          onBlur={() => setShowCustomerSuggestions(false)}
-                          placeholder="Walk-in or search…"
-                          className="h-8 text-sm"
-                          autoComplete="off"
-                        />
-                      </div>
-                      {showCustomerSuggestions && customerMatches.length > 0 && (
-                        <div className="absolute top-full left-0 z-10 mt-1 w-64 overflow-hidden rounded-lg border bg-popover shadow-md">
-                          {customerMatches.map((c, i) => {
-                            const phone = c.customerPhone ?? "";
-                            return (
-                              <button
-                                type="button"
-                                key={`${phone}-${i}`}
-                                onMouseDown={(e) => {
-                                  e.preventDefault();
-                                  setCustomerName(c.customerName || "");
-                                  setCustomerPhone(phone);
-                                  setShowCustomerSuggestions(false);
-                                }}
-                                className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-xs hover:bg-muted"
-                              >
-                                <span
-                                  className={cn(
-                                    "flex size-5 shrink-0 items-center justify-center rounded-full text-[9px] font-semibold",
-                                    avatarColor(c.customerName || "?")
-                                  )}
-                                >
-                                  {initialsOf(c.customerName || "?")}
-                                </span>
-                                <span className="flex min-w-0 flex-1 flex-col items-start">
-                                  <span className="truncate font-medium">{c.customerName || "Unnamed"}</span>
-                                  {phone && <span className="text-muted-foreground">{phone}</span>}
-                                </span>
-                              </button>
-                            );
-                          })}
-                        </div>
-                      )}
-                    </div>
-                    <div className="space-y-1">
-                      <Label className="text-xs">Phone Number</Label>
-                      <Input value={customerPhone} onChange={(e) => setCustomerPhone(e.target.value)} placeholder="Optional" className="h-8 text-sm" />
-                    </div>
-                  </div>
-
-                  {matchedCustomer && (
-                    <div className="flex items-center justify-between rounded-md bg-muted/40 px-2 py-1.5 text-xs">
-                      <button
-                        type="button"
-                        onClick={() => setShowCustomerNotes((v) => !v)}
-                        className="flex items-center gap-1 font-medium text-muted-foreground hover:text-foreground"
-                      >
-                        Notes <ChevronDown className={cn("size-3 transition-transform", showCustomerNotes && "rotate-180")} />
-                      </button>
-                      <a
-                        href={`/admin/orders?q=${encodeURIComponent(customerPhone.trim())}`}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="flex items-center gap-1 font-medium text-primary hover:underline"
-                      >
-                        Order history <ExternalLink className="size-3" />
-                      </a>
-                    </div>
-                  )}
-                  {matchedCustomer && showCustomerNotes && (
-                    <textarea
-                      defaultValue={customerNotesMap[customerPhone.trim()] ?? ""}
-                      onBlur={(e) => saveCustomerNote(customerPhone.trim(), e.target.value)}
-                      placeholder="e.g. Regular customer, prefers less spicy…"
-                      className="w-full rounded-md border bg-transparent px-2 py-1.5 text-xs outline-none focus-visible:border-ring"
-                      rows={2}
-                    />
-                  )}
-
-                  {/* Order Type */}
-                  <div className="space-y-1.5">
-                    <Label className="text-xs">Order Type</Label>
-                    <div className="flex overflow-hidden rounded-md border text-xs">
-                      {([
-                        { value: "DINE_IN", label: "Dine-in" },
-                        { value: "TAKEAWAY", label: "Takeaway" },
-                        { value: "DELIVERY", label: "Delivery" },
-                      ] as const).map((t) => (
-                        <button
-                          key={t.value}
-                          onClick={() => setOrderType(t.value)}
-                          className={cn(
-                            "flex-1 px-2.5 py-1.5 font-medium transition-colors",
-                            orderType === t.value ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted"
-                          )}
-                        >
-                          {t.label}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  {orderType === "DINE_IN" && (
-                    <div className="space-y-1">
-                      <Label className="text-xs">Table Number</Label>
-                      {tables.length === 0 ? (
-                        <Input value={tableNumber} onChange={(e) => setTableNumber(e.target.value)} placeholder="e.g. Table 4" className="h-8 text-sm" />
-                      ) : (
-                        <Select
-                          value={tableNumber}
-                          onValueChange={(v) => v && setTableNumber(v as string)}
-                        >
-                          <SelectTrigger className="h-8 w-full text-sm" size="sm">
-                            <SelectValue placeholder="Select Table">
-                              {(value: string | null) => (value ? `Table ${value}` : "Select Table")}
-                            </SelectValue>
-                          </SelectTrigger>
-                          <SelectContent>
-                            {tables.map((t) => {
-                              const manualLabel =
-                                t.manualState === "RESERVED" ? "Reserved" : t.manualState === "CLEANING" ? "Cleaning" : "Disabled";
-                              const label = t.occupied && t.session ? t.session.label : t.manualState ? manualLabel : "Available";
-                              const disabled = !t.occupied && (t.manualState === "DISABLED" || t.manualState === "CLEANING");
-                              return (
-                                <SelectItem key={t.tableNumber} value={t.tableNumber} disabled={disabled}>
-                                  <span className="flex flex-1 items-center justify-between gap-2">
-                                    <span>Table {t.tableNumber}</span>
-                                    <span
-                                      className={cn(
-                                        "rounded-full px-1.5 py-0.5 text-[10px] font-semibold",
-                                        t.occupied
-                                          ? TABLE_LABEL_BADGE[label]
-                                          : t.manualState
-                                            ? "bg-slate-200 text-slate-700 dark:bg-slate-800 dark:text-slate-300"
-                                            : "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400"
-                                      )}
-                                    >
-                                      {label}
-                                    </span>
-                                  </span>
-                                </SelectItem>
-                              );
-                            })}
-                          </SelectContent>
-                        </Select>
-                      )}
-
-                      {loadingTablePreview && (
-                        <p className="text-xs text-muted-foreground">Loading this table&apos;s current order…</p>
-                      )}
-                      {occupiedTablePreview && (
-                        <div className="space-y-1.5 rounded-lg border bg-muted/30 p-2.5 text-xs">
-                          <div className="flex items-center justify-between font-medium">
-                            <span>Already on this table — {occupiedTablePreview.label}</span>
-                            <span>{formatCurrency(occupiedTablePreview.grandTotal, currency)}</span>
-                          </div>
-                          <ul className="space-y-0.5 text-muted-foreground">
-                            {occupiedTablePreview.items.map((item) => (
-                              <li key={item.name}>
-                                {item.quantity}× {item.name}
-                              </li>
-                            ))}
-                          </ul>
-                          <p className="text-muted-foreground">
-                            New items you add below will join this table&apos;s running order — Payment Method is locked
-                            to Pending so this can&apos;t become a separate bill for the same visit.
-                          </p>
-                        </div>
-                      )}
-                    </div>
-                  )}
-                  {orderType === "DELIVERY" && (
-                    <>
-                      <div className="space-y-1">
-                        <Label className="text-xs">Delivery Address</Label>
-                        <Input value={deliveryAddress} onChange={(e) => setDeliveryAddress(e.target.value)} placeholder="Street, area, landmark…" className="h-8 text-sm" />
-                      </div>
-                      <div className="space-y-1">
-                        <Label className="text-xs">Delivery Instructions</Label>
-                        <Input value={deliveryInstructions} onChange={(e) => setDeliveryInstructions(e.target.value)} placeholder="e.g. Leave at the gate" className="h-8 text-sm" />
-                      </div>
-                    </>
-                  )}
-
-                  {/* Payment Method */}
-                  <div className="space-y-1.5">
-                    <Label className="text-xs">Payment Method</Label>
-                    {occupiedTablePreview && (
-                      <p className="text-xs text-muted-foreground">
-                        Locked to Pending — this table already has an open tab.
-                      </p>
-                    )}
-                    <div className="flex flex-wrap gap-1.5">
-                      {PAYMENT_METHODS.map((m) => (
-                        <button
-                          key={m.value}
-                          onClick={() => setPaymentMethod(m.value)}
-                          disabled={!!occupiedTablePreview && m.value !== "PENDING"}
-                          aria-pressed={paymentMethod === m.value}
-                          className={cn(
-                            "rounded-md border px-2.5 py-1 text-xs font-medium transition-colors",
-                            paymentMethod === m.value ? "border-primary bg-primary/10 text-primary" : "text-muted-foreground hover:bg-muted",
-                            !!occupiedTablePreview && m.value !== "PENDING" && "opacity-40 cursor-not-allowed hover:bg-transparent"
-                          )}
-                        >
-                          {m.label}
-                        </button>
-                      ))}
-                    </div>
-                    {paymentMethod === "SPLIT" && (
-                      <div className="space-y-1.5 rounded-md border bg-muted/30 p-2">
-                        {splitAmounts.map((row, idx) => (
-                          <div key={idx} className="flex items-center gap-1.5">
-                            <select
-                              value={row.method}
-                              onChange={(e) => {
-                                const next = [...splitAmounts];
-                                next[idx] = { ...next[idx], method: e.target.value };
-                                setSplitAmounts(next);
-                              }}
-                              className="h-7 rounded-md border bg-transparent px-1.5 text-xs"
-                            >
-                              {["Cash", "UPI", "Card", "Wallet", "Online"].map((m) => (
-                                <option key={m} value={m}>{m}</option>
-                              ))}
-                            </select>
-                            <Input
-                              type="number"
-                              min="0"
-                              placeholder="Amount"
-                              value={row.amount}
-                              onChange={(e) => {
-                                const next = [...splitAmounts];
-                                next[idx] = { ...next[idx], amount: e.target.value };
-                                setSplitAmounts(next);
-                              }}
-                              className="h-7 flex-1 text-xs"
-                            />
-                          </div>
-                        ))}
-                        <button
-                          type="button"
-                          onClick={() => setSplitAmounts((prev) => [...prev, { method: "Cash", amount: "" }])}
-                          className="text-xs font-medium text-primary hover:underline"
-                        >
-                          + Add split
-                        </button>
-                        <p className="text-[10px] text-muted-foreground">Must total {formatCurrency(estimatedTotal, currency)}</p>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Discount */}
-                  <div className="space-y-1.5">
-                    <Label className="text-xs">Discount</Label>
-                    <div className="flex gap-2">
-                      <div className="flex overflow-hidden rounded-md border text-xs">
-                        {(["", "PERCENTAGE", "FIXED"] as const).map((t) => (
-                          <button
-                            key={t}
-                            onClick={() => setDiscountType(t)}
-                            className={cn(
-                              "px-2.5 py-1.5 font-medium transition-colors",
-                              discountType === t ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted"
-                            )}
-                          >
-                            {t === "" ? "None" : t === "PERCENTAGE" ? "%" : "₹"}
-                          </button>
-                        ))}
-                      </div>
-                      {discountType && (
-                        <Input
-                          type="number"
-                          min="0"
-                          placeholder={discountType === "PERCENTAGE" ? "10" : "50"}
-                          value={discountValue}
-                          onChange={(e) => setDiscountValue(e.target.value)}
-                          className="h-8 flex-1 text-sm"
-                        />
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Additional Charges */}
-                  <div className="space-y-1.5">
-                    <div className="flex items-center justify-between">
-                      <Label className="text-xs">Additional Charges</Label>
-                      <button
-                        type="button"
-                        onClick={() => addCharge()}
-                        className="text-xs font-medium text-primary hover:underline"
-                      >
-                        + Add charge
-                      </button>
-                    </div>
-                    {charges.length === 0 ? (
-                      <p className="text-xs text-muted-foreground">
-                        e.g. delivery, packaging, or service charge — shown separately from the item total.
-                      </p>
-                    ) : (
-                      <div className="space-y-1.5">
-                        {charges.map((charge, index) => (
-                          <div key={index} className="flex items-center gap-1.5">
-                            <Input
-                              value={charge.label}
-                              onChange={(e) => updateCharge(index, { label: e.target.value })}
-                              placeholder="e.g. Delivery charge"
-                              maxLength={40}
-                              className="h-8 flex-1 text-sm"
-                            />
-                            <Input
-                              type="number"
-                              min="0"
-                              step="0.01"
-                              value={charge.amount}
-                              onChange={(e) => updateCharge(index, { amount: e.target.value })}
-                              placeholder="Amount"
-                              className="h-8 w-24 text-sm"
-                            />
-                            <button
-                              type="button"
-                              onClick={() => removeCharge(index)}
-                              aria-label="Remove charge"
-                              className="flex size-8 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-destructive"
-                            >
-                              <X className="size-3.5" />
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Special Instructions / Notes */}
-                  <div className="space-y-1">
-                    <Label className="text-xs">Special Instructions</Label>
-                    <Input value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Any special instructions..." className="h-8 text-sm" />
-                    <div className="flex flex-wrap gap-1 pt-0.5">
-                      {QUICK_NOTES.map((phrase) => (
-                        <button
-                          key={phrase}
-                          type="button"
-                          onClick={() => addQuickNote(phrase)}
-                          className="rounded-full border px-2 py-0.5 text-[11px] text-muted-foreground transition-colors hover:bg-muted"
-                        >
-                          + {phrase}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-2">
-                    <div className="space-y-1">
-                      <Label className="text-xs">Reference Number</Label>
-                      <Input value={referenceNumber} onChange={(e) => setReferenceNumber(e.target.value)} placeholder="Optional" className="h-8 text-sm" />
-                    </div>
-                    <div className="space-y-1">
-                      <Label className="text-xs">Coupon Code</Label>
-                      <Input value={couponCode} onChange={(e) => setCouponCode(e.target.value)} placeholder="Optional" className="h-8 text-sm" />
-                    </div>
-                  </div>
-
-                  <div className="space-y-1 rounded-md border border-dashed bg-muted/30 p-2.5">
-                    <Label className="text-xs">Internal Staff Notes</Label>
-                    <Textarea
-                      value={internalStaffNotes}
-                      onChange={(e) => setInternalStaffNotes(e.target.value)}
-                      placeholder="Only visible to staff on this device — never saved to the order or shown to the customer."
-                      className="min-h-14 bg-background text-xs"
-                    />
-                  </div>
-                </div>
+                <div className="space-y-4">{renderOrderDetailsFields()}</div>
               </AccordionContent>
             </AccordionItem>
           </Accordion>
         </div>
+
+        {/* Order Details — always expanded on desktop (section 12-19); same
+            fields/handlers as the mobile accordion above, via
+            renderOrderDetailsFields(). */}
+        <div className="hidden rounded-2xl border bg-card p-4 shadow-sm md:block">
+          <h2 className="mb-3 text-sm font-semibold">Order Details</h2>
+          <div className="space-y-4">{renderOrderDetailsFields()}</div>
+        </div>
       </main>
 
-      {/* Footer */}
+      {/* Footer — pinned to the bottom of this cart column; on mobile this
+          column is the full page so it reads identically to before */}
       <div className="sticky bottom-0 z-20 flex shrink-0 items-center justify-between gap-3 border-t bg-background/98 px-5 py-3 backdrop-blur-sm">
         <div className="text-sm">
           {cart.length > 0 ? (
@@ -1326,6 +1413,8 @@ export function CreateOrderPage({
           <Button onClick={handleSubmit} disabled={submitting || cart.length === 0}>
             {submitting ? "Creating..." : "Create Order"}
           </Button>
+        </div>
+      </div>
         </div>
       </div>
 

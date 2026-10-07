@@ -86,6 +86,45 @@ export class EmailServiceError extends Error {
   }
 }
 
+// Razorpay order-creation / upstream API failure — not the caller's fault, so this
+// maps to 502, not 400 (see handleApiError below).
+export class PaymentGatewayError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "PaymentGatewayError";
+  }
+}
+
+// A checkout-verify or webhook signature failed HMAC validation — kept distinct from
+// PaymentGatewayError so a forged/tampered verify attempt is never logged as a generic
+// upstream failure.
+export class PaymentVerificationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "PaymentVerificationError";
+  }
+}
+
+// Subscription coupon validation (expired, usage limit reached, doesn't apply to this
+// plan, etc.) — own class, same reasoning as InvalidCouponError but kept separate since
+// it's a different domain (OOWAPP's own billing, not a shop's customer-facing coupons).
+export class SubscriptionCouponError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "SubscriptionCouponError";
+  }
+}
+
+// A plan's numeric usage limit (products/users/businesses/etc.) has been reached —
+// distinct 403 so the frontend can reliably detect "show the upgrade CTA" vs a generic
+// permission error.
+export class SubscriptionLimitExceededError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "SubscriptionLimitExceededError";
+  }
+}
+
 export function handleApiError(error: unknown) {
   if (error instanceof UnauthorizedError) {
     return NextResponse.json({ error: error.message }, { status: 401 });
@@ -104,6 +143,19 @@ export function handleApiError(error: unknown) {
   }
   if (error instanceof EmailServiceError) {
     return NextResponse.json({ error: error.message }, { status: 503 });
+  }
+  if (error instanceof PaymentGatewayError) {
+    console.error(error);
+    return NextResponse.json({ error: error.message }, { status: 502 });
+  }
+  if (error instanceof PaymentVerificationError) {
+    return NextResponse.json({ error: error.message }, { status: 400 });
+  }
+  if (error instanceof SubscriptionCouponError) {
+    return NextResponse.json({ error: error.message }, { status: 400 });
+  }
+  if (error instanceof SubscriptionLimitExceededError) {
+    return NextResponse.json({ error: error.message }, { status: 403 });
   }
   if (error instanceof InvalidCouponError) {
     return NextResponse.json({ error: error.message }, { status: 400 });
