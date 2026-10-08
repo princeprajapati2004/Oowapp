@@ -57,6 +57,10 @@ export interface ItemSettings {
   barcodeEnabled: boolean;
   productCodeEnabled: boolean;
   offerEnabled: boolean;
+  // Stock behavior (section 11/17) — mirrors Shop-level ItemSettings.allowNegativeStock
+  // in schema.prisma; gates whether the Create Order cart/grid block adding
+  // past on-hand stock (see stockBlockMessage in create-order-page.tsx).
+  allowNegativeStock?: boolean;
 }
 
 export interface Tax {
@@ -74,6 +78,20 @@ export interface Tax {
 export interface PastCustomer {
   customerName: string | null;
   customerPhone: string | null;
+}
+
+// Subset of the Party shape returned by GET /api/admin/parties
+// (listPartiesWithBalances) — the real Customer/Party ledger (outstanding
+// balance, order count), distinct from PastCustomer above. Used by the
+// Create Order customer picker so "Change Customer" search results show the
+// same due-balance/order-count figures the Parties page shows.
+export interface PartyLite {
+  id: string;
+  name: string;
+  phone: string;
+  type: "CUSTOMER" | "SUPPLIER";
+  outstanding: number;
+  orderCount: number;
 }
 
 export const PAYMENT_METHODS: { value: PaymentMethod; label: string }[] = [

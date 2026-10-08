@@ -78,6 +78,11 @@ const createManualOrderSchema = z.object({
   // Delivery/packaging/service/etc — see billing.ts's getPayableTotal doc
   // comment for why these stay separate from grandTotal.
   charges: z.array(chargeSchema).max(10).optional(),
+  // Idempotency key (POS "Confirm Order" double-click / retry protection —
+  // see create-order-page.tsx's clientRequestIdRef). One per in-progress
+  // cart on the client; @@unique([shopId, clientRequestId]) on Order is the
+  // real backstop, this is just the value that constraint keys off.
+  clientRequestId: z.string().trim().min(10).max(100).optional(),
 });
 
 export async function POST(request: Request) {
@@ -136,22 +141,54 @@ export async function POST(request: Request) {
       shop.taxes.map((t: (typeof shop.taxes)[number]) => ({ ...t, value: Number(t.value) }))
     );
 
+    const itemSettings = await getOrCreateItemSettings(shop.id);
+
     // Frozen onto each OrderItem.costPrice below — see profit.ts's doc
     // comment on why this can't be looked up live from Product later.
     // Free-text items (no productId, e.g. a one-off manual line) have none.
+    // Also doubles as the stock pre-check below (section 17), so `stock`
+    // and `name` are fetched in the same query rather than a second one.
     const productIdsWithCost = input.items.map((i) => i.productId).filter((id): id is string => !!id);
-    const costPriceById = new Map(
+    const productRows =
       productIdsWithCost.length > 0
-        ? (
-            await db.product.findMany({
-              where: { id: { in: productIdsWithCost }, shopId: shop.id },
-              select: { id: true, costPrice: true },
-            })
-          ).map((p: { id: string; costPrice: unknown }) => [p.id, p.costPrice != null ? Number(p.costPrice) : null])
-        : []
+        ? await db.product.findMany({
+            where: { id: { in: productIdsWithCost }, shopId: shop.id },
+            select: { id: true, name: true, costPrice: true, stock: true },
+          })
+        : [];
+    const costPriceById = new Map(
+      productRows.map((p: { id: string; costPrice: unknown }) => [p.id, p.costPrice != null ? Number(p.costPrice) : null])
     );
 
-    const itemSettings = await getOrCreateItemSettings(shop.id);
+    // Insufficient-stock is checkout-blocking here (unlike the shared
+    // decrementStockForSale helper's best-effort clamp-at-zero, used by
+    // every other order-creation path) — this Owner-facing POS flow is
+    // explicitly required to refuse the sale rather than silently under-
+    // record stock movement. Still gated by the shop's own
+    // ItemSettings.allowNegativeStock toggle, so a shop that intentionally
+    // sells on negative stock is unaffected.
+    if (!itemSettings.allowNegativeStock) {
+      const requestedQtyById = new Map<string, number>();
+      for (const item of input.items) {
+        if (!item.productId) continue;
+        requestedQtyById.set(item.productId, (requestedQtyById.get(item.productId) ?? 0) + item.quantity);
+      }
+      for (const product of productRows) {
+        if (product.stock === null) continue; // untracked
+        const requestedQty = requestedQtyById.get(product.id) ?? 0;
+        if (requestedQty > product.stock) {
+          return NextResponse.json(
+            {
+              error:
+                product.stock <= 0
+                  ? `${product.name} is out of stock.`
+                  : `Insufficient stock for ${product.name}. Only ${product.stock} available.`,
+            },
+            { status: 409 }
+          );
+        }
+      }
+    }
 
     // Per-shop-per-day sequential display number for admin-created orders
     // only (see prisma schema comment on Order.tokenNumber) — separate from
@@ -175,7 +212,19 @@ export async function POST(request: Request) {
       discountedTotal = Math.max(0, base - discount);
     }
 
-    const order = await db.$transaction(async (tx: Prisma.TransactionClient) => {
+    const { order, isDuplicate } = await db.$transaction(async (tx: Prisma.TransactionClient) => {
+      // Idempotent replay (section 19) — checked inside the transaction
+      // (not before it) so a near-simultaneous double-click can't both pass
+      // a pre-check and then race each other into two creates; same pattern
+      // already used by POST /api/orders and /api/staff/orders.
+      if (input.clientRequestId) {
+        const existing = await tx.order.findUnique({
+          where: { shopId_clientRequestId: { shopId: shop.id, clientRequestId: input.clientRequestId } },
+          include: { items: true },
+        });
+        if (existing) return { order: existing, isDuplicate: true };
+      }
+
       // Only a Pending-payment dine-in order represents a running tab —
       // everything else (Cash/UPI/etc.) is an immediately-settled sale and
       // never touches table occupancy, exactly like before this change.
@@ -209,7 +258,7 @@ export async function POST(request: Request) {
       );
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      return (tx.order as any).create({
+      const created = await (tx.order as any).create({
         data: {
           shopId: shop.id,
           billNumber,
@@ -227,6 +276,7 @@ export async function POST(request: Request) {
           taxBreakdown: bill.taxLines as unknown as Prisma.InputJsonValue,
           paymentMethod: input.paymentMethod,
           source: "manual",
+          clientRequestId: input.clientRequestId ?? null,
           discountType: input.discountType ?? null,
           discountValue: input.discountValue ?? null,
           discountReason: input.discountReason ?? null,
@@ -248,7 +298,18 @@ export async function POST(request: Request) {
         },
         include: { items: true },
       });
+      return { order: created, isDuplicate: false };
     });
+
+    // A replayed request (same clientRequestId as an order already
+    // created) must not re-fire notifications/audit logs for an event that
+    // already happened — just hand back the existing order's identifiers.
+    if (isDuplicate) {
+      return NextResponse.json(
+        { ok: true, orderId: order.id, billNumber: order.billNumber, tokenNumber: order.tokenNumber },
+        { status: 200 }
+      );
+    }
 
     sendNewOrderNotification(shop.id, {
       billNumber: order.billNumber,

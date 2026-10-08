@@ -292,11 +292,14 @@ export function AddItemsPanel({
             <ArrowLeft className="size-5" />
           </button>
           <div className="min-w-0 flex-1">
-            <h2 className="text-base font-semibold">Select Items</h2>
+            <h2 className="text-base font-semibold">Select &amp; Customize Products</h2>
             <p className="text-xs text-muted-foreground">
               {selectedCount > 0 ? `${selectedCount} item${selectedCount !== 1 ? "s" : ""} selected` : "Tap items to add them"}
             </p>
           </div>
+          <Button size="sm" onClick={onClose} className="shrink-0">
+            Done{selectedCount > 0 ? ` · ${selectedCount}` : ""}
+          </Button>
         </header>
       )}
 
@@ -379,7 +382,7 @@ export function AddItemsPanel({
                 activeCategory === "all" ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:bg-muted/80"
               )}
             >
-              All
+              🔥 All Categories
             </button>
             {categories.map((c) => (
               <button
@@ -593,13 +596,20 @@ export function AddItemsPanel({
         )}
       </div>
 
-      {/* Footer — overlay only; the desktop inline pane has no "Done" step,
-          the cart panel's Create Order button is the natural end-point */}
-      {!isInline && (
-        <div className="shrink-0 border-t px-4 py-3">
-          <Button onClick={onClose} className="h-12 w-full text-base font-semibold">
-            Done{selectedCount > 0 ? ` · ${selectedCount} item${selectedCount !== 1 ? "s" : ""}` : ""}
-          </Button>
+      {/* Selected-items summary — overlay only (section 6): running count +
+          total so the Owner can see what's been added without leaving the
+          product grid. The header's Done button (above) is the single
+          confirm action — no second one duplicated here. */}
+      {!isInline && selectedCount > 0 && (
+        <div className="shrink-0 border-t bg-muted/30 px-4 py-2 text-xs">
+          <div className="flex items-center justify-between">
+            <span className="font-medium">
+              Selected Items · {selectedCount} item{selectedCount !== 1 ? "s" : ""}
+            </span>
+            <span className="font-semibold">
+              {formatCurrency(cart.reduce((sum, i) => sum + i.price * i.quantity, 0), currency)}
+            </span>
+          </div>
         </div>
       )}
 

@@ -108,6 +108,7 @@ export function OrderDetailPage({
   currency,
   justCreated,
   openPayment,
+  autoPrint,
   deliveryFeatureEnabled = true,
 }: {
   initialOrder: AdminOrderEventOrder;
@@ -115,6 +116,11 @@ export function OrderDetailPage({
   currency: string;
   justCreated?: boolean;
   openPayment?: boolean;
+  // "Print Invoice" from the Create Order success screen (section 20) lands
+  // here with autoPrint=1 instead of duplicating the print pipeline —
+  // triggers the same preview-then-print flow a manual "Print Receipt"
+  // click would.
+  autoPrint?: boolean;
   // Server-resolved (resolveFeatures) — the edit button is UX-hidden when
   // false; the update_delivery API action independently re-checks too.
   deliveryFeatureEnabled?: boolean;
@@ -171,7 +177,12 @@ export function OrderDetailPage({
 
   const billActions = useBillActions(toBillOrderData(order), shop);
   const [printingBill, setPrintingBill] = useState(false);
-  const [showPrintPreview, setShowPrintPreview] = useState(false);
+  // "Print Invoice" from the Create Order success screen (section 20) lands
+  // here with autoPrint=1 — same lazy-initial-state convention as
+  // showCreatedBanner/paymentOpen above, so the preview opens on first
+  // render instead of needing an effect that would setState during an
+  // effect body.
+  const [showPrintPreview, setShowPrintPreview] = useState(!!autoPrint);
 
   // Opens the preview modal — actual print dispatched from there.
   function handlePrintBill() {

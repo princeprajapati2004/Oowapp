@@ -14,6 +14,10 @@ import {
   ImageOff,
   PackagePlus,
   ScanLine,
+  User,
+  CheckCircle2,
+  Printer,
+  MessageCircle,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -27,9 +31,11 @@ import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from "@/
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { AddItemsPanel } from "@/components/admin/add-items-panel";
 import { ScanItemsPanel } from "@/components/admin/scan-items-panel";
+import { CustomerPickerPanel, type CustomerSelection } from "@/components/admin/customer-picker-panel";
 import { api, ApiError } from "@/lib/api-client";
 import { calculateBill } from "@/lib/services/billing";
 import { applyOffer } from "@/lib/services/pricing";
+import { buildOrderMessage, buildWhatsAppUrl } from "@/lib/services/whatsapp";
 import { formatCurrency } from "@/lib/utils/currency";
 import { cn } from "@/lib/utils";
 import { readLocalStore, writeLocalStore, clearLocalStore } from "@/lib/utils/local-store";
@@ -38,7 +44,7 @@ import {
   type Product,
   type CartItem,
   type Tax,
-  type PastCustomer,
+  type PartyLite,
   type PaymentMethod,
   type ItemSettings,
   PAYMENT_METHODS,
@@ -59,6 +65,7 @@ type OrderType = "DINE_IN" | "TAKEAWAY" | "DELIVERY";
 const QUICK_NOTES = ["No onions", "Extra spicy", "Less oil", "No dairy", "Contactless"];
 const MAX_RECENT_SEARCHES = 5;
 const MAX_RECENTLY_VIEWED = 8;
+const MAX_RECENT_CUSTOMERS = 6;
 const DUPLICATE_HANDOFF_KEY = "oowapp:duplicateOrder";
 
 // Pre-fill payload for the "Duplicate Order" action on the orders list.
@@ -147,7 +154,12 @@ export function CreateOrderPage({
 
   const [products, setProducts] = useState<Product[]>([]);
   const [taxes, setTaxes] = useState<Tax[]>([]);
-  const [customers, setCustomers] = useState<PastCustomer[]>([]);
+  // The real Customer/Party ledger (outstanding balance, order count) — see
+  // customer-picker-panel.tsx. Replaces the old order-history-derived
+  // "customers" directory so the Customer card can show due balance/order
+  // count, matching the Parties page's own numbers exactly.
+  const [parties, setParties] = useState<PartyLite[]>([]);
+  const [loadingParties, setLoadingParties] = useState(true);
   const [tables, setTables] = useState<TableBoardEntry[]>([]);
   const [popularProductIds, setPopularProductIds] = useState<string[]>([]);
   const [itemSettings, setItemSettings] = useState<ItemSettings | null>(null);
@@ -159,6 +171,27 @@ export function CreateOrderPage({
   const [submitting, setSubmitting] = useState(false);
   const [addItemsOpen, setAddItemsOpen] = useState(!!initialTableNumber);
   const [scanItemsOpen, setScanItemsOpen] = useState(false);
+  const [customerPickerOpen, setCustomerPickerOpen] = useState(false);
+  // Snapshot of the party selected via the Customer card/picker — kept
+  // separate from customerName/customerPhone (still the fields actually
+  // submitted) purely so the card can show outstanding/order-count without
+  // re-deriving them from `parties` on every render once a free-typed phone
+  // no longer matches anything.
+  const [selectedParty, setSelectedParty] = useState<PartyLite | null>(null);
+  // Set once an order is successfully created — switches the page into the
+  // dedicated success screen (section 20) instead of auto-navigating away,
+  // so double-confirmation and the View/Print/WhatsApp/New-Order actions all
+  // have one obvious place to live.
+  const [successOrder, setSuccessOrder] = useState<{
+    orderId: string;
+    billNumber: string;
+    tokenNumber: number | null;
+    customerName: string;
+    customerPhone: string;
+    total: number;
+    itemCount: number;
+    readyForPayment: boolean;
+  } | null>(null);
   const barcodeScanSupported = useMemo(
     () =>
       getBarcodeDetectorCtor() !== null &&
@@ -172,7 +205,6 @@ export function CreateOrderPage({
   const [priceInputs, setPriceInputs] = useState<Record<string, string>>({});
   const [customerName, setCustomerName] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
-  const [showCustomerSuggestions, setShowCustomerSuggestions] = useState(false);
   const [orderType, setOrderType] = useState<OrderType>(initialOrderType ?? "DINE_IN");
   const [tableNumber, setTableNumber] = useState(initialTableNumber ?? "");
   const [deliveryAddress, setDeliveryAddress] = useState("");
@@ -204,6 +236,9 @@ export function CreateOrderPage({
   const [recentSearches, setRecentSearches] = useState<string[]>(() =>
     readLocalStore(shopSlug, "recentSearches", [] as string[])
   );
+  const [recentCustomerPhones, setRecentCustomerPhones] = useState<string[]>(() =>
+    readLocalStore(shopSlug, "recentCustomers", [] as string[])
+  );
   const [customerNotesMap, setCustomerNotesMap] = useState<Record<string, string>>(() =>
     readLocalStore(shopSlug, "customerNotes", {} as Record<string, string>)
   );
@@ -224,6 +259,13 @@ export function CreateOrderPage({
 
   const pendingDuplicateRef = useRef<DuplicateOrderData | null>(null);
   const hasCheckedDuplicateRef = useRef(false);
+  // Idempotency key (section 19) — one per in-progress order, sent as
+  // clientRequestId on every submit attempt including retries. Regenerated
+  // only when the cart is actually reset (Create New Order / cleared), so a
+  // double-click or a retried request after a dropped response always maps
+  // to the same key and the server-side @@unique([shopId, clientRequestId])
+  // guarantees at most one Order row for it.
+  const clientRequestIdRef = useRef<string>("");
 
   // One-shot: consume any duplicate-order hand-off left by the orders list
   // right before it navigated here (see orders-manager.tsx). Read-and-clear
@@ -242,6 +284,14 @@ export function CreateOrderPage({
     }
   }, []);
 
+  // Generated on mount (not during render — see clientRequestIdRef's own
+  // comment and startNewOrder, which regenerates it the same way) rather
+  // than as this ref's lazy initial value, since calling crypto.randomUUID()
+  // during render is impure/disallowed.
+  useEffect(() => {
+    if (!clientRequestIdRef.current) clientRequestIdRef.current = crypto.randomUUID();
+  }, []);
+
   // One-shot: announce arriving here with a table pre-selected (from tapping
   // an available table on the Tables board) — deliberately not re-fired on
   // later manual table changes, so [] deps (not [initialTableNumber]) is
@@ -251,8 +301,12 @@ export function CreateOrderPage({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  useEffect(() => {
-    api
+  // Re-called after a successful order (section 26: data refresh) so stock
+  // numbers on the grid and Party outstanding/order-count are current for
+  // the very next sale — without this, "Create New Order" would keep
+  // showing pre-sale stock until a full page reload.
+  function loadProducts() {
+    return api
       .get<Product[]>("/api/admin/products")
       .then((data) => {
         setProducts(data.filter((p) => p.isAvailable && p.isVisible));
@@ -260,15 +314,23 @@ export function CreateOrderPage({
       })
       .catch(() => toast.error("Failed to load products"))
       .finally(() => setLoadingProducts(false));
+  }
+  function loadParties() {
+    return api
+      .get<PartyLite[]>("/api/admin/parties")
+      .then(setParties)
+      .catch(() => {})
+      .finally(() => setLoadingParties(false));
+  }
+
+  useEffect(() => {
+    loadProducts();
     api
       .get<Tax[]>("/api/admin/taxes")
       // Decimal fields serialize as strings over JSON — convert before use.
       .then((data) => setTaxes(data.filter((t) => t.isEnabled).map((t) => ({ ...t, value: Number(t.value) }))))
       .catch(() => {});
-    api
-      .get<PastCustomer[]>("/api/admin/customers")
-      .then(setCustomers)
-      .catch(() => {});
+    loadParties();
     api
       .get<{ productId: string; orderCount: number }[]>("/api/admin/products/stats")
       .then((rows) => setPopularProductIds(rows.map((r) => r.productId)))
@@ -388,21 +450,18 @@ export function CreateOrderPage({
     }
   }, [products, loadingProducts]);
 
-  const customerMatches = useMemo(() => {
-    const q = customerName.trim().toLowerCase();
-    const pool = q
-      ? customers.filter(
-          (c) => (c.customerName ?? "").toLowerCase().includes(q) || (c.customerPhone ?? "").includes(q)
-        )
-      : customers.slice(0, 20);
-    return pool.slice(0, 6);
-  }, [customers, customerName]);
-
-  const matchedCustomer = useMemo(() => {
+  // Whenever the phone currently set matches a known Party — whether that
+  // came from the picker or was free-typed directly — resolve it live so
+  // the Customer card's outstanding/order-count never goes stale relative
+  // to `parties`. Falls back to the picker's own snapshot (selectedParty)
+  // when the phone doesn't match anything in the loaded directory yet.
+  const matchedParty = useMemo(() => {
     const phone = customerPhone.trim();
     if (!phone) return null;
-    return customers.find((c) => c.customerPhone === phone) ?? null;
-  }, [customers, customerPhone]);
+    return parties.find((p) => p.phone === phone) ?? (selectedParty?.phone === phone ? selectedParty : null);
+  }, [parties, customerPhone, selectedParty]);
+
+  const isWalkIn = !customerName.trim() && !customerPhone.trim();
 
   function buildDraft(): DraftOrder {
     return {
@@ -483,6 +542,38 @@ export function CreateOrderPage({
     });
   }
 
+  function pushRecentCustomer(phone: string) {
+    if (!phone) return;
+    setRecentCustomerPhones((prev) => {
+      const next = [phone, ...prev.filter((p) => p !== phone)].slice(0, MAX_RECENT_CUSTOMERS);
+      writeLocalStore(shopSlug, "recentCustomers", next);
+      return next;
+    });
+  }
+
+  // Single entry point for every way a customer can be chosen (search
+  // result, recent, Add New Customer) — `null` means Walk-in Customer
+  // (section 2's default). Never touches the cart, matching section 2's
+  // "customer selection is independent of items" framing.
+  function handleCustomerSelect(selection: CustomerSelection | null) {
+    if (!selection) {
+      setCustomerName("");
+      setCustomerPhone("");
+      setSelectedParty(null);
+      setCustomerPickerOpen(false);
+      return;
+    }
+    setCustomerName(selection.name);
+    setCustomerPhone(selection.phone);
+    setSelectedParty(selection.party ?? null);
+    pushRecentCustomer(selection.phone);
+    setCustomerPickerOpen(false);
+  }
+
+  function handlePartyCreated(party: PartyLite) {
+    setParties((prev) => [party, ...prev]);
+  }
+
   function saveCustomerNote(phone: string, note: string) {
     if (!phone) return;
     setCustomerNotesMap((prev) => {
@@ -493,7 +584,30 @@ export function CreateOrderPage({
     });
   }
 
+  // Shared by the grid's "+ Add" button, the cart's "+" stepper, and the
+  // barcode scanner handoff — blocks exceeding on-hand stock client-side
+  // (section 17) unless this shop's Item Settings explicitly allow
+  // negative-stock selling, matching the same flag the order-creation API
+  // enforces server-side (never trust only the frontend check).
+  function stockBlockMessage(productId: string, addingQty: number): string | null {
+    if (itemSettings?.allowNegativeStock) return null;
+    const product = products.find((p) => p.id === productId);
+    if (!product || typeof product.stock !== "number") return null;
+    const currentQty = cart.find((i) => i.productId === productId)?.quantity ?? 0;
+    if (currentQty + addingQty > product.stock) {
+      return product.stock <= 0
+        ? `${product.name} is out of stock.`
+        : `Insufficient stock for ${product.name} — only ${product.stock} available.`;
+    }
+    return null;
+  }
+
   function addToCart(product: Product) {
+    const blocked = stockBlockMessage(product.id, 1);
+    if (blocked) {
+      toast.error(blocked);
+      return;
+    }
     setCart((prev) => {
       const existing = prev.find((i) => i.productId === product.id);
       if (existing) {
@@ -522,6 +636,13 @@ export function CreateOrderPage({
   }
 
   function updateQty(productId: string, delta: number) {
+    if (delta > 0) {
+      const blocked = stockBlockMessage(productId, delta);
+      if (blocked) {
+        toast.error(blocked);
+        return;
+      }
+    }
     setCart((prev) => {
       const next = prev.map((i) => (i.productId === productId ? { ...i, quantity: Math.max(0, i.quantity + delta) } : i));
       return next.filter((i) => i.quantity > 0);
@@ -664,6 +785,13 @@ export function CreateOrderPage({
         tableNumber: orderType === "DINE_IN" ? tableNumber.trim() || undefined : undefined,
         deliveryAddress: orderType === "DELIVERY" ? deliveryAddress.trim() || undefined : undefined,
         notes: effectiveNotes || undefined,
+        // Idempotency key (section 19) — same key resent on every attempt
+        // for this cart, so a double-click or a retried request after a
+        // dropped response can never create a second Order row. Omitted
+        // (never an empty string — the API's schema requires >=10 chars
+        // when present) on the vanishingly unlikely chance the mount effect
+        // that generates it hasn't run yet.
+        ...(clientRequestIdRef.current ? { clientRequestId: clientRequestIdRef.current } : {}),
       };
       if (discountType && discountValue && parseFloat(discountValue) > 0) {
         body.discountType = discountType;
@@ -673,9 +801,10 @@ export function CreateOrderPage({
         body.charges = validCharges;
       }
 
-      const res = await api.post<{ billNumber: string; orderId: string; tokenNumber: number | null }>("/api/admin/orders", body);
-      toast.success(
-        `Order ${res.billNumber} created — ${totalQty} item(s)${res.tokenNumber ? ` · Token #${res.tokenNumber}` : ""}`
+      const res = await api.post<{ billNumber: string; orderId: string; tokenNumber: number | null }>(
+        "/api/admin/orders",
+        body,
+        15_000
       );
       clearLocalStore(shopSlug, "draftOrder");
 
@@ -698,22 +827,169 @@ export function CreateOrderPage({
         }
       }
 
-      if (returnToHistory) {
-        // Entered via Order History's "+ Create Order" button — land back
-        // there; the list's own SSE wiring (useOrderEvents) already
-        // live-prepends the new order with no extra refresh logic needed.
-        router.push("/admin/orders");
-      } else {
-        // Default: straight to the order detail page instead of back to the
-        // list — that page already renders the full order and carries
-        // Print/Share/status actions for this exact moment.
-        router.push(`/admin/orders/${res.orderId}?created=1${readyForPayment ? "&pay=1" : ""}`);
-      }
+      // Land on the dedicated success screen (section 20) instead of
+      // auto-navigating away — its own View/Print/WhatsApp/New-Order actions
+      // decide where to go next.
+      setSuccessOrder({
+        orderId: res.orderId,
+        billNumber: res.billNumber,
+        tokenNumber: res.tokenNumber,
+        customerName: customerName.trim(),
+        customerPhone: customerPhone.trim(),
+        total: estimatedTotal,
+        itemCount: totalQty,
+        readyForPayment,
+      });
+      // Refresh stock numbers and Party outstanding/order-count so they're
+      // correct the moment this success screen is dismissed — not just on a
+      // future hard refresh (section 26).
+      loadProducts();
+      loadParties();
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "Failed to create order");
+      toast.error(describeOrderError(err));
     } finally {
       setSubmitting(false);
     }
+  }
+
+  // Meaningful, specific error copy (section 18) — never the bare generic
+  // "Something went wrong" the brief calls out, and never a raw
+  // database/API message either. ApiError messages originating from the
+  // server (stock/customer/validation errors already phrased clearly by the
+  // API — see handleApiError) are passed through as-is; everything else maps
+  // to one of the known categories.
+  function describeOrderError(err: unknown): string {
+    if (err instanceof ApiError) {
+      if (err.status === 409 && /already.*created|duplicate/i.test(err.message)) {
+        return "This order may already have been created. Please check Order History.";
+      }
+      if (err.status >= 500) {
+        return "Order could not be created. Please try again.";
+      }
+      // 400/404/409 etc. — the server already phrased this specifically
+      // (insufficient stock, unavailable product, invalid table, ...).
+      return err.message || "Order could not be created. Please try again.";
+    }
+    if (err instanceof TypeError || (err instanceof Error && /fetch|network/i.test(err.message))) {
+      return "Connection lost. Please check your internet connection and try again.";
+    }
+    return "Order could not be created. Please try again.";
+  }
+
+  // Resets only the in-progress POS/cart state (section 21) — never touches
+  // the customer/product/order/stock/report data those live in the backend.
+  function startNewOrder() {
+    setCart([]);
+    setPriceInputs({});
+    setCustomerName("");
+    setCustomerPhone("");
+    setSelectedParty(null);
+    setNotes("");
+    setReferenceNumber("");
+    setCouponCode("");
+    setDeliveryAddress("");
+    setDeliveryInstructions("");
+    setInternalStaffNotes("");
+    setDiscountType("");
+    setDiscountValue("");
+    setCharges([]);
+    setPaymentMethod("CASH");
+    clientRequestIdRef.current =
+      typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `cr_${Date.now()}_${Math.random()}`;
+    setSuccessOrder(null);
+  }
+
+  function shareOrderOnWhatsApp() {
+    if (!successOrder?.customerPhone) return;
+    const message = buildOrderMessage({
+      customerName: successOrder.customerName || undefined,
+      customerPhone: successOrder.customerPhone || undefined,
+      items: cart,
+      bill,
+      currency,
+    });
+    const win = window.open(buildWhatsAppUrl(successOrder.customerPhone, message), "_blank");
+    if (!win) toast.error("WhatsApp could not be opened. Please check WhatsApp installation or try again.");
+  }
+
+  // Customer card (section 2) — top of the order, independent of the
+  // Additional Details accordion. Walk-in by default; once a customer is
+  // selected (via the picker, or a free-typed phone that happens to match a
+  // known Party) shows their outstanding balance / order count straight
+  // from the real Party ledger, never a guessed/derived figure.
+  function renderCustomerCard() {
+    return (
+      <div className="space-y-2 rounded-2xl border bg-card p-3 shadow-sm">
+      <div className="flex items-center gap-3">
+        {isWalkIn ? (
+          <>
+            <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground">
+              <User className="size-5" />
+            </span>
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-semibold">Walk-in Customer</p>
+              <p className="text-xs text-muted-foreground">General Counter Sale</p>
+            </div>
+          </>
+        ) : (
+          <>
+            <span className={cn("flex size-10 shrink-0 items-center justify-center rounded-full text-sm font-semibold", avatarColor(customerName || customerPhone))}>
+              {initialsOf(customerName || "?")}
+            </span>
+            <div className="min-w-0 flex-1 space-y-0.5">
+              <p className="truncate text-sm font-semibold">{customerName || "Unnamed customer"}</p>
+              <p className="truncate text-xs text-muted-foreground">{customerPhone || "No mobile number"}</p>
+              {matchedParty && (
+                <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+                  {matchedParty.outstanding > 0 && (
+                    <Badge variant="outline" className="border-amber-300 text-amber-600 text-[10px]">
+                      Due {formatCurrency(matchedParty.outstanding, currency)}
+                    </Badge>
+                  )}
+                  {matchedParty.orderCount > 0 && (
+                    <span className="text-[10px] text-muted-foreground">
+                      {matchedParty.orderCount} previous order{matchedParty.orderCount !== 1 ? "s" : ""}
+                    </span>
+                  )}
+                </div>
+              )}
+              {matchedParty && (
+                <div className="flex items-center gap-3 pt-0.5">
+                  <button
+                    type="button"
+                    onClick={() => setShowCustomerNotes((v) => !v)}
+                    className="flex items-center gap-1 text-[11px] font-medium text-muted-foreground hover:text-foreground"
+                  >
+                    Notes <ChevronDown className={cn("size-3 transition-transform", showCustomerNotes && "rotate-180")} />
+                  </button>
+                  <a
+                    href={`/admin/orders?q=${encodeURIComponent(customerPhone.trim())}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="flex items-center gap-1 text-[11px] font-medium text-primary hover:underline"
+                  >
+                    Order history <ExternalLink className="size-2.5" />
+                  </a>
+                </div>
+              )}
+            </div>
+          </>
+        )}
+        <Button variant="outline" size="sm" onClick={() => setCustomerPickerOpen(true)} className="shrink-0">
+          Change
+        </Button>
+      </div>
+      {matchedParty && showCustomerNotes && (
+        <textarea
+          defaultValue={customerNotesMap[customerPhone.trim()] ?? ""}
+          onBlur={(e) => saveCustomerNote(customerPhone.trim(), e.target.value)}
+          placeholder="e.g. Regular customer, prefers less spicy…"
+          className="w-full rounded-md border bg-transparent px-2 py-1.5 text-xs outline-none focus-visible:border-ring"
+          rows={2}
+        />
+      )}
+      </div>
+    );
   }
 
   // Customer / order type / table / payment / discount / charges / notes —
@@ -725,101 +1001,6 @@ export function CreateOrderPage({
   function renderOrderDetailsFields() {
     return (
       <>
-        {/* Customer */}
-        <div className="grid grid-cols-2 gap-2">
-          <div className="relative space-y-1">
-            <Label className="text-xs">Customer Name</Label>
-            <div className="flex items-center gap-1.5">
-              {customerName.trim() && (
-                <span
-                  className={cn(
-                    "flex size-6 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold",
-                    avatarColor(customerName)
-                  )}
-                  aria-hidden
-                >
-                  {initialsOf(customerName)}
-                </span>
-              )}
-              <Input
-                value={customerName}
-                onChange={(e) => setCustomerName(e.target.value)}
-                onFocus={() => setShowCustomerSuggestions(true)}
-                onBlur={() => setShowCustomerSuggestions(false)}
-                placeholder="Walk-in or search…"
-                className="h-8 text-sm"
-                autoComplete="off"
-              />
-            </div>
-            {showCustomerSuggestions && customerMatches.length > 0 && (
-              <div className="absolute top-full left-0 z-10 mt-1 w-64 overflow-hidden rounded-lg border bg-popover shadow-md">
-                {customerMatches.map((c, i) => {
-                  const phone = c.customerPhone ?? "";
-                  return (
-                    <button
-                      type="button"
-                      key={`${phone}-${i}`}
-                      onMouseDown={(e) => {
-                        e.preventDefault();
-                        setCustomerName(c.customerName || "");
-                        setCustomerPhone(phone);
-                        setShowCustomerSuggestions(false);
-                      }}
-                      className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-xs hover:bg-muted"
-                    >
-                      <span
-                        className={cn(
-                          "flex size-5 shrink-0 items-center justify-center rounded-full text-[9px] font-semibold",
-                          avatarColor(c.customerName || "?")
-                        )}
-                      >
-                        {initialsOf(c.customerName || "?")}
-                      </span>
-                      <span className="flex min-w-0 flex-1 flex-col items-start">
-                        <span className="truncate font-medium">{c.customerName || "Unnamed"}</span>
-                        {phone && <span className="text-muted-foreground">{phone}</span>}
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-          <div className="space-y-1">
-            <Label className="text-xs">Phone Number</Label>
-            <Input value={customerPhone} onChange={(e) => setCustomerPhone(e.target.value)} placeholder="Optional" className="h-8 text-sm" />
-          </div>
-        </div>
-
-        {matchedCustomer && (
-          <div className="flex items-center justify-between rounded-md bg-muted/40 px-2 py-1.5 text-xs">
-            <button
-              type="button"
-              onClick={() => setShowCustomerNotes((v) => !v)}
-              className="flex items-center gap-1 font-medium text-muted-foreground hover:text-foreground"
-            >
-              Notes <ChevronDown className={cn("size-3 transition-transform", showCustomerNotes && "rotate-180")} />
-            </button>
-            <a
-              href={`/admin/orders?q=${encodeURIComponent(customerPhone.trim())}`}
-              target="_blank"
-              rel="noreferrer"
-              className="flex items-center gap-1 font-medium text-primary hover:underline"
-            >
-              Order history <ExternalLink className="size-3" />
-            </a>
-          </div>
-        )}
-        {matchedCustomer && showCustomerNotes && (
-          <textarea
-            defaultValue={customerNotesMap[customerPhone.trim()] ?? ""}
-            onBlur={(e) => saveCustomerNote(customerPhone.trim(), e.target.value)}
-            placeholder="e.g. Regular customer, prefers less spicy…"
-            className="w-full rounded-md border bg-transparent px-2 py-1.5 text-xs outline-none focus-visible:border-ring"
-            rows={2}
-          />
-        )}
-
         {/* Order Type */}
         <div className="space-y-1.5">
           <Label className="text-xs">Order Type</Label>
@@ -1128,9 +1309,20 @@ export function CreateOrderPage({
           <ArrowLeft className="size-5" />
         </button>
         <div className="min-w-0 flex-1">
-          <h1 className="text-base font-semibold">Create Manual Order</h1>
+          <h1 className="text-base font-semibold">Current Order (POS)</h1>
           {businessName && <p className="hidden truncate text-xs text-muted-foreground md:block">{businessName}</p>}
         </div>
+        {barcodeScanSupported && (
+          <button
+            onClick={() => setScanItemsOpen(true)}
+            className="hidden shrink-0 items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:border-primary hover:text-primary sm:flex"
+          >
+            <ScanLine className="size-3.5" /> Scanner
+          </button>
+        )}
+        <span className="hidden shrink-0 items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold text-emerald-700 sm:flex dark:bg-emerald-900/30 dark:text-emerald-400">
+          <span className="size-1.5 rounded-full bg-emerald-500" /> ACTIVE
+        </span>
         {/* Live summary — desktop only; same values the mobile footer already shows */}
         <div className="hidden shrink-0 text-sm md:block">
           {cart.length > 0 ? (
@@ -1173,6 +1365,8 @@ export function CreateOrderPage({
         <div className="flex flex-1 flex-col md:min-h-0 md:w-[380px] pos:w-[400px] pos-xl:w-[440px] md:flex-none md:overflow-hidden">
       {/* Body */}
       <main className="mx-auto w-full max-w-2xl flex-1 space-y-4 px-4 py-4 md:mx-0 md:max-w-none md:flex-1 md:overflow-y-auto">
+        {renderCustomerCard()}
+
         {draftBanner && (
           <div className="flex items-center justify-between gap-3 rounded-lg border border-dashed bg-muted/40 px-3 py-2 text-xs">
             <span className="text-muted-foreground">
@@ -1195,32 +1389,35 @@ export function CreateOrderPage({
           <>
             {/* Mobile/tablet: no inline product pane yet, so give a way in */}
             <div className="space-y-2 md:hidden">
+              <div className="flex flex-col items-center justify-center gap-1.5 rounded-2xl border-2 border-dashed p-8 text-center">
+                <div className="flex size-12 items-center justify-center rounded-full bg-primary/10 text-xl">
+                  🛒
+                </div>
+                <p className="font-semibold">No products added yet</p>
+                <p className="text-xs text-muted-foreground">Scan barcode or tap below to add items.</p>
+              </div>
               <button
                 onClick={() => setAddItemsOpen(true)}
-                className="flex w-full flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed p-10 text-center transition-colors hover:border-primary hover:bg-primary/5"
+                className="flex w-full items-center justify-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90"
               >
-                <div className="flex size-12 items-center justify-center rounded-full bg-primary/10">
-                  <PackagePlus className="size-6 text-primary" />
-                </div>
-                <p className="font-semibold">Add Items</p>
-                <p className="text-xs text-muted-foreground">Search or browse your menu</p>
+                <PackagePlus className="size-4" /> Add Product
               </button>
               {barcodeScanSupported && (
                 <button
                   onClick={() => setScanItemsOpen(true)}
                   className="flex w-full items-center justify-center gap-2 rounded-xl border px-4 py-2.5 text-sm font-medium text-muted-foreground transition-colors hover:border-primary hover:text-primary"
                 >
-                  <ScanLine className="size-4" /> Scan Items
+                  <ScanLine className="size-4" /> Scan Barcode
                 </button>
               )}
             </div>
             {/* Desktop: the product grid is already visible on the left */}
             <div className="hidden flex-col items-center justify-center gap-1.5 rounded-2xl border-2 border-dashed p-10 text-center md:flex">
-              <div className="flex size-12 items-center justify-center rounded-full bg-primary/10">
-                <PackagePlus className="size-6 text-primary" />
+              <div className="flex size-12 items-center justify-center rounded-full bg-primary/10 text-xl">
+                🛒
               </div>
-              <p className="font-semibold">Cart is empty</p>
-              <p className="text-xs text-muted-foreground">Tap a product on the left to add it</p>
+              <p className="font-semibold">No products added yet</p>
+              <p className="text-xs text-muted-foreground">Tap a product on the left, or scan a barcode, to add it</p>
             </div>
           </>
         ) : (
@@ -1332,12 +1529,6 @@ export function CreateOrderPage({
                 <span>Subtotal</span>
                 <span>{formatCurrency(subtotal, currency)}</span>
               </div>
-              {bill.taxLines.map((line) => (
-                <div key={line.id} className="flex justify-between text-sm text-muted-foreground">
-                  <span>{line.name}</span>
-                  <span>{formatCurrency(line.amount, currency)}</span>
-                </div>
-              ))}
               {discountAmount > 0 && (
                 <div className="flex justify-between text-sm text-emerald-600">
                   <span>Discount</span>
@@ -1350,8 +1541,15 @@ export function CreateOrderPage({
                   <span>+{formatCurrency(c.amount, currency)}</span>
                 </div>
               ))}
+              {bill.taxLines.map((line) => (
+                <div key={line.id} className="flex justify-between text-sm text-muted-foreground">
+                  <span>{line.name}</span>
+                  <span>{formatCurrency(line.amount, currency)}</span>
+                </div>
+              ))}
+              <Separator />
               <div className="flex justify-between text-base font-bold">
-                <span>Total Payable</span>
+                <span>Total</span>
                 <span>{formatCurrency(estimatedTotal, currency)}</span>
               </div>
               <div className="flex items-center justify-between pt-0.5">
@@ -1411,12 +1609,97 @@ export function CreateOrderPage({
             Cancel
           </Button>
           <Button onClick={handleSubmit} disabled={submitting || cart.length === 0}>
-            {submitting ? "Creating..." : "Create Order"}
+            {submitting ? "Creating Order..." : "Confirm Order"}
           </Button>
         </div>
       </div>
         </div>
       </div>
+
+      {customerPickerOpen && (
+        <CustomerPickerPanel
+          currency={currency}
+          parties={parties}
+          loadingParties={loadingParties}
+          recentPhones={recentCustomerPhones}
+          onSelect={handleCustomerSelect}
+          onPartyCreated={handlePartyCreated}
+          onClose={() => setCustomerPickerOpen(false)}
+        />
+      )}
+
+      {successOrder && (
+        <div className="fixed inset-0 z-[60] flex flex-col items-center justify-center bg-background/95 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-sm space-y-5 rounded-2xl border bg-card p-6 text-center shadow-xl">
+            <div className="flex flex-col items-center gap-2">
+              <span className="flex size-14 items-center justify-center rounded-full bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400">
+                <CheckCircle2 className="size-8" />
+              </span>
+              <h2 className="text-lg font-semibold">Order Created Successfully</h2>
+            </div>
+
+            <div className="space-y-2 rounded-xl bg-muted/40 p-3 text-left text-sm">
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Order Number</span>
+                <span className="font-mono font-semibold">
+                  #{successOrder.billNumber}
+                  {successOrder.tokenNumber ? ` · Token #${successOrder.tokenNumber}` : ""}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Customer</span>
+                <span className="font-medium">{successOrder.customerName || "Walk-in Customer"}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Items</span>
+                <span className="font-medium">{successOrder.itemCount}</span>
+              </div>
+              <div className="flex justify-between text-base font-bold">
+                <span>Total</span>
+                <span>{formatCurrency(successOrder.total, currency)}</span>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <Button
+                variant="outline"
+                onClick={() =>
+                  router.push(
+                    `/admin/orders/${successOrder.orderId}?created=1${successOrder.readyForPayment ? "&pay=1" : ""}`
+                  )
+                }
+              >
+                View Order
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() =>
+                  router.push(`/admin/orders/${successOrder.orderId}?created=1&autoprint=1`)
+                }
+              >
+                <Printer className="size-4" /> Print Invoice
+              </Button>
+              {successOrder.customerPhone ? (
+                <Button variant="outline" onClick={shareOrderOnWhatsApp} className="col-span-2">
+                  <MessageCircle className="size-4" /> Send WhatsApp
+                </Button>
+              ) : null}
+              <Button onClick={startNewOrder} className="col-span-2">
+                Create New Order
+              </Button>
+            </div>
+
+            {returnToHistory && (
+              <button
+                onClick={() => router.push("/admin/orders")}
+                className="text-xs font-medium text-muted-foreground hover:text-foreground hover:underline"
+              >
+                Back to Order History
+              </button>
+            )}
+          </div>
+        </div>
+      )}
 
       <ConfirmDialog
         open={showClearConfirm}
