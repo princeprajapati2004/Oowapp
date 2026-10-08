@@ -13,6 +13,12 @@ export async function listProducts(shopId: string) {
   });
 }
 
+// Single-product lookup (with category, same shape as listProducts' rows) —
+// used by the Edit Product full page (src/app/admin/products/[id]/edit).
+export async function getProduct(shopId: string, id: string) {
+  return db.product.findFirst({ where: { id, shopId }, include: { category: true } });
+}
+
 async function assertCategoryBelongsToShop(shopId: string, categoryId: string) {
   const category = await db.category.findFirst({ where: { id: categoryId, shopId } });
   if (!category) throw new NotFoundError("Category not found");

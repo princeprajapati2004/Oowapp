@@ -1,73 +1,20 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Plus, Pencil, Trash2, ArrowUp, ArrowDown, FolderTree } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from "@/components/ui/dialog";
-import { FormRow } from "@/components/shared/form-row";
 import { EmptyState } from "@/components/shared/empty-state";
 import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 import { api, ApiError } from "@/lib/api-client";
 import type { Category } from "@/generated/prisma/client";
 
 export function CategoriesManager({ initialCategories }: { initialCategories: Category[] }) {
+  const router = useRouter();
   const [categories, setCategories] = useState(initialCategories);
-  const [dialogOpen, setDialogOpen] = useState(false);
-  const [editing, setEditing] = useState<Category | null>(null);
-  const [name, setName] = useState("");
-  const [isVisible, setIsVisible] = useState(true);
-  const [saving, setSaving] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Category | null>(null);
-
-  function openCreate() {
-    setEditing(null);
-    setName("");
-    setIsVisible(true);
-    setDialogOpen(true);
-  }
-
-  function openEdit(category: Category) {
-    setEditing(category);
-    setName(category.name);
-    setIsVisible(category.isVisible);
-    setDialogOpen(true);
-  }
-
-  async function handleSave() {
-    if (!name.trim()) {
-      toast.error("Name is required");
-      return;
-    }
-    setSaving(true);
-    try {
-      if (editing) {
-        const updated = await api.patch<Category>(`/api/admin/categories/${editing.id}`, {
-          name,
-          isVisible,
-        });
-        setCategories((prev) => prev.map((c) => (c.id === updated.id ? updated : c)));
-        toast.success("Category updated");
-      } else {
-        const created = await api.post<Category>("/api/admin/categories", { name, isVisible });
-        setCategories((prev) => [...prev, created]);
-        toast.success("Category added");
-      }
-      setDialogOpen(false);
-    } catch (error) {
-      toast.error(error instanceof ApiError ? error.message : "Failed to save");
-    } finally {
-      setSaving(false);
-    }
-  }
 
   async function handleDelete() {
     if (!deleteTarget) return;
@@ -111,7 +58,7 @@ export function CategoriesManager({ initialCategories }: { initialCategories: Ca
           <h1 className="text-2xl font-bold tracking-tight">Categories</h1>
           <p className="text-muted-foreground">Group your menu, e.g. Starters, Beverages.</p>
         </div>
-        <Button onClick={openCreate}>
+        <Button onClick={() => router.push("/admin/categories/new")}>
           <Plus className="size-4" /> Add category
         </Button>
       </div>
@@ -121,7 +68,7 @@ export function CategoriesManager({ initialCategories }: { initialCategories: Ca
           icon={FolderTree}
           title="No categories yet"
           description="Create your first category to start adding menu items."
-          action={<Button onClick={openCreate}>Add category</Button>}
+          action={<Button onClick={() => router.push("/admin/categories/new")}>Add category</Button>}
         />
       ) : (
         <div className="overflow-hidden rounded-xl border bg-card divide-y">
@@ -158,7 +105,13 @@ export function CategoriesManager({ initialCategories }: { initialCategories: Ca
                 onCheckedChange={() => handleToggleVisible(category)}
                 aria-label="Visible to customers"
               />
-              <Button variant="ghost" size="icon-sm" onClick={() => openEdit(category)} aria-label="Edit" className="text-muted-foreground hover:text-foreground">
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                onClick={() => router.push(`/admin/categories/${category.id}/edit`)}
+                aria-label="Edit"
+                className="text-muted-foreground hover:text-foreground"
+              >
                 <Pencil className="size-3.5" />
               </Button>
               <Button
@@ -174,37 +127,6 @@ export function CategoriesManager({ initialCategories }: { initialCategories: Ca
           ))}
         </div>
       )}
-
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>{editing ? "Edit category" : "Add category"}</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4">
-            <FormRow label="Name" htmlFor="category-name" required>
-              <Input
-                id="category-name"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="e.g. Starters"
-                autoFocus
-              />
-            </FormRow>
-            <div className="flex items-center justify-between rounded-xl border bg-card px-4 py-3 transition-colors hover:bg-muted/40">
-              <p className="text-sm font-medium select-none">Visible to customers</p>
-              <Switch checked={isVisible} onCheckedChange={setIsVisible} />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setDialogOpen(false)}>
-              Cancel
-            </Button>
-            <Button onClick={handleSave} disabled={saving}>
-              {saving ? "Saving…" : "Save"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
       <ConfirmDialog
         open={!!deleteTarget}

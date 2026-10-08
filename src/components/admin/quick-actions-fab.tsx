@@ -21,11 +21,12 @@ interface QuickAction {
 }
 
 // Launcher only — each destination is the app's existing full workflow, not a
-// form embedded here. See create-order-page.tsx / products-manager.tsx /
-// expenses-manager.tsx / parties-manager.tsx for the actual forms; the
-// `?new=1` query param tells those managers to auto-open their existing
-// "add" dialog on arrival (handled locally there, not via useSearchParams,
-// so no Suspense boundary is required here).
+// form embedded here. Add Product links straight to its dedicated full page
+// (product-form-page.tsx); Add Expense / Add Party / Record Payment still
+// use the older `?new=1`/`?pay=1` pattern, which tells those managers to
+// auto-open their existing "add" dialog on arrival (handled locally there,
+// not via useSearchParams, so no Suspense boundary is required here) — not
+// yet converted to full pages.
 const ACTIONS: QuickAction[] = [
   {
     label: "Create Order",
@@ -37,7 +38,7 @@ const ACTIONS: QuickAction[] = [
     label: "Add Product",
     description: "Add a new menu item or product",
     icon: PackagePlus,
-    href: "/admin/products?new=1",
+    href: "/admin/products/new",
   },
   {
     label: "Add Expense",
