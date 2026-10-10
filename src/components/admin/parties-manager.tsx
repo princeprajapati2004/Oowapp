@@ -37,7 +37,6 @@ import {
   DropdownMenuItem,
   DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
-import { PartyFormDialog } from "@/components/admin/party-form-dialog";
 import { EmptyState } from "@/components/shared/empty-state";
 import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 import { api, ApiError } from "@/lib/api-client";
@@ -141,26 +140,20 @@ export function PartiesManager({
   const [filter, setFilter] = useState<FilterValue>("all");
   const [sort, setSort] = useState<SortValue>("newest");
 
-  const [dialogOpen, setDialogOpen] = useState(false);
-  const [editing, setEditing] = useState<PartyRow | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<PartyRow | null>(null);
   // Payment-picker mode — entered via the Quick Actions FAB ("Record
   // Payment" → /admin/parties?pay=1). While active, selecting a party below
   // carries the intent forward to /admin/parties/[id]?pay=1, which
   // party-statement.tsx reads to auto-open its existing "Log Payment"
-  // dialog — same handoff convention as the `new=1` add-party flow.
+  // dialog — unrelated to Add/Edit Party, now its own full page (see
+  // openCreate/openEdit below), so this handoff is unchanged.
   const [paymentPickerMode, setPaymentPickerMode] = useState(false);
 
-  // Launched from the Quick Actions FAB ("Add Party / Customer" →
-  // /admin/parties?new=1, or "Record Payment" → /admin/parties?pay=1).
+  // Launched from the Quick Actions FAB's "Record Payment" → /admin/parties?pay=1.
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    if (params.get("new") === "1") {
+    if (params.get("pay") === "1") {
       // eslint-disable-next-line react-hooks/set-state-in-effect
-      setEditing(null);
-      setDialogOpen(true);
-      router.replace("/admin/parties", { scroll: false });
-    } else if (params.get("pay") === "1") {
       setPaymentPickerMode(true);
       router.replace("/admin/parties", { scroll: false });
     }
@@ -200,22 +193,11 @@ export function PartiesManager({
   }, [parties, search, filter, sort]);
 
   function openCreate() {
-    setEditing(null);
-    setDialogOpen(true);
+    router.push("/admin/parties/new");
   }
 
   function openEdit(party: PartyRow) {
-    setEditing(party);
-    setDialogOpen(true);
-  }
-
-  async function handlePartySaved() {
-    // Refetch rather than patch local state in place: a saved opening balance,
-    // type change, or brand-new party's phone matching pre-existing orders can
-    // all change the outstanding-balance formula — only the server's
-    // recomputed value is trustworthy.
-    const refreshed = await api.get<PartyRow[]>("/api/admin/parties");
-    setParties(refreshed);
+    router.push(`/admin/parties/${party.id}/edit`);
   }
 
   async function handleDelete() {
@@ -395,8 +377,6 @@ export function PartiesManager({
           })}
         </div>
       )}
-
-      <PartyFormDialog open={dialogOpen} onOpenChange={setDialogOpen} editing={editing} onSaved={handlePartySaved} />
 
       <ConfirmDialog
         open={!!deleteTarget}

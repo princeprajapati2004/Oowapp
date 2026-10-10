@@ -1,10 +1,10 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Plus, Pencil, Trash2, Percent } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -14,15 +14,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from "@/components/ui/dialog";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { FormRow } from "@/components/shared/form-row";
 import { EmptyState } from "@/components/shared/empty-state";
 import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 import { api, ApiError } from "@/lib/api-client";
@@ -34,15 +26,6 @@ import type { serializeTaxes } from "@/lib/serialize";
 
 type TaxRow = ReturnType<typeof serializeTaxes<Awaited<ReturnType<typeof listTaxes>>[number]>>[number];
 
-const EMPTY_FORM = {
-  name: "",
-  type: "PERCENTAGE" as "PERCENTAGE" | "FIXED",
-  value: "",
-  appliesTo: "ENTIRE_BILL" as "ENTIRE_BILL" | "CATEGORY",
-  categoryId: null as string | null,
-  isEnabled: true,
-};
-
 export function TaxesManager({
   initialTaxes,
   categories,
@@ -52,11 +35,8 @@ export function TaxesManager({
   categories: Category[];
   currency: string;
 }) {
+  const router = useRouter();
   const [taxes, setTaxes] = useState(initialTaxes);
-  const [dialogOpen, setDialogOpen] = useState(false);
-  const [editing, setEditing] = useState<TaxRow | null>(null);
-  const [form, setForm] = useState(EMPTY_FORM);
-  const [saving, setSaving] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<TaxRow | null>(null);
   const [previewCategoryId, setPreviewCategoryId] = useState<string>(categories[0]?.id ?? "");
 
@@ -77,66 +57,11 @@ export function TaxesManager({
   }, [taxes, previewCategoryId]);
 
   function openCreate() {
-    setEditing(null);
-    setForm(EMPTY_FORM);
-    setDialogOpen(true);
+    router.push("/admin/taxes/new");
   }
 
   function openEdit(tax: TaxRow) {
-    setEditing(tax);
-    setForm({
-      name: tax.name,
-      type: tax.type,
-      value: String(tax.value),
-      appliesTo: tax.appliesTo,
-      categoryId: tax.categoryId,
-      isEnabled: tax.isEnabled,
-    });
-    setDialogOpen(true);
-  }
-
-  async function handleSave() {
-    if (!form.name.trim()) return toast.error("Name is required");
-    const valueNum = Number(form.value);
-    if (!Number.isFinite(valueNum) || valueNum < 0) return toast.error("Enter a valid value");
-    if (form.appliesTo === "CATEGORY" && !form.categoryId) {
-      return toast.error("Select a category");
-    }
-
-    const payload = {
-      name: form.name,
-      type: form.type,
-      value: valueNum,
-      appliesTo: form.appliesTo,
-      categoryId: form.appliesTo === "CATEGORY" ? form.categoryId : null,
-      isEnabled: form.isEnabled,
-    };
-
-    setSaving(true);
-    try {
-      if (editing) {
-        const updated = await api.patch<Awaited<ReturnType<typeof listTaxes>>[number]>(
-          `/api/admin/taxes/${editing.id}`,
-          payload
-        );
-        const serialized = { ...updated, value: Number(updated.value) } as TaxRow;
-        setTaxes((prev) => prev.map((t) => (t.id === serialized.id ? serialized : t)));
-        toast.success("Tax updated");
-      } else {
-        const created = await api.post<Awaited<ReturnType<typeof listTaxes>>[number]>(
-          "/api/admin/taxes",
-          payload
-        );
-        const serialized = { ...created, value: Number(created.value) } as TaxRow;
-        setTaxes((prev) => [...prev, serialized]);
-        toast.success("Tax added");
-      }
-      setDialogOpen(false);
-    } catch (error) {
-      toast.error(error instanceof ApiError ? error.message : "Failed to save");
-    } finally {
-      setSaving(false);
-    }
+    router.push(`/admin/taxes/${tax.id}/edit`);
   }
 
   async function handleDelete() {
@@ -264,107 +189,6 @@ export function TaxesManager({
           </Card>
         </div>
       )}
-
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>{editing ? "Edit tax" : "Add tax"}</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4">
-            <FormRow label="Name" htmlFor="tax-name" required>
-              <Input
-                id="tax-name"
-                value={form.name}
-                onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-                placeholder="e.g. GST 5%"
-                autoFocus
-              />
-            </FormRow>
-
-            <div className="grid grid-cols-2 gap-3">
-              <FormRow label="Type" htmlFor="tax-type">
-                <Select
-                  value={form.type}
-                  onValueChange={(v) => v && setForm((f) => ({ ...f, type: v as typeof f.type }))}
-                >
-                  <SelectTrigger id="tax-type" className="w-full">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="PERCENTAGE">Percentage</SelectItem>
-                    <SelectItem value="FIXED">Fixed amount</SelectItem>
-                  </SelectContent>
-                </Select>
-              </FormRow>
-              <FormRow label="Value" htmlFor="tax-value" required>
-                <Input
-                  id="tax-value"
-                  type="number"
-                  min={0}
-                  step="0.01"
-                  value={form.value}
-                  onChange={(e) => setForm((f) => ({ ...f, value: e.target.value }))}
-                />
-              </FormRow>
-            </div>
-
-            <FormRow label="Applies to" htmlFor="tax-applies-to">
-              <Select
-                value={form.appliesTo}
-                onValueChange={(v) =>
-                  v && setForm((f) => ({ ...f, appliesTo: v as typeof f.appliesTo, categoryId: null }))
-                }
-              >
-                <SelectTrigger id="tax-applies-to" className="w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="ENTIRE_BILL">Entire bill</SelectItem>
-                  <SelectItem value="CATEGORY">A specific category</SelectItem>
-                </SelectContent>
-              </Select>
-            </FormRow>
-
-            {form.appliesTo === "CATEGORY" && (
-              <FormRow label="Category" htmlFor="tax-category" required>
-                <Select
-                  value={form.categoryId ?? ""}
-                  onValueChange={(v) => setForm((f) => ({ ...f, categoryId: v }))}
-                >
-                  <SelectTrigger id="tax-category" className="w-full">
-                    <SelectValue>
-                      {categories.find((c) => c.id === form.categoryId)?.name ?? "Select category"}
-                    </SelectValue>
-                  </SelectTrigger>
-                  <SelectContent>
-                    {categories.map((c) => (
-                      <SelectItem key={c.id} value={c.id}>
-                        {c.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </FormRow>
-            )}
-
-            <div className="flex items-center justify-between rounded-xl border bg-card px-4 py-3 transition-colors hover:bg-muted/40">
-              <p className="text-sm font-medium select-none">Enabled</p>
-              <Switch
-                checked={form.isEnabled}
-                onCheckedChange={(v) => setForm((f) => ({ ...f, isEnabled: v }))}
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setDialogOpen(false)}>
-              Cancel
-            </Button>
-            <Button onClick={handleSave} disabled={saving}>
-              {saving ? "Saving…" : "Save"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
       <ConfirmDialog
         open={!!deleteTarget}

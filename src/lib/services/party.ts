@@ -85,6 +85,13 @@ async function assertOwnedParty(shopId: string, id: string) {
   return party;
 }
 
+// Single-party lookup (no balance computation, no 404 throw) — used by the
+// Edit Party full page (src/app/admin/parties/[id]/edit), which needs a
+// plain null-on-not-found result to call notFound() itself.
+export async function getParty(shopId: string, id: string) {
+  return db.party.findFirst({ where: { id, shopId } });
+}
+
 /**
  * "You Gave / You Got" ledger convention (Khatabook/Vyapar-style):
  * - Customer: what THEY owe the shop. Unpaid matched orders add to it;

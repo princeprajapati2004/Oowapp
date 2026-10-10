@@ -10,6 +10,12 @@ export async function listTaxes(shopId: string) {
   });
 }
 
+// Single-tax lookup (with category, same shape as listTaxes' rows) — used by
+// the Edit Tax full page (src/app/admin/taxes/[id]/edit).
+export async function getTax(shopId: string, id: string) {
+  return db.tax.findFirst({ where: { id, shopId }, include: { category: true } });
+}
+
 async function assertCategoryBelongsToShop(shopId: string, categoryId: string) {
   const category = await db.category.findFirst({ where: { id: categoryId, shopId } });
   if (!category) throw new NotFoundError("Category not found");

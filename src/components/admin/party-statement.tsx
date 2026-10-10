@@ -49,7 +49,6 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { FormRow } from "@/components/shared/form-row";
 import { ConfirmDialog } from "@/components/shared/confirm-dialog";
-import { PartyFormDialog } from "@/components/admin/party-form-dialog";
 import { RevenueChart } from "@/components/admin/dashboard/revenue-chart";
 import { api, ApiError } from "@/lib/api-client";
 import { formatCurrency } from "@/lib/utils/currency";
@@ -165,7 +164,6 @@ export function PartyStatement({
   const [downloadingPdf, setDownloadingPdf] = useState(false);
   const [sharing, setSharing] = useState(false);
   const [logOpen, setLogOpen] = useState(false);
-  const [editOpen, setEditOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [amount, setAmount] = useState("");
   const [direction, setDirection] = useState<"RECEIVED" | "PAID">(
@@ -602,7 +600,7 @@ export function PartyStatement({
             <DropdownMenuItem render={<a href={waLink(party.phone)} target="_blank" rel="noopener noreferrer" />}>
               <MessageCircle className="size-4" /> WhatsApp
             </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => setEditOpen(true)}>
+            <DropdownMenuItem onClick={() => router.push(`/admin/parties/${party.id}/edit`)}>
               <Pencil className="size-4" /> Edit
             </DropdownMenuItem>
             <DropdownMenuItem onClick={() => window.print()}>
@@ -937,8 +935,6 @@ export function PartyStatement({
           </div>
         </DialogContent>
       </Dialog>
-
-      <PartyFormDialog open={editOpen} onOpenChange={setEditOpen} editing={party} onSaved={refresh} />
 
       <ConfirmDialog
         open={deleteOpen}

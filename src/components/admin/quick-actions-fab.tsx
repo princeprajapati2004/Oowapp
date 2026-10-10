@@ -50,7 +50,7 @@ const ACTIONS: QuickAction[] = [
     label: "Add Party / Customer",
     description: "Add customer, supplier or business party",
     icon: Users,
-    href: "/admin/parties?new=1",
+    href: "/admin/parties/new",
   },
   {
     label: "Record Payment",
