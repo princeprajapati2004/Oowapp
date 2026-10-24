@@ -72,6 +72,20 @@ export const paymentSettingsSchema = z.object({
 });
 export type PaymentSettingsInput = z.infer<typeof paymentSettingsSchema>;
 
+export const paymentGatewaySchema = z.object({
+  paymentGatewayAccountId: z
+    .string()
+    .trim()
+    .max(100)
+    .refine((v) => !v || v.startsWith("acc_"), {
+      message: "Razorpay linked account IDs start with 'acc_'",
+    })
+    .optional()
+    .or(z.literal("")),
+  paymentGatewayMerchantId: z.string().trim().max(100).optional().or(z.literal("")),
+});
+export type PaymentGatewaySettingsInput = z.infer<typeof paymentGatewaySchema>;
+
 // 1/2/3/5/7/10/15/30 cover the spec's dropdown; anything else typed in via
 // "Custom" still passes as long as it's a sane positive integer.
 export const RETURN_WINDOW_DAY_PRESETS = [1, 2, 3, 5, 7, 10, 15, 30] as const;

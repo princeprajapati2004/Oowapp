@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { getAdminSession } from "@/lib/session";
 import { getShopById } from "@/lib/services/shop";
 import { getDashboardAnalytics, type DashboardData } from "@/lib/services/analytics";
+import { resolveDateRange, todayISTDateString } from "@/lib/utils/date-range";
 import { db } from "@/lib/db";
 import { DashboardClient } from "@/components/admin/dashboard/dashboard-client";
 import { LiveTableStats } from "@/components/admin/dashboard/live-table-stats";
@@ -33,11 +34,10 @@ export default async function AdminDashboardPage() {
 
   const shop = await getShopById(session.shopId);
 
-  const now = new Date();
-  const todayStart = new Date(now);
-  todayStart.setHours(0, 0, 0, 0);
-  const todayEnd = new Date(now);
-  todayEnd.setHours(23, 59, 59, 999);
+  // IST calendar day, not the host process's own timezone — see
+  // date-range.ts::todayISTDateString for why this matters.
+  const todayStr = todayISTDateString();
+  const { from: todayStart, to: todayEnd } = resolveDateRange(todayStr, todayStr);
 
   // Settled independently: these three widgets are unrelated to each other
   // (revenue analytics, table occupancy, kitchen queue depth), so one flaky

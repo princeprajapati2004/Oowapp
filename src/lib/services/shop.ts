@@ -2,7 +2,7 @@ import { db } from "@/lib/db";
 import { slugify, randomSuffix } from "@/lib/utils/slugify";
 import { isDeliveryFirst, type BusinessType } from "@/lib/business-types";
 import { NotFoundError } from "@/lib/api-utils";
-import type { OrderMode, PrintFormat, Shop } from "@/generated/prisma/client";
+import type { OrderMode, PrintFormat, Prisma, Shop } from "@/generated/prisma/client";
 
 async function generateUniqueSlug(businessName: string) {
   const base = slugify(businessName) || "shop";
@@ -25,12 +25,15 @@ export async function createShopForAdmin(
     businessName: string;
     businessType: BusinessType;
     whatsappNumber: string;
-  }
+  },
+  // See product.ts::createProduct's same parameter — lets the caller run
+  // this insert inside its own subscription-limit-recheck transaction.
+  tx: Prisma.TransactionClient | typeof db = db
 ) {
   const slug = await generateUniqueSlug(input.businessName);
   const deliveryFirst = isDeliveryFirst(input.businessType);
 
-  return db.shop.create({
+  return tx.shop.create({
     data: {
       adminId,
       slug,
@@ -100,6 +103,8 @@ export type ShopSettingsInput = Partial<{
   phonePeUpi: string | null;
   paytmUpi: string | null;
   bhimUpi: string | null;
+  paymentGatewayAccountId: string | null;
+  paymentGatewayMerchantId: string | null;
   requireCustomerName: boolean;
   requirePhone: boolean;
   enableTableNumber: boolean;

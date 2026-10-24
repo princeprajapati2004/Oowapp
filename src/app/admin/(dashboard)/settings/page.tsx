@@ -13,6 +13,8 @@ import { getOrCreateItemSettings } from "@/lib/services/item-settings";
 import { BusinessInfoForm } from "@/components/admin/settings/business-info-form";
 import { ItemSettingsForm } from "@/components/admin/settings/item-settings-form";
 import { PaymentSettingsForm } from "@/components/admin/settings/payment-settings-form";
+import { PaymentGatewaySettingsForm } from "@/components/admin/settings/payment-gateway-settings-form";
+import { FeatureLock } from "@/components/admin/feature-lock";
 import { OrderSettingsForm } from "@/components/admin/settings/order-settings-form";
 import { MenuSettingsForm } from "@/components/admin/settings/menu-settings-form";
 import { BillNumberingForm } from "@/components/admin/settings/bill-numbering-form";
@@ -104,6 +106,25 @@ export default async function SettingsPage() {
             paytmUpi: shop.paytmUpi ?? "",
             bhimUpi: shop.bhimUpi ?? "",
           }}
+        />
+      ),
+    },
+    {
+      id: "paymentGateway",
+      title: "Payment gateway",
+      description: "Linked account used to collect customer-order payments automatically.",
+      content: enabledFeatureKeys.customer_payment_gateway ? (
+        <PaymentGatewaySettingsForm
+          bare
+          defaultValues={{
+            paymentGatewayAccountId: shopAny.paymentGatewayAccountId ?? "",
+            paymentGatewayMerchantId: shopAny.paymentGatewayMerchantId ?? "",
+          }}
+        />
+      ) : (
+        <FeatureLock
+          label="Payment gateway"
+          description="Automated customer-order payment collection is available on Enterprise."
         />
       ),
     },

@@ -99,6 +99,27 @@ function istDayEnd(dateStr: string): Date {
   return new Date(istDayStart(dateStr).getTime() + 24 * 60 * 60 * 1000 - 1);
 }
 
+/**
+ * Current calendar date in IST as "YYYY-MM-DD", independent of the server
+ * process's own timezone (same reasoning as istDayStart above). For
+ * server-side "today"/"yesterday" boundaries that live outside the Reports
+ * Center and so don't already go through resolveDateRange (e.g. the owner
+ * dashboard) — use this instead of `new Date().setHours(0,0,0,0)`, which
+ * silently uses whatever timezone the host process happens to run in.
+ */
+export function todayISTDateString(): string {
+  const istNow = new Date(Date.now() + IST_OFFSET_MS);
+  return `${istNow.getUTCFullYear()}-${pad(istNow.getUTCMonth() + 1)}-${pad(istNow.getUTCDate())}`;
+}
+
+/** Calendar-date arithmetic on a "YYYY-MM-DD" string, DST-safe (UTC-based). */
+export function addDaysToDateString(dateStr: string, days: number): string {
+  const [y, m, d] = dateStr.split("-").map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  dt.setUTCDate(dt.getUTCDate() + days);
+  return `${dt.getUTCFullYear()}-${pad(dt.getUTCMonth() + 1)}-${pad(dt.getUTCDate())}`;
+}
+
 const RANGE_LABEL_FORMAT = new Intl.DateTimeFormat("en-IN", {
   day: "2-digit",
   month: "short",

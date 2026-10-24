@@ -95,26 +95,34 @@ function pct(current: number, prev: number): number | null {
 
 async function fetchSummary(shopId: string, from: Date, to: Date): Promise<DashboardSummary> {
   const where = { shopId, createdAt: { gte: from, lt: to } };
+  // Revenue/tax/discount must exclude cancelled orders — a cancelled order's
+  // grandTotal was never actually earned. Mirrors sales-report.ts's default
+  // `status: { not: "CANCELLED" }` convention. totalOrders/completedOrders/
+  // cancelledOrders intentionally stay unfiltered (all orders placed), so
+  // completionRate = completedOrders / totalOrders keeps meaning "% of all
+  // placed orders that completed."
+  const revenueWhere = { ...where, status: { not: "CANCELLED" as const } };
 
-  const [agg, completed, cancelled] = await Promise.all([
+  const [agg, totalCount, completed, cancelled] = await Promise.all([
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (db.order as any).aggregate({
-      where,
+      where: revenueWhere,
       _sum: { grandTotal: true, taxTotal: true, discountedTotal: true, discountValue: true },
-      _count: true,
     }),
+    db.order.count({ where }),
     db.order.count({ where: { ...where, status: "COMPLETED" } }),
     db.order.count({ where: { ...where, status: "CANCELLED" } }),
   ]);
 
   const totalRevenue = Number(agg._sum.grandTotal ?? 0);
-  const totalOrders = agg._count;
+  const totalOrders = totalCount;
+  const revenueOrders = totalOrders - cancelled;
   return {
     totalRevenue,
     totalOrders,
     completedOrders: completed,
     cancelledOrders: cancelled,
-    avgOrderValue: totalOrders > 0 ? Math.round(totalRevenue / totalOrders) : 0,
+    avgOrderValue: revenueOrders > 0 ? Math.round(totalRevenue / revenueOrders) : 0,
     totalTax: Number(agg._sum.taxTotal ?? 0),
     totalDiscount: Number(agg._sum.discountValue ?? 0),
   };
@@ -134,6 +142,7 @@ async function fetchRevenueChart(shopId: string, from: Date, to: Date, granulari
           WHERE \`shopId\` = ${shopId}
             AND \`createdAt\` >= ${from}
             AND \`createdAt\` < ${to}
+            AND \`status\` != 'CANCELLED'
           GROUP BY hour
           ORDER BY hour
         `
@@ -146,6 +155,7 @@ async function fetchRevenueChart(shopId: string, from: Date, to: Date, granulari
           WHERE "shopId" = ${shopId}
             AND "createdAt" >= ${from}
             AND "createdAt" < ${to}
+            AND "status" != 'CANCELLED'
           GROUP BY hour
           ORDER BY hour
         `;
@@ -168,6 +178,7 @@ async function fetchRevenueChart(shopId: string, from: Date, to: Date, granulari
           WHERE \`shopId\` = ${shopId}
             AND \`createdAt\` >= ${from}
             AND \`createdAt\` < ${to}
+            AND \`status\` != 'CANCELLED'
           GROUP BY date
           ORDER BY date
         `
@@ -180,6 +191,7 @@ async function fetchRevenueChart(shopId: string, from: Date, to: Date, granulari
           WHERE "shopId" = ${shopId}
             AND "createdAt" >= ${from}
             AND "createdAt" < ${to}
+            AND "status" != 'CANCELLED'
           GROUP BY date
           ORDER BY date
         `;
@@ -211,6 +223,7 @@ async function fetchRevenueChart(shopId: string, from: Date, to: Date, granulari
         WHERE \`shopId\` = ${shopId}
           AND \`createdAt\` >= ${from}
           AND \`createdAt\` < ${to}
+          AND \`status\` != 'CANCELLED'
         GROUP BY month
         ORDER BY month
       `
@@ -223,6 +236,7 @@ async function fetchRevenueChart(shopId: string, from: Date, to: Date, granulari
         WHERE "shopId" = ${shopId}
           AND "createdAt" >= ${from}
           AND "createdAt" < ${to}
+          AND "status" != 'CANCELLED'
         GROUP BY month
         ORDER BY month
       `;
@@ -254,6 +268,7 @@ async function fetchPaymentBreakdown(shopId: string, from: Date, to: Date): Prom
           WHERE \`shopId\` = ${shopId}
             AND \`createdAt\` >= ${from}
             AND \`createdAt\` < ${to}
+            AND \`status\` != 'CANCELLED'
           GROUP BY \`paymentMethod\`
           ORDER BY amount DESC
         `
@@ -266,6 +281,7 @@ async function fetchPaymentBreakdown(shopId: string, from: Date, to: Date): Prom
           WHERE "shopId" = ${shopId}
             AND "createdAt" >= ${from}
             AND "createdAt" < ${to}
+            AND "status" != 'CANCELLED'
           GROUP BY "paymentMethod"
           ORDER BY amount DESC
         `;
@@ -326,6 +342,7 @@ async function fetchTopProducts(shopId: string, from: Date, to: Date, limit = 5)
       WHERE o.\`shopId\` = ${shopId}
         AND o.\`createdAt\` >= ${from}
         AND o.\`createdAt\` < ${to}
+        AND o.\`status\` != 'CANCELLED'
       GROUP BY oi.name
       ORDER BY quantity DESC
       LIMIT ${limit}
@@ -341,6 +358,7 @@ async function fetchTopProducts(shopId: string, from: Date, to: Date, limit = 5)
     WHERE o."shopId" = ${shopId}
       AND o."createdAt" >= ${from}
       AND o."createdAt" < ${to}
+      AND o."status" != 'CANCELLED'
     GROUP BY oi.name
     ORDER BY quantity DESC
     LIMIT ${limit}

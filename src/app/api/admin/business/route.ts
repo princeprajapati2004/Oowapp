@@ -2,9 +2,11 @@ import { NextResponse } from "next/server";
 import { requireAdminSession } from "@/lib/session";
 import { handleApiError } from "@/lib/api-utils";
 import { getShopById, updateShopSettings } from "@/lib/services/shop";
+import { assertFeatureEnabled } from "@/lib/services/feature-permission";
 import {
   businessInfoSchema,
   paymentSettingsSchema,
+  paymentGatewaySchema,
   orderSettingsSchema,
   menuSettingsSchema,
   restaurantSettingsSchema,
@@ -33,7 +35,10 @@ export async function PATCH(request: Request) {
     let data;
     if (section === "business") data = businessInfoSchema.parse(rest);
     else if (section === "payment") data = paymentSettingsSchema.parse(rest);
-    else if (section === "orders") data = orderSettingsSchema.parse(rest);
+    else if (section === "payment_gateway") {
+      await assertFeatureEnabled(session.shopId, "customer_payment_gateway");
+      data = paymentGatewaySchema.parse(rest);
+    } else if (section === "orders") data = orderSettingsSchema.parse(rest);
     else if (section === "restaurant") {
       const parsed = restaurantSettingsSchema.parse(rest);
       data = {

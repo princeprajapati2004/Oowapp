@@ -70,11 +70,28 @@ interface Plan {
   trialDays: number;
   planFeatures: PlanFeatureRow[];
   planLimits: PlanLimitRow[];
+  subscriberCount: number;
 }
 
 function formatPrice(value: string | number | null, currency: string): string {
   if (value === null) return "—";
   return `${currency} ${Number(value).toLocaleString()}`;
+}
+
+// Shown as a confirmation step before a price/feature/limit edit saves —
+// unlike archiving, these apply instantly to every current subscriber
+// (Subscription stores a planId reference, not a frozen price/limit copy).
+function SubscriberImpactNotice({ count, planName }: { count: number; planName: string }) {
+  return (
+    <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-900/40 dark:bg-amber-950/30 dark:text-amber-200">
+      <p className="font-medium">
+        {count} business{count === 1 ? "" : "es"} currently on {planName}
+      </p>
+      <p className="mt-1 text-amber-800/90 dark:text-amber-200/80">
+        This change takes effect for them immediately — there&apos;s no grandfathered pricing or limits for existing subscribers.
+      </p>
+    </div>
+  );
 }
 
 export function PlanManager({ plans, features }: { plans: Plan[]; features: Feature[] }) {
@@ -336,6 +353,7 @@ function NewPlanDialog({ onCreated }: { onCreated: () => void }) {
 
 function EditPlanDialog({ plan, onSaved }: { plan: Plan; onSaved: () => void }) {
   const [open, setOpen] = useState(false);
+  const [confirming, setConfirming] = useState(false);
   const [name, setName] = useState(plan.name);
   const [description, setDescription] = useState(plan.description ?? "");
   const [isActive, setIsActive] = useState(plan.isActive);
@@ -346,7 +364,7 @@ function EditPlanDialog({ plan, onSaved }: { plan: Plan; onSaved: () => void }) 
   const [trialDays, setTrialDays] = useState(String(plan.trialDays));
   const [saving, setSaving] = useState(false);
 
-  async function handleSubmit() {
+  async function saveNow() {
     setSaving(true);
     try {
       await api.patch(`/api/super-admin/plans/${plan.id}`, {
@@ -369,42 +387,65 @@ function EditPlanDialog({ plan, onSaved }: { plan: Plan; onSaved: () => void }) 
     }
   }
 
+  function handleSubmit() {
+    if (plan.subscriberCount > 0 && !confirming) {
+      setConfirming(true);
+      return;
+    }
+    saveNow();
+  }
+
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next);
+        if (next) setConfirming(false);
+      }}
+    >
       <DialogTrigger render={<Button variant="outline" size="sm" />}>Edit</DialogTrigger>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Edit {plan.code}</DialogTitle>
+          <DialogTitle>{confirming ? `Apply changes to ${plan.name}?` : `Edit ${plan.code}`}</DialogTitle>
         </DialogHeader>
-        <div className="space-y-3">
-          <Field>
-            <FieldLabel>Name</FieldLabel>
-            <Input value={name} onChange={(e) => setName(e.target.value)} />
-          </Field>
-          <Field>
-            <FieldLabel>Description</FieldLabel>
-            <Textarea value={description} onChange={(e) => setDescription(e.target.value)} />
-          </Field>
-          <PricingFields
-            monthlyPrice={monthlyPrice}
-            setMonthlyPrice={setMonthlyPrice}
-            annualPrice={annualPrice}
-            setAnnualPrice={setAnnualPrice}
-            currency={currency}
-            setCurrency={setCurrency}
-            isPopular={isPopular}
-            setIsPopular={setIsPopular}
-            trialDays={trialDays}
-            setTrialDays={setTrialDays}
-          />
-          <Field orientation="horizontal">
-            <FieldLabel>Active</FieldLabel>
-            <Switch checked={isActive} onCheckedChange={setIsActive} />
-          </Field>
-        </div>
+        {confirming ? (
+          <SubscriberImpactNotice count={plan.subscriberCount} planName={plan.name} />
+        ) : (
+          <div className="space-y-3">
+            <Field>
+              <FieldLabel>Name</FieldLabel>
+              <Input value={name} onChange={(e) => setName(e.target.value)} />
+            </Field>
+            <Field>
+              <FieldLabel>Description</FieldLabel>
+              <Textarea value={description} onChange={(e) => setDescription(e.target.value)} />
+            </Field>
+            <PricingFields
+              monthlyPrice={monthlyPrice}
+              setMonthlyPrice={setMonthlyPrice}
+              annualPrice={annualPrice}
+              setAnnualPrice={setAnnualPrice}
+              currency={currency}
+              setCurrency={setCurrency}
+              isPopular={isPopular}
+              setIsPopular={setIsPopular}
+              trialDays={trialDays}
+              setTrialDays={setTrialDays}
+            />
+            <Field orientation="horizontal">
+              <FieldLabel>Active</FieldLabel>
+              <Switch checked={isActive} onCheckedChange={setIsActive} />
+            </Field>
+          </div>
+        )}
         <DialogFooter>
+          {confirming && (
+            <Button variant="outline" disabled={saving} onClick={() => setConfirming(false)}>
+              Back
+            </Button>
+          )}
           <Button disabled={!name.trim() || saving} onClick={handleSubmit}>
-            {saving ? "Saving…" : "Save"}
+            {saving ? "Saving…" : confirming ? "Apply Changes" : "Save"}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -424,10 +465,11 @@ function ManageFeaturesDialog({
   onSaved: () => void;
 }) {
   const [open, setOpen] = useState(false);
+  const [confirming, setConfirming] = useState(false);
   const [state, setState] = useState<Map<string, boolean>>(enabledByFeatureId);
   const [saving, setSaving] = useState(false);
 
-  async function handleSubmit() {
+  async function saveNow() {
     setSaving(true);
     try {
       await api.patch(`/api/super-admin/plans/${plan.id}/features`, {
@@ -446,12 +488,23 @@ function ManageFeaturesDialog({
     }
   }
 
+  function handleSubmit() {
+    if (plan.subscriberCount > 0 && !confirming) {
+      setConfirming(true);
+      return;
+    }
+    saveNow();
+  }
+
   return (
     <Dialog
       open={open}
       onOpenChange={(next) => {
         setOpen(next);
-        if (next) setState(new Map(enabledByFeatureId));
+        if (next) {
+          setState(new Map(enabledByFeatureId));
+          setConfirming(false);
+        }
       }}
     >
       <DialogTrigger render={<Button variant="outline" size="sm" />}>
@@ -460,30 +513,41 @@ function ManageFeaturesDialog({
       </DialogTrigger>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>{plan.name} — default features</DialogTitle>
-          <DialogDescription>
-            Applies to every business on this plan unless overridden individually.
-          </DialogDescription>
+          <DialogTitle>{confirming ? `Apply feature changes to ${plan.name}?` : `${plan.name} — default features`}</DialogTitle>
+          {!confirming && (
+            <DialogDescription>
+              Applies to every business on this plan unless overridden individually.
+            </DialogDescription>
+          )}
         </DialogHeader>
-        <div className="space-y-2 max-h-80 overflow-y-auto">
-          {features.map((feature) => (
-            <div key={feature.id} className="flex items-center justify-between gap-3 py-1.5">
-              <div>
-                <p className="text-sm font-medium">{feature.label}</p>
-                <p className="text-xs text-muted-foreground">{feature.key}</p>
+        {confirming ? (
+          <SubscriberImpactNotice count={plan.subscriberCount} planName={plan.name} />
+        ) : (
+          <div className="space-y-2 max-h-80 overflow-y-auto">
+            {features.map((feature) => (
+              <div key={feature.id} className="flex items-center justify-between gap-3 py-1.5">
+                <div>
+                  <p className="text-sm font-medium">{feature.label}</p>
+                  <p className="text-xs text-muted-foreground">{feature.key}</p>
+                </div>
+                <Switch
+                  checked={state.get(feature.id) ?? false}
+                  onCheckedChange={(checked) =>
+                    setState((prev) => new Map(prev).set(feature.id, checked))
+                  }
+                />
               </div>
-              <Switch
-                checked={state.get(feature.id) ?? false}
-                onCheckedChange={(checked) =>
-                  setState((prev) => new Map(prev).set(feature.id, checked))
-                }
-              />
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        )}
         <DialogFooter>
+          {confirming && (
+            <Button variant="outline" disabled={saving} onClick={() => setConfirming(false)}>
+              Back
+            </Button>
+          )}
           <Button disabled={saving} onClick={handleSubmit}>
-            {saving ? "Saving…" : "Save"}
+            {saving ? "Saving…" : confirming ? "Apply Changes" : "Save"}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -501,6 +565,7 @@ function ManageLimitsDialog({
   onSaved: () => void;
 }) {
   const [open, setOpen] = useState(false);
+  const [confirming, setConfirming] = useState(false);
   // "" (unlimited) or a numeric string per limit key.
   const [state, setState] = useState<Record<LimitKey, string>>(() => toStateMap(limitByKey));
   const [saving, setSaving] = useState(false);
@@ -514,7 +579,7 @@ function ManageLimitsDialog({
     return result;
   }
 
-  async function handleSubmit() {
+  async function saveNow() {
     setSaving(true);
     try {
       await api.patch(`/api/super-admin/plans/${plan.id}/limits`, {
@@ -533,12 +598,23 @@ function ManageLimitsDialog({
     }
   }
 
+  function handleSubmit() {
+    if (plan.subscriberCount > 0 && !confirming) {
+      setConfirming(true);
+      return;
+    }
+    saveNow();
+  }
+
   return (
     <Dialog
       open={open}
       onOpenChange={(next) => {
         setOpen(next);
-        if (next) setState(toStateMap(limitByKey));
+        if (next) {
+          setState(toStateMap(limitByKey));
+          setConfirming(false);
+        }
       }}
     >
       <DialogTrigger render={<Button variant="outline" size="sm" />}>
@@ -547,27 +623,36 @@ function ManageLimitsDialog({
       </DialogTrigger>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>{plan.name} — usage limits</DialogTitle>
-          <DialogDescription>Leave a field blank for unlimited.</DialogDescription>
+          <DialogTitle>{confirming ? `Apply limit changes to ${plan.name}?` : `${plan.name} — usage limits`}</DialogTitle>
+          {!confirming && <DialogDescription>Leave a field blank for unlimited.</DialogDescription>}
         </DialogHeader>
-        <div className="space-y-2 max-h-80 overflow-y-auto">
-          {LIMIT_KEYS.map((key) => (
-            <div key={key} className="flex items-center justify-between gap-3 py-1">
-              <p className="text-sm font-medium">{LIMIT_LABELS[key]}</p>
-              <Input
-                type="number"
-                min="0"
-                className="w-28"
-                placeholder="Unlimited"
-                value={state[key]}
-                onChange={(e) => setState((prev) => ({ ...prev, [key]: e.target.value }))}
-              />
-            </div>
-          ))}
-        </div>
+        {confirming ? (
+          <SubscriberImpactNotice count={plan.subscriberCount} planName={plan.name} />
+        ) : (
+          <div className="space-y-2 max-h-80 overflow-y-auto">
+            {LIMIT_KEYS.map((key) => (
+              <div key={key} className="flex items-center justify-between gap-3 py-1">
+                <p className="text-sm font-medium">{LIMIT_LABELS[key]}</p>
+                <Input
+                  type="number"
+                  min="0"
+                  className="w-28"
+                  placeholder="Unlimited"
+                  value={state[key]}
+                  onChange={(e) => setState((prev) => ({ ...prev, [key]: e.target.value }))}
+                />
+              </div>
+            ))}
+          </div>
+        )}
         <DialogFooter>
+          {confirming && (
+            <Button variant="outline" disabled={saving} onClick={() => setConfirming(false)}>
+              Back
+            </Button>
+          )}
           <Button disabled={saving} onClick={handleSubmit}>
-            {saving ? "Saving…" : "Save"}
+            {saving ? "Saving…" : confirming ? "Apply Changes" : "Save"}
           </Button>
         </DialogFooter>
       </DialogContent>

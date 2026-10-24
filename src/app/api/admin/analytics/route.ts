@@ -2,25 +2,23 @@ import { NextResponse } from "next/server";
 import { requireAdminSession } from "@/lib/session";
 import { handleApiError } from "@/lib/api-utils";
 import { getDashboardAnalytics, type Granularity } from "@/lib/services/analytics";
+import { resolveDateRange, todayISTDateString, addDaysToDateString } from "@/lib/utils/date-range";
 
 function getDateRange(period: string, from?: string, to?: string): { from: Date; to: Date; granularity: Granularity } {
   const now = new Date();
 
+  // "Today"/"yesterday" are IST calendar days, not the host process's own
+  // timezone — see date-range.ts::todayISTDateString for why that matters.
   if (period === "today") {
-    const start = new Date(now);
-    start.setHours(0, 0, 0, 0);
-    const end = new Date(now);
-    end.setHours(23, 59, 59, 999);
-    return { from: start, to: end, granularity: "hour" };
+    const todayStr = todayISTDateString();
+    const { from, to } = resolveDateRange(todayStr, todayStr);
+    return { from, to, granularity: "hour" };
   }
 
   if (period === "yesterday") {
-    const start = new Date(now);
-    start.setDate(start.getDate() - 1);
-    start.setHours(0, 0, 0, 0);
-    const end = new Date(start);
-    end.setHours(23, 59, 59, 999);
-    return { from: start, to: end, granularity: "hour" };
+    const yesterdayStr = addDaysToDateString(todayISTDateString(), -1);
+    const { from, to } = resolveDateRange(yesterdayStr, yesterdayStr);
+    return { from, to, granularity: "hour" };
   }
 
   if (period === "7d") {
@@ -62,9 +60,8 @@ function getDateRange(period: string, from?: string, to?: string): { from: Date;
     return { from: f, to: t, granularity };
   }
 
-  // default: today
-  const start = new Date(now);
-  start.setHours(0, 0, 0, 0);
+  // default: today-so-far (IST calendar day, running total up to now)
+  const { from: start } = resolveDateRange(todayISTDateString(), todayISTDateString());
   return { from: start, to: now, granularity: "hour" };
 }
 

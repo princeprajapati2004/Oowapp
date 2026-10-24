@@ -3,9 +3,10 @@ import { requireAdminSession } from "@/lib/session";
 import { handleApiError } from "@/lib/api-utils";
 import { addBusinessSchema } from "@/lib/validation/business";
 import { createShopForAdmin, listShopsForAdmin } from "@/lib/services/shop";
-import { checkSubscriptionLimit } from "@/lib/services/subscription-limits";
+import { checkSubscriptionLimit, assertLimitNotExceededInTx } from "@/lib/services/subscription-limits";
 import { db } from "@/lib/db";
 import { writeAuditLog, extractRequestMeta } from "@/lib/services/audit-log";
+import type { Prisma } from "@/generated/prisma/client";
 
 export async function GET() {
   try {
@@ -20,12 +21,19 @@ export async function GET() {
 export async function POST(request: Request) {
   try {
     const session = await requireAdminSession();
-    await checkSubscriptionLimit(session.adminId, "BUSINESSES", 1);
+    const { limit, planName } = await checkSubscriptionLimit(session.adminId, "BUSINESSES", 1);
     const body = await request.json();
     const input = addBusinessSchema.parse(body);
     const { ipAddress, userAgent, requestId } = extractRequestMeta(request);
 
-    const shop = await createShopForAdmin(session.adminId, input);
+    // Recheck atomically, immediately before the insert — see the matching
+    // comment in api/admin/products/route.ts.
+    const shop = await db.$transaction(async (tx: Prisma.TransactionClient) => {
+      await assertLimitNotExceededInTx(tx, session.adminId, "BUSINESSES", limit, planName, 1, (tx) =>
+        tx.shop.count({ where: { adminId: session.adminId } })
+      );
+      return createShopForAdmin(session.adminId, input, tx);
+    });
     await db.admin.update({
       where: { id: session.adminId },
       data: { lastActiveShopId: shop.id },

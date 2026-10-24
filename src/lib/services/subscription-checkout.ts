@@ -1,7 +1,7 @@
 import { db } from "@/lib/db";
 import { NotFoundError } from "@/lib/api-utils";
 import { ForbiddenError } from "@/lib/session";
-import { createOrder, verifyPaymentSignature } from "@/lib/services/razorpay";
+import { createOrder, verifyPaymentSignature, getSubscriptionRouteAccountId, getSubscriptionRouteMerchantId } from "@/lib/services/razorpay";
 import { validateAndPriceCoupon } from "@/lib/services/subscription-coupon";
 import { getSubscriptionTaxConfig, calculateTax } from "@/lib/services/subscription-tax";
 import { activateSubscriptionFromPayment } from "@/lib/services/subscription-billing";
@@ -65,11 +65,23 @@ export async function createCheckoutOrder(adminId: string, opts: { planId: strin
     },
   });
 
+  // Every self-service plan purchase/renewal/upgrade goes through this one
+  // order-creation call, so routing it here covers all of them uniformly —
+  // settles 100% of the payment to the configured Razorpay Route linked
+  // account instead of the platform's own default settlement account.
+  const routeAccountId = getSubscriptionRouteAccountId();
+  const routeMerchantId = getSubscriptionRouteMerchantId();
   const razorpayOrder = await createOrder({
     amountPaise: Math.round(tax.totalAmount * 100),
     currency: plan.currency,
     receipt: transaction.id,
-    notes: { adminId, planCode: plan.code, billingCycle: opts.billingCycle },
+    notes: {
+      adminId,
+      planCode: plan.code,
+      billingCycle: opts.billingCycle,
+      ...(routeMerchantId ? { routeMerchantId } : {}),
+    },
+    transferToAccountId: routeAccountId,
   });
 
   await db.subscriptionTransaction.update({ where: { id: transaction.id }, data: { gatewayOrderId: razorpayOrder.id } });

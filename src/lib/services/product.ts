@@ -115,7 +115,14 @@ function toProductData(input: ProductInput) {
   };
 }
 
-export async function createProduct(shopId: string, input: ProductInput) {
+export async function createProduct(
+  shopId: string,
+  input: ProductInput,
+  // Lets the caller run the final insert inside its own transaction (e.g. a
+  // subscription-limit recheck-then-create) instead of a separate connection
+  // — see subscription-limits.ts::assertLimitNotExceededInTx.
+  tx: Prisma.TransactionClient | typeof db = db
+) {
   await assertCategoryBelongsToShop(shopId, input.categoryId);
   await assertUniqueName(shopId, input.name);
   await assertUniqueBarcode(shopId, input.barcode || null);
@@ -133,7 +140,7 @@ export async function createProduct(shopId: string, input: ProductInput) {
   // separate ledger.
   const stock = data.stock ?? data.openingStock;
 
-  return db.product.create({
+  return tx.product.create({
     data: { shopId, ...data, barcode, productCode, stock },
     include: { category: true },
   });

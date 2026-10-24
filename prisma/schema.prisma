@@ -549,6 +549,17 @@ model Shop {
   paytmUpi           String?
   bhimUpi            String?
 
+  // Payment gateway (customer_payment_gateway feature, Enterprise-default —
+  // see BusinessFeaturePermission for per-shop overrides). Distinct from the
+  // manual UPI/bank-detail fields above: this is a Razorpay Route linked
+  // account for automated customer-order payment collection, not something
+  // shown as "pay manually to" on the bill. Account ID/MID only — no secret
+  // key is stored here; the platform's own Razorpay credentials (used for
+  // subscription billing, see razorpay.ts) are reused to create orders with
+  // a `transfers` entry addressed to this account.
+  paymentGatewayAccountId  String?
+  paymentGatewayMerchantId String?
+
   // Order settings
   requireCustomerName      Boolean @default(true)
   requirePhone             Boolean @default(false)

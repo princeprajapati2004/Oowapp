@@ -10,6 +10,29 @@ export async function listPlans() {
   });
 }
 
+/**
+ * How many admins' CURRENT subscription (their latest Subscription row by
+ * createdAt — the same "latest wins" rule getCurrentSubscription uses)
+ * points at each plan. Advisory only — used by the super-admin Plans UI to
+ * warn before a price/limit/feature edit takes effect, since those apply
+ * instantly to every current subscriber (Subscription stores a planId
+ * reference, not a frozen snapshot). Doesn't replicate getCurrentSubscription's
+ * pending-downgrade resolution — this is a heads-up count, not a billing figure.
+ */
+export async function getCurrentSubscriberCountsByPlan(): Promise<Record<string, number>> {
+  const latestPerAdmin = await db.subscription.findMany({
+    distinct: ["adminId"],
+    orderBy: [{ adminId: "asc" }, { createdAt: "desc" }],
+    select: { planId: true },
+  });
+  const counts: Record<string, number> = {};
+  for (const row of latestPerAdmin) {
+    if (!row.planId) continue;
+    counts[row.planId] = (counts[row.planId] ?? 0) + 1;
+  }
+  return counts;
+}
+
 export async function getPlan(id: string) {
   const plan = await db.plan.findUnique({
     where: { id },
