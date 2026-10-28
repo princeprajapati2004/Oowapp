@@ -40,6 +40,7 @@ import {
   Megaphone,
   Warehouse,
   DatabaseBackup,
+  Monitor,
   type LucideIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -99,6 +100,7 @@ export type ShellCopy = {
 function buildNavEntries(foodBusiness: boolean, copy: ShellCopy): NavEntry[] {
   const operationsItems: NavItem[] = [
     { href: "/admin/orders", label: "Orders", icon: ClipboardList },
+    { href: "/admin/display", label: copy.orderDisplayLabel, icon: Monitor },
     { href: "/admin/returns", label: "Returns & Refunds", icon: RotateCcw },
     { href: "/admin/loss-damage", label: "Loss & Damage", icon: PackageX },
   ];

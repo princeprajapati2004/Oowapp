@@ -3,7 +3,7 @@ import { getAdminSession } from "@/lib/session";
 import { REPORTS_CATALOG, type ReportCatalogEntry } from "@/lib/reports-catalog";
 import { ReportCard } from "@/components/admin/reports/report-card";
 
-const GROUP_ORDER: ReportCatalogEntry["group"][] = ["Sales & Purchases", "Finance", "Inventory", "Parties", "Marketing"];
+const GROUP_ORDER: ReportCatalogEntry["group"][] = ["Sales & Purchases", "Finance", "Inventory", "Parties", "Marketing", "Operations"];
 
 export default async function ReportsHubPage() {
   const session = await getAdminSession();

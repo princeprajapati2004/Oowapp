@@ -1,0 +1,54 @@
+import { NextResponse } from "next/server";
+import { requireAdminSession } from "@/lib/session";
+import { assertFeatureEnabled } from "@/lib/services/feature-permission";
+import { handleApiError } from "@/lib/api-utils";
+import { resolveDateRange } from "@/lib/utils/date-range";
+import {
+  getPreparationReportSummary,
+  listPreparationReportRows,
+  type PreparationReportFilters,
+} from "@/lib/services/reports/preparation-report";
+
+export async function GET(request: Request) {
+  try {
+    const session = await requireAdminSession();
+    await assertFeatureEnabled(session.shopId, "advanced_reports");
+    const { searchParams } = new URL(request.url);
+
+    const fromParam = searchParams.get("from");
+    const toParam = searchParams.get("to");
+    if (!fromParam || !toParam) {
+      return NextResponse.json({ error: "from and to date parameters are required" }, { status: 400 });
+    }
+    const range = resolveDateRange(fromParam, toParam);
+
+    const filters: PreparationReportFilters = {
+      from: range.from,
+      to: range.to,
+      search: searchParams.get("search") || undefined,
+      source: searchParams.get("source") || undefined,
+      status: searchParams.get("status") || undefined,
+    };
+
+    const all = searchParams.get("all") === "true";
+    const page = Math.max(1, Number(searchParams.get("page") ?? 1));
+    const pageSize = Math.min(Number(searchParams.get("pageSize") ?? 25), 100);
+
+    const [summary, { rows, total, truncated }] = await Promise.all([
+      getPreparationReportSummary(session.shopId, filters),
+      listPreparationReportRows(session.shopId, filters, all ? { all: true } : { page, pageSize }),
+    ]);
+
+    return NextResponse.json({
+      summary,
+      rows,
+      total,
+      truncated,
+      page,
+      pageSize,
+      range: { from: range.from.toISOString(), to: range.to.toISOString(), label: range.label },
+    });
+  } catch (error) {
+    return handleApiError(error);
+  }
+}

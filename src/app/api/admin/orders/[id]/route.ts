@@ -22,8 +22,10 @@ import {
   CANCEL_REASONS,
   getNextStatuses,
   canCancel,
+  deriveOrderType,
   type OrderStatus,
 } from "@/lib/order-status";
+import { getPrepTimeSettings, calculatePrepEstimate } from "@/lib/services/prep-time";
 import type { Prisma } from "@/generated/prisma/client";
 
 const PAYMENT_METHOD_VALUES = PAYMENT_METHODS.map((m) => m.value) as [string, ...string[]];
@@ -71,6 +73,11 @@ const updateOrderSchema = z.discriminatedUnion("action", [
   }),
   z.object({ action: z.literal("remove_discount") }),
   z.object({ action: z.literal("priority"), priorityFlag: z.enum(["VIP", "RUSH"]).nullable() }),
+  z.object({
+    action: z.literal("flag_delayed"),
+    extraMinutes: z.number().int().min(1).max(120).optional(),
+    note: z.string().trim().max(200).optional(),
+  }),
   z.object({
     action: z.literal("mark_paid"),
     paymentMethod: z.enum(PAYMENT_METHOD_VALUES),
@@ -147,7 +154,9 @@ export async function PATCH(
     // Support both old { status } format and new { action } format for backward compat.
     let data: Record<string, unknown>;
     let statusEventStatus: string | null = null;
-    let auditEntry: { action: "ORDER_MARKED_PAID" | "ORDER_CANCELLED"; metadata: Record<string, unknown> } | null = null;
+    let auditEntry: { action: "ORDER_MARKED_PAID" | "ORDER_CANCELLED" | "ORDER_PREP_DELAYED"; metadata: Record<string, unknown> } | null = null;
+    let pendingPrepEstimateEvent: { estimatedMinutes: number; estimatedReadyAt: Date; reason: string } | null = null;
+    let delayNotification: { estimatedReadyAt: Date } | null = null;
     let newPaymentRecord: {
       shopId: string;
       orderId: string;
@@ -160,6 +169,15 @@ export async function PATCH(
     let shouldVoidPendingCashback = false;
     let shouldProcessPaidRewards = false;
     let shouldReverseCashback = false;
+    // Optimistic-concurrency guard for mark_paid only — set to the
+    // paidAmount `existing` had when THIS request read it. Two
+    // near-simultaneous mark_paid requests (double-click, client retry) both
+    // read the same "before" paidAmount and would otherwise both compute a
+    // positive collectedNow and both log a PaymentRecord for the same money.
+    // Conditioning the write on paidAmount still matching that reads lets
+    // only the first writer actually commit; the second gets a 409 instead
+    // of silently double-counting a payment.
+    let requirePaidAmountMatch: Prisma.Decimal | null | undefined = undefined;
 
     if ("action" in body && body.action === "edit_items") {
       // Parsed separately — a .refine() (needed for the order-type/table
@@ -195,6 +213,65 @@ export async function PATCH(
             : null;
           if (snapshot) data = { ...data, ...snapshot };
         }
+
+        // Preparation-time estimate — set once, the first time an order is
+        // accepted (spec §4's "Order accepted: 7:00 PM, Estimated prep: 20
+        // min" example). Recalculated later only via the "flag_delayed"
+        // action, never silently overwritten by a later status change.
+        if (parsed.status === "CONFIRMED" && !existing.acceptedAt) {
+          const acceptedAt = new Date();
+          const [prepShop, itemsForEstimate] = await Promise.all([
+            db.shop.findUnique({ where: { id: actor.shopId }, select: { prepTimeSettings: true, timezone: true } }),
+            db.orderItem.findMany({
+              where: { orderId: id },
+              select: { quantity: true, product: { select: { prepTimeMinutes: true, category: { select: { prepTimeMinutes: true } } } } },
+            }),
+          ]);
+          const settings = getPrepTimeSettings(prepShop?.prepTimeSettings);
+          const estimate = calculatePrepEstimate({
+            items: itemsForEstimate.map((item: (typeof itemsForEstimate)[number]) => ({
+              quantity: item.quantity,
+              resolvedPrepTimeMinutes: item.product?.prepTimeMinutes ?? item.product?.category?.prepTimeMinutes ?? null,
+            })),
+            orderType: deriveOrderType(existing),
+            settings,
+            timezone: prepShop?.timezone ?? "Asia/Kolkata",
+            now: acceptedAt,
+          });
+          const estimatedReadyAt = new Date(acceptedAt.getTime() + estimate.totalMinutes * 60_000);
+          data = {
+            ...data,
+            acceptedAt,
+            estimatedPrepMinutes: estimate.totalMinutes,
+            estimatedReadyAt,
+          };
+          pendingPrepEstimateEvent = { estimatedMinutes: estimate.totalMinutes, estimatedReadyAt, reason: "initial" };
+        }
+
+        if (parsed.status === "READY" && !existing.actualReadyAt) {
+          data = { ...data, actualReadyAt: new Date() };
+        }
+      } else if (parsed.action === "flag_delayed") {
+        if (!["PENDING", "CONFIRMED", "PREPARING"].includes(existing.status)) {
+          return NextResponse.json(
+            { error: "Only an order that's still being prepared can be flagged delayed." },
+            { status: 409 }
+          );
+        }
+        const prepShop = await db.shop.findUnique({ where: { id: actor.shopId }, select: { prepTimeSettings: true } });
+        const settings = getPrepTimeSettings(prepShop?.prepTimeSettings);
+        const extraMinutes = parsed.extraMinutes ?? settings.bufferMinutes;
+        const baseFrom = existing.estimatedReadyAt ?? new Date();
+        const estimatedReadyAt = new Date(baseFrom.getTime() + extraMinutes * 60_000);
+        const estimatedPrepMinutes = (existing.estimatedPrepMinutes ?? settings.defaultMinutes) + extraMinutes;
+        data = {
+          prepDelayFlag: true,
+          estimatedReadyAt,
+          estimatedPrepMinutes,
+        };
+        pendingPrepEstimateEvent = { estimatedMinutes: estimatedPrepMinutes, estimatedReadyAt, reason: "delay_flagged" };
+        delayNotification = { estimatedReadyAt };
+        auditEntry = { action: "ORDER_PREP_DELAYED", metadata: { extraMinutes, note: parsed.note } };
       } else if (parsed.action === "cancel") {
         if (!canCancel(existing)) {
           return NextResponse.json(
@@ -276,6 +353,7 @@ export async function PATCH(
         });
         const paidAmount = parsed.paidAmount ?? finalTotal;
         const previouslyPaid = Number(existing.paidAmount ?? 0);
+        requirePaidAmountMatch = existing.paidAmount;
         data = {
           paymentMethod: parsed.paymentMethod,
           paymentStatus: paidAmount + 0.005 >= finalTotal ? "PAID" : "PARTIALLY_PAID",
@@ -346,7 +424,18 @@ export async function PATCH(
     // Prisma's precise OrderUpdateInput type — same cast the rest of this
     // route already relied on before this change.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const updated = await (db.order as any).update({ where: { id }, data, include: { items: true } });
+    let updated: any;
+    if (requirePaidAmountMatch !== undefined) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const result = await (db.order as any).updateMany({ where: { id, paidAmount: requirePaidAmountMatch }, data });
+      if (result.count === 0) {
+        throw new ConflictError("This order's payment was just updated by someone else — refresh and try again.");
+      }
+      updated = await db.order.findUniqueOrThrow({ where: { id }, include: { items: true } });
+    } else {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      updated = await (db.order as any).update({ where: { id }, data, include: { items: true } });
+    }
 
     if (shouldProcessPaidRewards) {
       await db.$transaction((tx: Prisma.TransactionClient) => processOrderPaidRewards(tx, updated));
@@ -379,6 +468,27 @@ export async function PATCH(
       where: { orderId: id },
       orderBy: { changedAt: "asc" },
     });
+
+    if (pendingPrepEstimateEvent) {
+      await db.orderPrepEstimateEvent.create({
+        data: {
+          orderId: id,
+          estimatedReadyAt: pendingPrepEstimateEvent.estimatedReadyAt,
+          estimatedMinutes: pendingPrepEstimateEvent.estimatedMinutes,
+          reason: pendingPrepEstimateEvent.reason,
+          setBy: actor.actorId,
+        },
+      });
+    }
+
+    if (delayNotification) {
+      createNotification(existing.shopId, {
+        type: "ORDER_STATUS_CHANGED",
+        title: `Order #${existing.billNumber} — Delayed`,
+        body: `New estimated ready time: ${delayNotification.estimatedReadyAt.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}`,
+        link: `/admin/orders/${id}`,
+      }).catch(() => {});
+    }
 
     // Fire-and-forget push notification on status change
     if ("status" in data && typeof data.status === "string") {

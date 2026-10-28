@@ -12,6 +12,7 @@ import {
   Percent,
   Gift,
   Share2,
+  Timer,
   type LucideIcon,
 } from "lucide-react";
 
@@ -20,7 +21,7 @@ export interface ReportCatalogEntry {
   title: string;
   description: string;
   icon: LucideIcon;
-  group: "Sales & Purchases" | "Finance" | "Inventory" | "Parties" | "Marketing";
+  group: "Sales & Purchases" | "Finance" | "Inventory" | "Parties" | "Marketing" | "Operations";
 }
 
 // Single source of truth for the /admin/reports hub grid. A report only
@@ -41,4 +42,5 @@ export const REPORTS_CATALOG: ReportCatalogEntry[] = [
   { slug: "discount", title: "Discount Report", description: "Discounts given across orders and items.", icon: Percent, group: "Marketing" },
   { slug: "cashback", title: "Cashback Report", description: "Cashback generated, credited and used.", icon: Gift, group: "Marketing" },
   { slug: "referrals", title: "Referral Report", description: "Referrals, qualifying orders and wallet rewards.", icon: Share2, group: "Marketing" },
+  { slug: "preparation", title: "Order Preparation Report", description: "Preparation-time estimates, delays and throughput.", icon: Timer, group: "Operations" },
 ];

@@ -70,6 +70,17 @@ export type OrderEventOrder = {
   chargesTotal: number | null;
   // Manual Kitchen Display marker ("VIP" | "RUSH"), set via PATCH .../orders/[id] {action:"priority"}.
   priorityFlag: string | null;
+  // Per-shop-per-day sequential display number (see Order.tokenNumber's
+  // schema comment) — not sensitive, just unused publicly before Order
+  // Display Management needed it for the Token Display type.
+  tokenNumber: number | null;
+  // Preparation-time tracking (Order Display / KDS) — see
+  // src/lib/services/prep-time.ts and Order.acceptedAt's schema comment.
+  acceptedAt: string | null;
+  estimatedPrepMinutes: number | null;
+  estimatedReadyAt: string | null;
+  actualReadyAt: string | null;
+  prepDelayFlag: boolean;
   createdAt: string;
   taxBreakdown: unknown;
   items: OrderEventItem[];
@@ -100,7 +111,6 @@ export type OrderEventOrder = {
 // fields that must never reach a customer (internal notes, cancellation
 // trail, transaction reference, who confirmed payment/changed status).
 export type AdminOrderEventOrder = OrderEventOrder & {
-  tokenNumber: number | null;
   transactionReference: string | null;
   paymentConfirmedBy: string | null;
   paymentConfirmedAt: string | null;
@@ -385,6 +395,12 @@ type RawOrderForEvent = {
   additionalCharges: unknown;
   chargesTotal: unknown;
   priorityFlag: string | null;
+  tokenNumber: number | null;
+  acceptedAt: unknown;
+  estimatedPrepMinutes: number | null;
+  estimatedReadyAt: unknown;
+  actualReadyAt: unknown;
+  prepDelayFlag: boolean;
   createdAt: unknown;
   taxBreakdown: unknown;
   items: {
@@ -439,6 +455,12 @@ export function toOrderEvent(order: RawOrderForEvent): OrderEventOrder {
     additionalCharges: order.additionalCharges,
     chargesTotal: order.chargesTotal == null ? null : Number(order.chargesTotal),
     priorityFlag: order.priorityFlag ?? null,
+    tokenNumber: order.tokenNumber ?? null,
+    acceptedAt: order.acceptedAt ? (order.acceptedAt as Date).toISOString() : null,
+    estimatedPrepMinutes: order.estimatedPrepMinutes ?? null,
+    estimatedReadyAt: order.estimatedReadyAt ? (order.estimatedReadyAt as Date).toISOString() : null,
+    actualReadyAt: order.actualReadyAt ? (order.actualReadyAt as Date).toISOString() : null,
+    prepDelayFlag: order.prepDelayFlag ?? false,
     createdAt: (order.createdAt as Date).toISOString(),
     taxBreakdown: order.taxBreakdown,
     items: order.items.map((item) => ({
@@ -483,7 +505,6 @@ export function toOrderEvent(order: RawOrderForEvent): OrderEventOrder {
 }
 
 type RawOrderForAdminEvent = RawOrderForEvent & {
-  tokenNumber: number | null;
   transactionReference: string | null;
   paymentConfirmedBy: string | null;
   paymentConfirmedAt: unknown;
@@ -506,7 +527,6 @@ export function toAdminOrderEvent(order: RawOrderForAdminEvent): AdminOrderEvent
   const base = toOrderEvent(order);
   return {
     ...base,
-    tokenNumber: order.tokenNumber,
     transactionReference: order.transactionReference,
     paymentConfirmedBy: order.paymentConfirmedBy,
     paymentConfirmedAt: order.paymentConfirmedAt ? (order.paymentConfirmedAt as Date).toISOString() : null,
@@ -563,10 +583,15 @@ const HEARTBEAT_INTERVAL_MS = 20_000;
 // ReadableStream subscribed to one shop's channel, optionally narrowed with
 // `filter` — the public per-order route uses this to make sure a customer
 // only ever receives events for their own order, never a shop-mate's.
+// `transform` runs after `filter` and rewrites the event payload itself —
+// used by the public /display/[token]/stream route to strip an order down
+// to PublicDisplayOrder (see src/lib/services/display.ts) before it ever
+// leaves the server, the same way `filter` keeps whole events from leaving.
 export function createOrderEventStream(
   request: Request,
   shopId: string,
-  filter?: (event: OrderEvent) => boolean
+  filter?: (event: OrderEvent) => boolean,
+  transform?: (event: OrderEvent) => unknown
 ): Response {
   const encoder = new TextEncoder();
 
@@ -587,7 +612,7 @@ export function createOrderEventStream(
 
       const unsubscribe = subscribeOrderEvents(shopId, (event) => {
         if (filter && !filter(event)) return;
-        send(event.type, event);
+        send(event.type, transform ? transform(event) : event);
       });
 
       const heartbeat = setInterval(() => {

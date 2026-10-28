@@ -38,6 +38,7 @@ export type OrderAction =
   | "discount"
   | "remove_discount"
   | "priority"
+  | "flag_delayed"
   | "edit_items"
   | "mark_paid"
   | "mark_refunded"
@@ -47,10 +48,11 @@ export type OrderAction =
   | "update_delivery";
 
 export const ORDER_ACTIONS_BY_ROLE: Record<StaffRole, ReadonlySet<OrderAction>> = {
-  KITCHEN: new Set(["status", "priority"]),
+  KITCHEN: new Set(["status", "priority", "flag_delayed"]),
   WAITER: new Set([
     "status",
     "priority",
+    "flag_delayed",
     "edit_items",
     "cancel",
     "mark_paid",
@@ -61,6 +63,7 @@ export const ORDER_ACTIONS_BY_ROLE: Record<StaffRole, ReadonlySet<OrderAction>> 
   MANAGER: new Set([
     "status",
     "priority",
+    "flag_delayed",
     "edit_items",
     "cancel",
     "mark_paid",

@@ -12,6 +12,7 @@ import { STATUS_LABELS, type OrderStatus } from "@/lib/order-status";
 import { formatCurrency } from "@/lib/utils/currency";
 import { deriveBillFigures, isOrderPaid } from "@/lib/utils/bill-figures";
 import type { PrintFormat } from "@/lib/types/print";
+import type { AdminOrderEventOrder } from "@/lib/server/order-events";
 
 export { isOrderPaid };
 
@@ -74,6 +75,40 @@ export type BillShopData = {
   enableOrderBarcodeLabels: boolean;
   printFormat: PrintFormat;
 };
+
+// Shared AdminOrderEventOrder -> BillOrderData mapping — every screen that
+// prints/downloads/shares a bill (Order Detail, Cash Counter) must build the
+// exact same shape from the exact same source fields, or they'd risk
+// diverging on which fields matter to a receipt.
+export function toBillOrderData(order: AdminOrderEventOrder): BillOrderData {
+  return {
+    id: order.id,
+    billNumber: order.billNumber,
+    tokenNumber: order.tokenNumber,
+    customerName: order.customerName,
+    customerPhone: order.customerPhone,
+    tableNumber: order.tableNumber,
+    deliveryAddress: order.deliveryAddress,
+    notes: order.notes,
+    subtotal: order.subtotal,
+    taxTotal: order.taxTotal,
+    grandTotal: order.grandTotal,
+    taxBreakdown: (order.taxBreakdown as BillOrderData["taxBreakdown"]) ?? [],
+    status: order.status as OrderStatus,
+    paymentMethod: order.paymentMethod,
+    paymentStatus: order.paymentStatus,
+    paidAmount: order.paidAmount,
+    transactionReference: order.transactionReference,
+    cancelReason: order.cancelReason,
+    cancelledAt: order.cancelledAt,
+    discountType: order.discountType,
+    discountValue: order.discountValue,
+    discountReason: order.discountReason,
+    discountedTotal: order.discountedTotal,
+    createdAt: order.createdAt,
+    items: order.items,
+  };
+}
 
 export function useBillActions(order: BillOrderData, shop: BillShopData) {
   const [downloadingPdf, setDownloadingPdf] = useState(false);

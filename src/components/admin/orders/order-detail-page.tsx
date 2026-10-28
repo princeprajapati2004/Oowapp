@@ -36,7 +36,7 @@ import { formatCurrency } from "@/lib/utils/currency";
 import { formatOrderDateParts } from "@/lib/utils/date";
 import { cn } from "@/lib/utils";
 import { useOrderEvents } from "@/lib/hooks/use-order-events";
-import { useBillActions, type BillOrderData, type BillShopData } from "@/lib/hooks/use-bill-actions";
+import { useBillActions, toBillOrderData, type BillShopData } from "@/lib/hooks/use-bill-actions";
 import { PrintOnlyBill } from "@/components/printing/bill-document";
 import { PrintPreviewModal } from "@/components/printing/print-preview-modal";
 import { printBill } from "@/lib/printing/print-service";
@@ -71,36 +71,6 @@ import { PaymentClaimBanner } from "./payment-claim-banner";
 import { OrderInlineEditPanel } from "./order-inline-edit-panel";
 import { OrderActionBar } from "./order-action-bar";
 import { OrderRoundsSection } from "./order-rounds-section";
-
-function toBillOrderData(order: AdminOrderEventOrder): BillOrderData {
-  return {
-    id: order.id,
-    billNumber: order.billNumber,
-    tokenNumber: order.tokenNumber,
-    customerName: order.customerName,
-    customerPhone: order.customerPhone,
-    tableNumber: order.tableNumber,
-    deliveryAddress: order.deliveryAddress,
-    notes: order.notes,
-    subtotal: order.subtotal,
-    taxTotal: order.taxTotal,
-    grandTotal: order.grandTotal,
-    taxBreakdown: (order.taxBreakdown as BillOrderData["taxBreakdown"]) ?? [],
-    status: order.status as OrderStatus,
-    paymentMethod: order.paymentMethod,
-    paymentStatus: order.paymentStatus,
-    paidAmount: order.paidAmount,
-    transactionReference: order.transactionReference,
-    cancelReason: order.cancelReason,
-    cancelledAt: order.cancelledAt,
-    discountType: order.discountType,
-    discountValue: order.discountValue,
-    discountReason: order.discountReason,
-    discountedTotal: order.discountedTotal,
-    createdAt: order.createdAt,
-    items: order.items,
-  };
-}
 
 export function OrderDetailPage({
   initialOrder,

@@ -129,6 +129,14 @@ export function OrderTracker({
   const [downloadingPdf, setDownloadingPdf] = useState(false);
   const [sharing, setSharing] = useState(false);
   const [returns, setReturns] = useState<CustomerReturnDetailPayload[]>(initialReturns ?? []);
+  // Drives the "running late" estimated-ready-time banner below — ticking
+  // state (not a raw Date.now() read during render) keeps the component pure,
+  // same convention as Kitchen Display's own elapsed-time clock.
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 30_000);
+    return () => clearInterval(id);
+  }, []);
 
   const pendingChangesRef = useRef<Map<string, number>>(new Map());
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -551,6 +559,29 @@ export function OrderTracker({
               </div>
             )}
           </div>
+
+          {!isCancelled && order.estimatedReadyAt && !["READY", "COMPLETED", "DELIVERED"].includes(order.status) && (
+            <div
+              className={cn(
+                "flex items-center gap-2 px-5 py-2.5 text-xs border-t",
+                order.prepDelayFlag || now > new Date(order.estimatedReadyAt).getTime()
+                  ? "bg-amber-50 text-amber-800 dark:bg-amber-900/20 dark:text-amber-300"
+                  : "bg-muted/20 text-muted-foreground"
+              )}
+            >
+              <Clock className="size-3.5 shrink-0" />
+              {order.prepDelayFlag || now > new Date(order.estimatedReadyAt).getTime() ? (
+                <span>
+                  Running a little late — new expected ready time{" "}
+                  {new Date(order.estimatedReadyAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                </span>
+              ) : (
+                <span>
+                  Expected ready by {new Date(order.estimatedReadyAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                </span>
+              )}
+            </div>
+          )}
 
           <div className="px-5 py-3 border-t bg-muted/20">
             <span

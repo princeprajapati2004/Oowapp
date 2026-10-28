@@ -4,6 +4,7 @@ import { memo, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
 import {
+  AlarmClock,
   AlertCircle,
   ArrowLeft,
   BellRing,
@@ -11,6 +12,7 @@ import {
   ClipboardCheck,
   Clock,
   Crown,
+  Eye,
   Flame,
   MoreVertical,
   Printer,
@@ -39,6 +41,7 @@ import { api, ApiError } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
 import { useOrderEvents, type OrderEventOrder } from "@/lib/hooks/use-order-events";
 import { useChime } from "@/lib/utils/chime";
+import { deriveOrderSource } from "@/lib/order-status";
 
 type KitchenStatus = "PENDING" | "CONFIRMED" | "PREPARING" | "READY";
 type StatusFilter = "ALL" | KitchenStatus | "COMPLETED";
@@ -168,11 +171,13 @@ const OrderCard = memo(function OrderCard({
   updating,
   onAdvance,
   onSetPriority,
+  onFlagDelayed,
 }: {
   order: OrderEventOrder;
   updating: boolean;
   onAdvance: (order: OrderEventOrder) => void;
   onSetPriority: (order: OrderEventOrder, flag: PriorityFlag | null) => void;
+  onFlagDelayed: (order: OrderEventOrder) => void;
 }) {
   const [now, setNow] = useState(() => Date.now());
 
@@ -188,7 +193,13 @@ const OrderCard = memo(function OrderCard({
   const type = orderType(order);
   const TypeIcon = ORDER_TYPE_ICON[type];
   const large = isLargeOrder(order);
-  const delayed = !isReady && minutes >= DELAYED_MINUTES;
+  // Prefer the real preparation-time estimate once an order has one
+  // (set on accept — see prep-time.ts); fall back to the old flat-minutes
+  // heuristic only for orders that predate this feature / haven't been
+  // accepted yet.
+  const delayed =
+    !isReady && (order.prepDelayFlag || (order.estimatedReadyAt ? now > new Date(order.estimatedReadyAt).getTime() : minutes >= DELAYED_MINUTES));
+  const orderSource = `${deriveOrderSource(order)} · ${ORDER_TYPE_LABEL[type]}`;
 
   return (
     <div className="animate-in fade-in slide-in-from-top-2 duration-300 space-y-3 rounded-2xl border border-border bg-card p-4 shadow-sm transition-shadow hover:shadow-md">
@@ -199,7 +210,7 @@ const OrderCard = memo(function OrderCard({
             <span>·</span>
             <span className="inline-flex items-center gap-1">
               <TypeIcon className="size-3" />
-              {ORDER_TYPE_LABEL[type]}
+              {orderSource}
             </span>
           </div>
           <p className="truncate text-xl font-bold">
@@ -225,11 +236,17 @@ const OrderCard = memo(function OrderCard({
                 <Flame className="size-4 text-red-500" /> Mark Rush
               </DropdownMenuItem>
               {order.priorityFlag && (
-                <>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem onClick={() => onSetPriority(order, null)}>Clear priority</DropdownMenuItem>
-                </>
+                <DropdownMenuItem onClick={() => onSetPriority(order, null)}>Clear priority</DropdownMenuItem>
               )}
+              <DropdownMenuSeparator />
+              {!isReady && (
+                <DropdownMenuItem onClick={() => onFlagDelayed(order)}>
+                  <AlarmClock className="size-4 text-destructive" /> Flag delayed
+                </DropdownMenuItem>
+              )}
+              <DropdownMenuItem render={<a href={`/admin/orders/${order.id}`} target="_blank" rel="noopener noreferrer" />}>
+                <Eye className="size-4" /> View order details
+              </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
@@ -261,6 +278,14 @@ const OrderCard = memo(function OrderCard({
           <span className="text-lg font-bold tabular-nums">{formatElapsed(elapsedMs)}</span>
         </div>
       </div>
+
+      {order.estimatedReadyAt && (
+        <p className={cn("text-xs font-medium", delayed ? "text-destructive" : "text-muted-foreground")}>
+          Estimated ready by{" "}
+          {new Date(order.estimatedReadyAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+          {order.prepDelayFlag && " (revised)"}
+        </p>
+      )}
 
       <div className="space-y-1.5 border-t pt-3">
         {order.items.map((item) => (
@@ -419,6 +444,15 @@ export function KitchenDisplay({
     }
   }
 
+  async function flagDelayed(order: OrderEventOrder) {
+    try {
+      await api.patch(`/api/admin/orders/${order.id}`, { action: "flag_delayed" });
+      toast.success(`Order #${order.billNumber} flagged as delayed`);
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Failed to flag order delayed");
+    }
+  }
+
   function toggleType(t: OrderType) {
     setTypeFilter((prev) => {
       const next = new Set(prev);
@@ -562,6 +596,7 @@ export function KitchenDisplay({
                 updating={updatingId === order.id}
                 onAdvance={advance}
                 onSetPriority={setPriority}
+                onFlagDelayed={flagDelayed}
               />
             ))}
           </div>

@@ -403,6 +403,12 @@ enum AuditAction {
   ORDER_MARKED_PAID
   ORDER_CANCELLED
   ORDER_ITEMS_EDITED
+  ORDER_PREP_DELAYED
+  // Order Display Management
+  DISPLAY_CREATED
+  DISPLAY_UPDATED
+  DISPLAY_TOKEN_ROTATED
+  DISPLAY_DELETED
   TABLE_SESSION_MARKED_PAID
   TABLE_SESSION_RELEASED
   TABLE_SESSION_TRANSFERRED
@@ -624,6 +630,14 @@ model Shop {
   // survive a login on a different browser).
   notificationSoundEnabled Boolean @default(true)
 
+  // Order Display / KDS — preparation-time estimation rules (default minutes,
+  // buffer, large-quantity extra, peak-hour windows, per-order-type
+  // adjustments, delayed-alert threshold). Null means "use the built-in
+  // defaults" (see DEFAULT_PREP_TIME_SETTINGS in src/lib/services/prep-time.ts)
+  // — lazily defaulted the same way ItemSettings/tableNames are, no backfill
+  // needed for existing shops.
+  prepTimeSettings Json?
+
   // Ordering mode — WHATSAPP sends the cart to WhatsApp; DIRECT creates orders
   // in the database immediately without opening WhatsApp (requires PRO+).
   orderMode OrderMode @default(WHATSAPP)
@@ -650,6 +664,7 @@ model Shop {
   paymentRecords         PaymentRecord[]
   customers              Customer[]
   tableSessions          TableSession[]
+  displays               Display[]
   tableStates            TableState[]
   subscriptions          Subscription[]
   pushSubscriptions      PushSubscription[]
@@ -852,6 +867,11 @@ model Category {
   name      String
   sortOrder Int      @default(0)
   isVisible Boolean  @default(true)
+  // Default preparation time (minutes) for every product in this category
+  // that doesn't set its own Product.prepTimeMinutes — see prep-time.ts.
+  // Null means "fall back to the shop-wide default", same convention as
+  // Product.prepTimeMinutes being null.
+  prepTimeMinutes Int?
   createdBy String?
   updatedBy String?
   createdAt DateTime @default(now())
@@ -888,6 +908,10 @@ model Product {
   imageUrl       String?
   unit           String?
   barcode        String?
+  // Order Display / KDS — per-product preparation time override (minutes).
+  // Null falls back to Category.prepTimeMinutes, then the shop-wide default
+  // in Shop.prepTimeSettings — see src/lib/services/prep-time.ts.
+  prepTimeMinutes Int?
   // Item Master — GST HSN/SAC code, shown on invoices/GST reports. Free text
   // (not validated as a real HSN registry lookup) so businesses can enter
   // whatever their accountant expects, same convention as `unit`.
@@ -1446,8 +1470,28 @@ model Order {
   returnWindowDaysAtCompletion    Int?
   returnDeadline                  DateTime?
 
+  // Preparation-time tracking (Order Display / KDS) — acceptedAt is set the
+  // first time an order reaches CONFIRMED (never overwritten after), which
+  // is the clock start for estimatedPrepMinutes/estimatedReadyAt. actualReadyAt
+  // is set the first time the order reaches READY. Both null for an order
+  // that hasn't reached that step yet, and forever null for any order that
+  // predates this feature — see src/lib/services/prep-time.ts. The running
+  // history of estimate revisions lives in OrderPrepEstimateEvent, not here;
+  // these two columns only ever hold the CURRENT estimate.
+  acceptedAt           DateTime?
+  estimatedPrepMinutes Int?
+  estimatedReadyAt     DateTime?
+  actualReadyAt        DateTime?
+  // Manual "Flag Delayed" marker set via PATCH .../orders/[id]
+  // {action:"flag_delayed"} — distinct from the derived "running late"
+  // signal (now > estimatedReadyAt), which needs no stored flag. This one
+  // exists so a kitchen-triggered delay survives being shown even if the
+  // revised estimate hasn't yet also slipped past "now" (e.g. flagged early).
+  prepDelayFlag        Boolean   @default(false)
+
   items              OrderItem[]
   statusEvents       OrderStatusEvent[]
+  prepEstimateEvents OrderPrepEstimateEvent[]
   paymentRecords     PaymentRecord[]
   couponRedemption   CouponRedemption?
   walletTransactions WalletTransaction[]
@@ -1799,6 +1843,56 @@ model PrintAgentPairingCode {
   @@map("print_agent_pairing_codes")
 }
 
+// ─── Order Display Management ──────────────────────────────────────────────
+
+// A configured display board (Owner Dashboard -> Order Display). `token` is
+// the secret that authenticates the public, session-less page at
+// /display/[token] — it is never derivable from the id and is rotated (not
+// reused) on revoke, so an old URL/QR code stops working immediately. Most
+// display types are strictly read-only; KITCHEN is the one type that can
+// optionally accept writes (status advance/priority/flag-delayed only — the
+// exact same action set StaffRole.KITCHEN gets) when allowStaffActions is
+// true, letting an owner walk up to a kitchen tablet/TV without a staff
+// login. See src/lib/services/display.ts for token generation/validation and
+// the per-type default settings.
+model Display {
+  id     String      @id @default(cuid())
+  shopId String
+  shop   Shop        @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  name   String
+  type   DisplayType
+  token  String      @unique
+  isActive Boolean @default(true)
+  // Theme/layout/font/card size, show-hide toggles (customer name, item
+  // details, amounts, prep time, completed orders), active-order limit,
+  // auto-remove-completed minutes, sound on/off, delayed-alert minutes,
+  // logo override — see DISPLAY_SETTINGS_SCHEMA in display.ts. Validated
+  // server-side on every write; never trusted as-is from a client.
+  settings Json?
+  // Only ever meaningful when type == KITCHEN. A dedicated column (not
+  // buried inside the settings JSON) because it gates a real write-auth
+  // decision in the public orders-action route and must be trivially
+  // checkable without parsing/validating arbitrary JSON first.
+  allowStaffActions Boolean   @default(false)
+  lastConnectedAt   DateTime?
+  createdBy         String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@index([shopId])
+  @@map("displays")
+}
+
+enum DisplayType {
+  KITCHEN
+  CUSTOMER_STATUS
+  PREPARATION
+  READY_PICKUP
+  DELIVERY_DISPATCH
+  TOKEN
+  CUSTOM
+}
+
 // Append-only status change log — written each time an order's status
 // changes going forward. Historical orders predating this table simply have
 // no rows here; the UI falls back to createdAt + current status rather than
@@ -1814,6 +1908,29 @@ model OrderStatusEvent {
 
   @@index([orderId])
   @@map("order_status_events")
+}
+
+// Append-only log of every preparation-time estimate set for an order — the
+// first row ("initial") is written when the order is accepted (PENDING ->
+// CONFIRMED); later rows ("recalculated"/"delay_flagged") are written
+// whenever the estimate is revised. Order.estimatedReadyAt/estimatedPrepMinutes
+// always mirror the most recent row here; this table exists purely so the
+// Order Preparation Report and any audit review can see what the estimate
+// used to be, not just what it is now. "setBy" is a displayId (see Display
+// model) when a kitchen-token device triggered it, otherwise an admin/staff
+// actorId, matching OrderStatusEvent.changedBy's convention.
+model OrderPrepEstimateEvent {
+  id               String   @id @default(cuid())
+  orderId          String
+  order            Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  estimatedReadyAt DateTime
+  estimatedMinutes Int
+  reason           String // "initial" | "recalculated" | "delay_flagged"
+  setBy            String?
+  createdAt        DateTime @default(now())
+
+  @@index([orderId])
+  @@map("order_prep_estimate_events")
 }
 
 // ─── Returns & Refunds ─────────────────────────────────────────────────────────

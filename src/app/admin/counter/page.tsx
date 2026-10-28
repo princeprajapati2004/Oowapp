@@ -5,10 +5,24 @@ import { getAdminSession } from "@/lib/session";
 import { getStaffSession } from "@/lib/staff-session";
 import { getShopById } from "@/lib/services/shop";
 import { db } from "@/lib/db";
-import { toOrderEvent } from "@/lib/server/order-events";
+import { toAdminOrderEvent } from "@/lib/server/order-events";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/shared/empty-state";
 import { CashCounter } from "@/components/admin/cash-counter";
+
+// Everything from a new order up through Delivered is still actionable here
+// (payment can be recorded at any point, and Mark Complete becomes available
+// once the fulfillment flow reaches its last pre-completion step — see
+// getNextStatus() in order-status.ts, which differs for delivery vs
+// dine-in/takeaway orders). CANCELLED is deliberately excluded — cancelled
+// orders belong in Order History, not an actionable counter queue.
+const ACTIVE_COUNTER_STATUSES = ["PENDING", "CONFIRMED", "PREPARING", "READY", "OUT_FOR_DELIVERY", "DELIVERED"] as const;
+
+const ORDER_INCLUDE = {
+  items: true,
+  statusEvents: { orderBy: { changedAt: "asc" as const } },
+  paymentRecords: { orderBy: { createdAt: "asc" as const } },
+};
 
 export default async function CounterPage() {
   // Accept either the owner's own admin session or a WAITER/MANAGER staff
@@ -43,18 +57,51 @@ export default async function CounterPage() {
     );
   }
 
-  const orders = await db.order.findMany({
-    where: { shopId, status: { in: ["PENDING", "CONFIRMED", "PREPARING", "READY"] } },
-    orderBy: { createdAt: "asc" },
-    include: { items: true },
-  });
+  const startOfToday = new Date();
+  startOfToday.setHours(0, 0, 0, 0);
+
+  const [orders, completedToday] = await Promise.all([
+    db.order.findMany({
+      where: { shopId, status: { in: [...ACTIVE_COUNTER_STATUSES] } },
+      orderBy: { createdAt: "asc" },
+      include: ORDER_INCLUDE,
+    }),
+    db.order.findMany({
+      where: { shopId, status: "COMPLETED", createdAt: { gte: startOfToday } },
+      orderBy: { createdAt: "desc" },
+      include: ORDER_INCLUDE,
+      take: 100,
+    }),
+  ]);
 
   return (
     <CashCounter
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      initialOrders={(orders as any[]).map(toOrderEvent)}
+      initialOrders={(orders as any[]).map(toAdminOrderEvent)}
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      completedToday={(completedToday as any[]).map(toAdminOrderEvent)}
       currency={shop.currency}
       shopName={shop.businessName}
+      shop={{
+        slug: shop.slug,
+        businessName: shop.businessName,
+        logoUrl: shop.logoUrl,
+        address: shop.address,
+        phone: shop.phone,
+        whatsappNumber: shop.whatsappNumber,
+        gstNumber: shop.gstNumber,
+        currency: shop.currency,
+        upiId: shop.upiId,
+        acceptCash: shop.acceptCash,
+        bankAccountNumber: shop.bankAccountNumber,
+        bankName: shop.bankName,
+        bankIfsc: shop.bankIfsc,
+        paymentQrImageUrl: shop.paymentQrImageUrl,
+        paymentDisplayName: (shopAny.paymentDisplayName as string | null) ?? null,
+        enableTableNumber: (shopAny.enableTableNumber as boolean) ?? true,
+        enableOrderBarcodeLabels: (shopAny.enableOrderBarcodeLabels as boolean) ?? false,
+        printFormat: shop.printFormat,
+      }}
     />
   );
 }
