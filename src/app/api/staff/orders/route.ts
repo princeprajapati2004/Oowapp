@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { handleApiError } from "@/lib/api-utils";
 import { calculateBill } from "@/lib/services/billing";
 import { requireStaffRole } from "@/lib/staff-session";
+import { assertAccountAccess } from "@/lib/services/subscription";
 import { resolveOrCreateSession } from "@/lib/services/table-session";
 import { nextBillNumber } from "@/lib/services/bill-number";
 import { publishOrderEvent, toOrderEvent } from "@/lib/server/order-events";
@@ -46,6 +47,7 @@ export async function POST(request: Request) {
       include: { taxes: { where: { isEnabled: true } } },
     });
     if (!shop) return NextResponse.json({ error: "Shop not found" }, { status: 404 });
+    await assertAccountAccess(shop.adminId);
 
     const taxes = shop.taxes.map((t: (typeof shop.taxes)[number]) => ({ ...t, value: Number(t.value) }));
 

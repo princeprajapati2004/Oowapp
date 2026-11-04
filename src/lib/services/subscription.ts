@@ -1,5 +1,6 @@
 import { db } from "@/lib/db";
 import { NotFoundError } from "@/lib/api-utils";
+import { ForbiddenError } from "@/lib/session";
 import type { SubscriptionStatus, SubscriptionDuration, BillingCycle } from "@/generated/prisma/client";
 
 const DURATION_DAYS: Record<SubscriptionDuration, number> = {
@@ -233,6 +234,36 @@ export function computeDisplayStatus(
 /** Whether this display status should grant access to premium features at all. */
 export function isAccessGranting(displayStatus: DisplayStatus): boolean {
   return displayStatus === "ACTIVE" || displayStatus === "TRIAL" || displayStatus === "EXPIRING_SOON";
+}
+
+export class SubscriptionExpiredError extends ForbiddenError {
+  constructor(message = "Your subscription has expired. Please renew to continue.") {
+    super(message);
+    this.name = "SubscriptionExpiredError";
+  }
+}
+
+/**
+ * Account-wide access gate — stricter and broader than feature-permission.ts's
+ * per-feature resolveFeatures(): that one only disables specific premium
+ * add-ons while leaving core operation untouched; this one is the single
+ * choke point every surface (admin dashboard, counter/kitchen staff tools,
+ * the customer ordering app, public display boards, and the order-placement
+ * APIs) must call through so NOTHING works for the account once its
+ * subscription stops being access-granting (EXPIRED/SUSPENDED/CANCELLED).
+ * Re-checked live on every call, never cached — the instant a renewal
+ * pushes endDate forward, access is restored with no other state to flip.
+ */
+export async function isAccountAccessBlocked(adminId: string): Promise<boolean> {
+  const subscription = await getCurrentSubscription(adminId);
+  return !isAccessGranting(computeDisplayStatus(subscription));
+}
+
+/** Throws SubscriptionExpiredError (403 via the existing handleApiError) if blocked. */
+export async function assertAccountAccess(adminId: string): Promise<void> {
+  if (await isAccountAccessBlocked(adminId)) {
+    throw new SubscriptionExpiredError();
+  }
 }
 
 export interface SubscriptionSummary {

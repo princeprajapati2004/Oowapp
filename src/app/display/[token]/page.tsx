@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
 import { toOrderEvent } from "@/lib/server/order-events";
+import { isAccountAccessBlocked } from "@/lib/services/subscription";
 import {
   getActiveDisplayByToken,
   getDisplaySettings,
@@ -11,6 +12,7 @@ import {
   type DisplayTypeValue,
 } from "@/lib/services/display";
 import { PublicDisplayBoard } from "@/components/display/public-display-board";
+import { SubscriptionExpiredScreen } from "@/components/shared/subscription-expired-screen";
 
 export default async function PublicDisplayPage({ params }: { params: Promise<{ token: string }> }) {
   const { token } = await params;
@@ -20,9 +22,13 @@ export default async function PublicDisplayPage({ params }: { params: Promise<{ 
 
   const shop = await db.shop.findUnique({
     where: { id: display.shopId },
-    select: { businessName: true, logoUrl: true, timezone: true },
+    select: { adminId: true, businessName: true, logoUrl: true, timezone: true },
   });
   if (!shop) notFound();
+
+  if (await isAccountAccessBlocked(shop.adminId)) {
+    return <SubscriptionExpiredScreen variant="customer" />;
+  }
 
   const type = display.type as DisplayTypeValue;
   const settings = getDisplaySettings(type, display.settings);

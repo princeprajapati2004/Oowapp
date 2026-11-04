@@ -3,6 +3,7 @@ import { cookies } from "next/headers";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { handleApiError, NotFoundError, WalletError } from "@/lib/api-utils";
+import { assertAccountAccess } from "@/lib/services/subscription";
 import { calculateBill } from "@/lib/services/billing";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { sendNewOrderNotification } from "@/lib/services/push";
@@ -64,6 +65,7 @@ export async function POST(request: Request) {
       include: { taxes: { where: { isEnabled: true } } },
     });
     if (!shop || !shop.isPublished) throw new NotFoundError("Shop not found");
+    await assertAccountAccess(shop.adminId);
 
     // DIRECT mode always saves orders to the DB — saveOrdersToDb is only a
     // logging override in WHATSAPP mode.
