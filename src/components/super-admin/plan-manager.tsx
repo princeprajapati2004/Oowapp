@@ -68,6 +68,7 @@ interface Plan {
   currency: string;
   isPopular: boolean;
   trialDays: number;
+  gracePeriodDays: number;
   planFeatures: PlanFeatureRow[];
   planLimits: PlanLimitRow[];
   subscriberCount: number;
@@ -185,6 +186,7 @@ function PlanCard({
       <CardContent className="space-y-3">
         <p className="text-sm text-muted-foreground">
           {enabledCount} of {features.length} features enabled by default · {plan.trialDays}-day trial
+          {plan.gracePeriodDays > 0 && ` · ${plan.gracePeriodDays}-day grace period`}
         </p>
         <div className="flex flex-wrap gap-2">
           <EditPlanDialog plan={plan} onSaved={onChanged} />
@@ -214,6 +216,8 @@ function PricingFields({
   setIsPopular,
   trialDays,
   setTrialDays,
+  gracePeriodDays,
+  setGracePeriodDays,
 }: {
   monthlyPrice: string;
   setMonthlyPrice: (v: string) => void;
@@ -225,6 +229,8 @@ function PricingFields({
   setIsPopular: (v: boolean) => void;
   trialDays: string;
   setTrialDays: (v: string) => void;
+  gracePeriodDays: string;
+  setGracePeriodDays: (v: string) => void;
 }) {
   return (
     <>
@@ -248,6 +254,13 @@ function PricingFields({
           <Input type="number" min="0" value={trialDays} onChange={(e) => setTrialDays(e.target.value)} />
         </Field>
       </div>
+      <Field>
+        <FieldLabel>Grace period days</FieldLabel>
+        <Input type="number" min="0" value={gracePeriodDays} onChange={(e) => setGracePeriodDays(e.target.value)} placeholder="0 = no grace period" />
+        <p className="text-xs text-muted-foreground mt-1">
+          Extra days of full access after expiry, before the account is locked out. 0 means lockout is immediate.
+        </p>
+      </Field>
       <Field orientation="horizontal">
         <FieldLabel>Most Popular badge</FieldLabel>
         <Switch checked={isPopular} onCheckedChange={setIsPopular} />
@@ -266,6 +279,7 @@ function NewPlanDialog({ onCreated }: { onCreated: () => void }) {
   const [currency, setCurrency] = useState("INR");
   const [isPopular, setIsPopular] = useState(false);
   const [trialDays, setTrialDays] = useState("15");
+  const [gracePeriodDays, setGracePeriodDays] = useState("0");
   const [saving, setSaving] = useState(false);
 
   async function handleSubmit() {
@@ -280,6 +294,7 @@ function NewPlanDialog({ onCreated }: { onCreated: () => void }) {
         currency: currency.trim() || "INR",
         isPopular,
         trialDays: trialDays ? Number(trialDays) : 15,
+        gracePeriodDays: gracePeriodDays ? Number(gracePeriodDays) : 0,
       });
       toast.success("Plan created.");
       setOpen(false);
@@ -336,6 +351,8 @@ function NewPlanDialog({ onCreated }: { onCreated: () => void }) {
             setIsPopular={setIsPopular}
             trialDays={trialDays}
             setTrialDays={setTrialDays}
+            gracePeriodDays={gracePeriodDays}
+            setGracePeriodDays={setGracePeriodDays}
           />
         </div>
         <DialogFooter>
@@ -362,6 +379,7 @@ function EditPlanDialog({ plan, onSaved }: { plan: Plan; onSaved: () => void }) 
   const [currency, setCurrency] = useState(plan.currency);
   const [isPopular, setIsPopular] = useState(plan.isPopular);
   const [trialDays, setTrialDays] = useState(String(plan.trialDays));
+  const [gracePeriodDays, setGracePeriodDays] = useState(String(plan.gracePeriodDays));
   const [saving, setSaving] = useState(false);
 
   async function saveNow() {
@@ -376,6 +394,7 @@ function EditPlanDialog({ plan, onSaved }: { plan: Plan; onSaved: () => void }) 
         currency: currency.trim() || "INR",
         isPopular,
         trialDays: trialDays ? Number(trialDays) : 15,
+        gracePeriodDays: gracePeriodDays ? Number(gracePeriodDays) : 0,
       });
       toast.success("Plan updated.");
       setOpen(false);
@@ -431,6 +450,8 @@ function EditPlanDialog({ plan, onSaved }: { plan: Plan; onSaved: () => void }) 
               setIsPopular={setIsPopular}
               trialDays={trialDays}
               setTrialDays={setTrialDays}
+              gracePeriodDays={gracePeriodDays}
+              setGracePeriodDays={setGracePeriodDays}
             />
             <Field orientation="horizontal">
               <FieldLabel>Active</FieldLabel>

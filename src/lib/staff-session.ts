@@ -1,5 +1,6 @@
 import { cookies } from "next/headers";
 import { STAFF_SESSION_COOKIE, verifyStaffSession, type StaffSessionPayload } from "@/lib/staff-auth";
+import { resolveAdminIdForShop, assertAccountAccess } from "@/lib/services/subscription";
 import type { StaffRole } from "@/generated/prisma/client";
 
 export class UnauthorizedError extends Error {
@@ -23,9 +24,16 @@ export async function getStaffSession(): Promise<StaffSessionPayload | null> {
   return verifyStaffSession(token);
 }
 
+// Default-on account-wide subscription gate, same reasoning as
+// requireAdminSession in session.ts — staff has no billing session of its
+// own, so this resolves the owning adminId from the staff's shopId first.
+// No exemptions needed: staff never needs to reach a renew flow (that's
+// owner-only), so every /api/staff/* route should simply stop working.
 export async function requireStaffSession(): Promise<StaffSessionPayload> {
   const session = await getStaffSession();
   if (!session) throw new UnauthorizedError();
+  const adminId = await resolveAdminIdForShop(session.shopId);
+  await assertAccountAccess(adminId);
   return session;
 }
 

@@ -84,6 +84,7 @@ export async function duplicatePlan(id: string, opts: { code: string; name: stri
         currency: source.currency,
         isPopular: false,
         trialDays: source.trialDays,
+        gracePeriodDays: source.gracePeriodDays,
       },
     });
     if (source.planFeatures.length > 0) {

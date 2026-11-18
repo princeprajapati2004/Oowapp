@@ -31,9 +31,23 @@ export async function getAdminSession(): Promise<SessionPayload | null> {
   return verifySession(token);
 }
 
-export async function requireAdminSession(): Promise<SessionPayload> {
+// Default-on account-wide subscription gate (see subscription.ts's
+// isAccountAccessBlocked) — every /api/admin/* route gets this for free just
+// by calling requireAdminSession(), so a direct API call can't bypass the
+// expired-lockout the way only hitting the UI once could. Dynamic import
+// avoids a load-order cycle: subscription.ts statically imports ForbiddenError
+// from this file at module scope (for SubscriptionExpiredError extends
+// ForbiddenError), so a static import back here would race module init.
+// Only the handful of routes the owner must still reach while locked out
+// (src/app/api/admin/subscription/**, onboarding) pass skipSubscriptionCheck —
+// keep this list in sync with admin/layout.tsx's EXEMPT_PREFIXES.
+export async function requireAdminSession(opts: { skipSubscriptionCheck?: boolean } = {}): Promise<SessionPayload> {
   const session = await getAdminSession();
   if (!session) throw new UnauthorizedError();
+  if (!opts.skipSubscriptionCheck) {
+    const { assertAccountAccess } = await import("@/lib/services/subscription");
+    await assertAccountAccess(session.adminId);
+  }
   return session;
 }
 

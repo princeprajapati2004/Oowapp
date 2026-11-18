@@ -1,5 +1,5 @@
 import { requireAdminSession } from "@/lib/session";
-import { getCurrentSubscription, computeDisplayStatus, computeDaysRemaining } from "@/lib/services/subscription";
+import { getCurrentSubscription, computeDisplayStatus, computeDaysRemaining, computeGraceDaysRemaining } from "@/lib/services/subscription";
 import { getUsageSnapshot } from "@/lib/services/subscription-limits";
 import { db } from "@/lib/db";
 import { SubscriptionPageClient } from "@/components/admin/subscription/subscription-page-client";
@@ -27,6 +27,7 @@ export default async function SubscriptionPage() {
 
   const displayStatus = computeDisplayStatus(subscription);
   const daysRemaining = computeDaysRemaining(subscription.endDate);
+  const graceDaysRemaining = computeGraceDaysRemaining(displayStatus, subscription.gracePeriodDays, daysRemaining);
 
   const plansForClient = plans.map((plan: (typeof plans)[number]) => ({
     id: plan.id,
@@ -66,6 +67,7 @@ export default async function SubscriptionPage() {
         status: displayStatus,
         endDate: subscription.endDate ? subscription.endDate.toISOString() : null,
         daysRemaining,
+        graceDaysRemaining,
         cancelAtPeriodEnd: subscription.cancelAtPeriodEnd,
       }}
       usage={usage}

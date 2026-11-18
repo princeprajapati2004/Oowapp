@@ -112,7 +112,7 @@ export function SubscriptionBillingSection({
   registeredOn: Date;
   lastLogin: Date | null;
 }) {
-  const { planCode, planName, status, startDate, endDate, daysRemaining, showExpiryWarning } = subscription;
+  const { planCode, planName, status, startDate, endDate, daysRemaining, showExpiryWarning, graceDaysRemaining } = subscription;
   const remainingDisplay = daysRemaining === null ? null : Math.max(daysRemaining, 0);
 
   return (
@@ -139,6 +139,18 @@ export function SubscriptionBillingSection({
           <p>
             Subscription expires {remainingDisplay === 0 ? "today" : `in ${remainingDisplay} day${remainingDisplay === 1 ? "" : "s"}`}.{" "}
             <Link href="/admin/subscription" className="underline underline-offset-2">Renew now</Link>.
+          </p>
+        </div>
+      )}
+
+      {status === "GRACE" && graceDaysRemaining !== null && (
+        <div className="flex items-start gap-2 rounded-lg border border-orange-200 bg-orange-50 px-3 py-2 text-sm text-orange-800 dark:border-orange-900/50 dark:bg-orange-900/20 dark:text-orange-400">
+          <AlertTriangle className="mt-0.5 size-4 shrink-0" />
+          <p>
+            Your subscription expired{endDate ? ` on ${formatDate(endDate)}` : ""}. You have{" "}
+            {graceDaysRemaining === 0 ? "less than a day" : `${graceDaysRemaining} day${graceDaysRemaining === 1 ? "" : "s"}`}{" "}
+            left in your grace period before access is restricted.{" "}
+            <Link href="/admin/subscription" className="underline underline-offset-2">Renew now</Link> to avoid interruption.
           </p>
         </div>
       )}

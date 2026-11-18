@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requireAdminSession } from "@/lib/session";
 import { handleApiError } from "@/lib/api-utils";
-import { assertAccountAccess } from "@/lib/services/subscription";
 import { db } from "@/lib/db";
 import { calculateBill, sumCharges } from "@/lib/services/billing";
 import { resolveOrCreateSession, OPEN_STATUSES } from "@/lib/services/table-session";
@@ -88,8 +87,9 @@ const createManualOrderSchema = z.object({
 
 export async function POST(request: Request) {
   try {
+    // requireAdminSession() already enforces the account-wide subscription
+    // gate (see session.ts) — no separate assertAccountAccess call needed here.
     const session = await requireAdminSession();
-    await assertAccountAccess(session.adminId);
     const body = await request.json();
     const input = createManualOrderSchema.parse(body);
 

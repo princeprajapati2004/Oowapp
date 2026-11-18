@@ -180,6 +180,85 @@ OOWAPP · oowapp.in
   return { html, text };
 }
 
+export type ExpiryReminderKind = "DAYS_7_BEFORE" | "DAYS_3_BEFORE" | "DAYS_1_BEFORE" | "ON_EXPIRY" | "GRACE_PERIOD";
+
+const REMINDER_COPY: Record<ExpiryReminderKind, { subject: string; heading: string; body: (planName: string, days: number) => string }> = {
+  DAYS_7_BEFORE: {
+    subject: "Your OOWAPP subscription expires in 7 days",
+    heading: "Your subscription expires in 7 days",
+    body: (planName) => `Your <strong>${escapeHtml(planName)}</strong> plan expires in 7 days. Renew now to avoid any interruption to your business.`,
+  },
+  DAYS_3_BEFORE: {
+    subject: "Your OOWAPP subscription expires in 3 days",
+    heading: "Your subscription expires in 3 days",
+    body: (planName) => `Your <strong>${escapeHtml(planName)}</strong> plan expires in 3 days. Renew now to keep every feature working without interruption.`,
+  },
+  DAYS_1_BEFORE: {
+    subject: "Your OOWAPP subscription expires tomorrow",
+    heading: "Your subscription expires tomorrow",
+    body: (planName) => `Your <strong>${escapeHtml(planName)}</strong> plan expires tomorrow. Renew today to avoid losing access to your business tools.`,
+  },
+  ON_EXPIRY: {
+    subject: "Your OOWAPP subscription has expired",
+    heading: "Your subscription has expired",
+    body: (planName) => `Your <strong>${escapeHtml(planName)}</strong> plan has expired. Renew now to restore access to your Oowapp dashboard.`,
+  },
+  GRACE_PERIOD: {
+    subject: "Action needed: your OOWAPP subscription is in its grace period",
+    heading: "You're in your grace period",
+    body: (planName, days) => `Your <strong>${escapeHtml(planName)}</strong> plan expired, but you have ${days} day${days === 1 ? "" : "s"} left in your grace period with full access. Renew now before it ends.`,
+  },
+};
+
+export function buildSubscriptionExpiryReminderTemplate(opts: {
+  kind: ExpiryReminderKind;
+  planName: string;
+  graceDaysRemaining?: number;
+}): EmailTemplate & { subject: string } {
+  const copy = REMINDER_COPY[opts.kind];
+  const bodyHtml = copy.body(opts.planName, opts.graceDaysRemaining ?? 0);
+  const bodyText = bodyHtml.replace(/<\/?strong>/g, "");
+
+  const html = `<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>${escapeHtml(copy.subject)}</title>
+<style>${sharedStyles}</style></head>
+<body>
+<div class="wrapper">
+  <div class="header">
+    <img src="${BASE_URL}/logo_1.webp" alt="OOWAPP" />
+    <h1>OOWAPP</h1>
+  </div>
+  <div class="body">
+    <p class="greeting">${escapeHtml(copy.heading)}</p>
+    <p class="text">${bodyHtml}</p>
+    <p class="text" style="margin:0;font-size:13px;color:#6b7280;">
+      Manage your plan any time from Subscription in your dashboard, or reply to this email if you need help.
+    </p>
+  </div>
+  <hr class="divider" />
+  <div class="footer">
+    <p>This is an automated message from OOWAPP</p>
+    <p><a href="${BASE_URL}">oowapp.in</a></p>
+    <p style="margin-top:8px;">© ${new Date().getFullYear()} OOWAPP. All rights reserved.</p>
+  </div>
+</div>
+</body>
+</html>`;
+
+  const text = `${copy.heading}
+
+${bodyText}
+
+Manage your plan any time from Subscription in your dashboard, or reply to this email if you need help.
+
+---
+OOWAPP · oowapp.in
+© ${new Date().getFullYear()} OOWAPP. All rights reserved.`;
+
+  return { subject: copy.subject, html, text };
+}
+
 function escapeHtml(str: string): string {
   return str
     .replace(/&/g, "&amp;")

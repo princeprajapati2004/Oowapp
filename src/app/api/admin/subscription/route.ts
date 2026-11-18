@@ -6,7 +6,7 @@ import { resolveFeatures } from "@/lib/services/feature-permission";
 
 export async function GET() {
   try {
-    const session = await requireAdminSession();
+    const session = await requireAdminSession({ skipSubscriptionCheck: true });
     const [summary, features] = await Promise.all([
       getSubscriptionSummaryForBusiness(session.adminId),
       resolveFeatures(session.shopId),

@@ -10,7 +10,7 @@ import { db } from "@/lib/db";
 // keeps full access (and can still Upgrade again, or un-cancel) until the period ends.
 export async function POST(request: Request) {
   try {
-    const session = await requireAdminSession();
+    const session = await requireAdminSession({ skipSubscriptionCheck: true });
 
     const freePlan = await db.plan.findUnique({ where: { code: "FREE" } });
     if (!freePlan) throw new NotFoundError("Default plan not configured.");

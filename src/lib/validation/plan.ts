@@ -17,6 +17,7 @@ export const planSchema = z.object({
   currency: z.string().trim().length(3).default("INR"),
   isPopular: z.boolean().default(false),
   trialDays: z.coerce.number().int().min(0).default(15),
+  gracePeriodDays: z.coerce.number().int().min(0).default(0),
 });
 
 export type PlanInput = z.infer<typeof planSchema>;

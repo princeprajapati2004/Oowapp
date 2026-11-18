@@ -13,6 +13,7 @@ const STATUS_OPTIONS: { value: DisplayStatus; label: string }[] = [
   { value: "TRIAL", label: "Trial" },
   { value: "ACTIVE", label: "Active" },
   { value: "EXPIRING_SOON", label: "Expiring Soon" },
+  { value: "GRACE", label: "Grace Period" },
   { value: "EXPIRED", label: "Expired" },
   { value: "SUSPENDED", label: "Suspended" },
 ];
@@ -21,6 +22,7 @@ const STATUS_STYLES: Record<string, string> = {
   ACTIVE: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400",
   TRIAL: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400",
   EXPIRING_SOON: "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400",
+  GRACE: "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400",
   EXPIRED: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400",
   SUSPENDED: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400",
   CANCELLED: "bg-muted text-muted-foreground",
@@ -30,6 +32,7 @@ const STATUS_LABELS: Record<string, string> = {
   ACTIVE: "Active",
   TRIAL: "Trial",
   EXPIRING_SOON: "Expiring Soon",
+  GRACE: "Grace Period",
   EXPIRED: "Expired",
   SUSPENDED: "Suspended",
   CANCELLED: "Cancelled",

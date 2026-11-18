@@ -7,6 +7,7 @@ import {
   getCurrentSubscription,
   computeDisplayStatus,
   computeDaysRemaining,
+  computeGraceDaysRemaining,
 } from "@/lib/services/subscription";
 import { resolveFeatures } from "@/lib/services/feature-permission";
 import { getOrCreateItemSettings } from "@/lib/services/item-settings";
@@ -48,6 +49,7 @@ export default async function SettingsPage() {
 
   const displayStatus = computeDisplayStatus(rawSubscription);
   const daysRemaining = computeDaysRemaining(rawSubscription.endDate);
+  const graceDaysRemaining = computeGraceDaysRemaining(displayStatus, rawSubscription.gracePeriodDays, daysRemaining);
   const featureLabelByKey = new Map<string, string>(allFeatures.map((f: (typeof allFeatures)[number]) => [f.key, f.label]));
   const enabledFeatureLabels = Object.entries(enabledFeatureKeys)
     .filter(([, enabled]) => enabled)
@@ -273,6 +275,7 @@ export default async function SettingsPage() {
             endDate: rawSubscription.endDate,
             daysRemaining,
             showExpiryWarning: daysRemaining !== null && daysRemaining >= 0 && daysRemaining <= EXPIRY_WARNING_DAYS,
+            graceDaysRemaining,
             cancelAtPeriodEnd: rawSubscription.cancelAtPeriodEnd,
             pendingPlanId: rawSubscription.pendingPlanId,
           }}

@@ -2224,10 +2224,36 @@ model Subscription {
   pendingPlan         Plan?         @relation("SubscriptionPendingPlan", fields: [pendingPlanId], references: [id], onDelete: SetNull)
   pendingBillingCycle BillingCycle?
 
+  reminderLogs SubscriptionReminderLog[]
+
   @@index([adminId])
   @@index([adminId, createdAt])
   @@index([shopId])
   @@map("subscriptions")
+}
+
+// One-shot guard against duplicate expiry-reminder sends (subscription-reminders.ts) —
+// each Subscription row covers exactly one fixed billing period (renewals/upgrades
+// always create a new row, see subscription-billing.ts::activateSubscriptionFromPayment),
+// so (subscriptionId, reminderType) is naturally unique per real-world reminder event;
+// no separate "which period" key is needed.
+enum SubscriptionReminderType {
+  DAYS_7_BEFORE
+  DAYS_3_BEFORE
+  DAYS_1_BEFORE
+  ON_EXPIRY
+  GRACE_PERIOD
+}
+
+model SubscriptionReminderLog {
+  id             String                   @id @default(cuid())
+  subscriptionId String
+  subscription   Subscription             @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  reminderType   SubscriptionReminderType
+  sentAt         DateTime                 @default(now())
+
+  @@unique([subscriptionId, reminderType])
+  @@map("subscription_reminder_logs")
 }
 
 // ─── Subscription Plans & Feature Permissions ─────────────────────────────────
@@ -2259,6 +2285,12 @@ model Plan {
   // Shown as a "MOST POPULAR" badge on the pricing page.
   isPopular    Boolean  @default(false)
   trialDays    Int      @default(15)
+  // Extra days of full, unrestricted access granted after endDate passes,
+  // before the account-wide lockout (subscription.ts::isAccountAccessBlocked)
+  // actually kicks in. 0 = no grace period, lockout is immediate on expiry.
+  // Purely a warning-window extension — nothing is feature-restricted during
+  // it, see computeDisplayStatus's "GRACE" status.
+  gracePeriodDays Int   @default(0)
 
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt

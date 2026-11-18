@@ -296,7 +296,7 @@ export async function listBusinessSubscriptions(filters: SubscriptionListFilters
     const sub = subscriptionByAdmin.get(shop.adminId);
     const startDate = sub?.startDate ?? shop.createdAt;
     const endDate = sub?.endDate ?? addDurationDays(startDate, DEFAULT_TRIAL_DURATION);
-    const record = { status: sub?.status ?? ("TRIAL" as const), endDate };
+    const record = { status: sub?.status ?? ("TRIAL" as const), endDate, gracePeriodDays: sub?.gracePeriodDays ?? 0 };
 
     return {
       shopId: shop.id,

@@ -8,7 +8,7 @@ import { writeAuditLog, extractRequestMeta } from "@/lib/services/audit-log";
 
 export async function GET() {
   try {
-    const session = await requireAdminSession();
+    const session = await requireAdminSession({ skipSubscriptionCheck: true });
     const [admin, shop] = await Promise.all([
       db.admin.findUnique({ where: { id: session.adminId }, select: { email: true } }),
       db.shop.findUnique({
@@ -57,7 +57,7 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
-    const session = await requireAdminSession();
+    const session = await requireAdminSession({ skipSubscriptionCheck: true });
 
     const body = await request.json();
     const input = onboardingProfileSchema.parse(body);

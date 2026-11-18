@@ -58,6 +58,7 @@ interface CurrentClient {
   status: string;
   endDate: string | null;
   daysRemaining: number | null;
+  graceDaysRemaining: number | null;
   cancelAtPeriodEnd: boolean;
 }
 
@@ -240,6 +241,17 @@ function CurrentPlanCard({ current }: { current: CurrentClient }) {
           </div>
         </div>
 
+        {current.status === "GRACE" && current.graceDaysRemaining !== null && (
+          <div className="flex items-center gap-2 rounded-lg border border-orange-200 bg-orange-50 px-3 py-2 text-sm text-orange-800 dark:border-orange-900/50 dark:bg-orange-900/20 dark:text-orange-400">
+            <AlertTriangle className="size-4 shrink-0" />
+            <span>
+              Your plan expired{current.endDate ? ` on ${new Date(current.endDate).toLocaleDateString()}` : ""}. You have{" "}
+              {current.graceDaysRemaining === 0 ? "less than a day" : `${current.graceDaysRemaining} day${current.graceDaysRemaining === 1 ? "" : "s"}`}{" "}
+              left in your grace period before access is restricted — renew below to avoid interruption.
+            </span>
+          </div>
+        )}
+
         {current.cancelAtPeriodEnd && (
           <div className="flex items-center justify-between gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-900/50 dark:bg-amber-900/20 dark:text-amber-400">
             <span>Your plan is scheduled to downgrade at the end of this billing period.</span>
@@ -278,11 +290,13 @@ function StatusBadge({ status }: { status: string }) {
     ACTIVE: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400",
     TRIAL: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400",
     EXPIRING_SOON: "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400",
+    GRACE: "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400",
     EXPIRED: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400",
     SUSPENDED: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400",
     CANCELLED: "bg-muted text-muted-foreground",
   };
-  return <Badge className={styles[status] ?? styles.CANCELLED}>{status.replace(/_/g, " ")}</Badge>;
+  const label = status === "GRACE" ? "Grace Period" : status.replace(/_/g, " ");
+  return <Badge className={styles[status] ?? styles.CANCELLED}>{label}</Badge>;
 }
 
 function UsageOverview({ usage }: { usage: UsageSnapshot }) {

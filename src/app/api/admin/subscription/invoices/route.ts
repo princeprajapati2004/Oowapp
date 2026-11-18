@@ -5,7 +5,7 @@ import { db } from "@/lib/db";
 
 export async function GET() {
   try {
-    const session = await requireAdminSession();
+    const session = await requireAdminSession({ skipSubscriptionCheck: true });
     const invoices = await db.subscriptionTransaction.findMany({
       where: { adminId: session.adminId, status: "SUCCESS" },
       orderBy: { paidAt: "desc" },

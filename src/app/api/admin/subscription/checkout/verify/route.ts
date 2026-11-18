@@ -16,7 +16,7 @@ import { db } from "@/lib/db";
 // verifyAndActivate writes any Subscription row.
 export async function POST(request: Request) {
   try {
-    const session = await requireAdminSession();
+    const session = await requireAdminSession({ skipSubscriptionCheck: true });
     const body = await request.json();
     const input = verifyCheckoutSchema.parse(body);
 

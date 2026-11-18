@@ -42,11 +42,15 @@ export interface SubscriptionRecord {
   cancelAtPeriodEnd: boolean;
   pendingPlanId: string | null;
   pendingBillingCycle: BillingCycle | null;
+  // From the effective plan — see computeDisplayStatus's "GRACE" status.
+  gracePeriodDays: number;
 }
 
 type SubscriptionRow = NonNullable<Awaited<ReturnType<typeof db.subscription.findFirst>>>;
 
-async function resolvePlanForSubscription(row: { planId: string | null; plan: string }): Promise<{ id: string; code: string; name: string } | null> {
+type ResolvedPlan = { id: string; code: string; name: string; gracePeriodDays: number };
+
+async function resolvePlanForSubscription(row: { planId: string | null; plan: string }): Promise<ResolvedPlan | null> {
   if (row.planId) {
     const plan = await db.plan.findUnique({ where: { id: row.planId } });
     if (plan) return plan;
@@ -67,9 +71,9 @@ async function resolvePlanForSubscription(row: { planId: string | null; plan: st
  */
 async function applyPendingDowngrade(
   row: Pick<SubscriptionRow, "cancelAtPeriodEnd" | "pendingPlanId" | "endDate">,
-  resolvedPlan: { id: string; code: string; name: string } | null,
+  resolvedPlan: ResolvedPlan | null,
   now: Date
-): Promise<{ id: string; code: string; name: string } | null> {
+): Promise<ResolvedPlan | null> {
   if (!row.cancelAtPeriodEnd || !row.pendingPlanId || !row.endDate || now < row.endDate) {
     return resolvedPlan;
   }
@@ -77,7 +81,7 @@ async function applyPendingDowngrade(
   return pendingPlan ?? resolvedPlan;
 }
 
-function toRecord(row: SubscriptionRow, effectivePlan: { id: string; code: string; name: string } | null): SubscriptionRecord {
+function toRecord(row: SubscriptionRow, effectivePlan: ResolvedPlan | null): SubscriptionRecord {
   return {
     id: row.id,
     adminId: row.adminId ?? "",
@@ -94,6 +98,7 @@ function toRecord(row: SubscriptionRow, effectivePlan: { id: string; code: strin
     cancelAtPeriodEnd: row.cancelAtPeriodEnd,
     pendingPlanId: row.pendingPlanId,
     pendingBillingCycle: row.pendingBillingCycle,
+    gracePeriodDays: effectivePlan?.gracePeriodDays ?? 0,
   };
 }
 
@@ -147,6 +152,7 @@ export async function getCurrentSubscription(adminId: string): Promise<Subscript
     cancelAtPeriodEnd: false,
     pendingPlanId: null,
     pendingBillingCycle: null,
+    gracePeriodDays: freePlan?.gracePeriodDays ?? 0,
   };
 }
 
@@ -213,27 +219,53 @@ export function computeDaysRemaining(endDate: Date | null, now = new Date()): nu
   return Math.ceil((endDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
 }
 
-// The 5 statuses the spec asks for. SUSPENDED/CANCELLED are terminal states set
-// explicitly by a Super Admin action and never auto-derived. TRIAL/ACTIVE become
-// EXPIRED once endDate has passed, computed lazily on every read — there is no
-// background job in this codebase to flip status on a timer, and none is needed.
-export type DisplayStatus = "TRIAL" | "ACTIVE" | "EXPIRING_SOON" | "EXPIRED" | "SUSPENDED" | "CANCELLED";
+/** Days left until a GRACE window itself ends; null outside of GRACE (caller should gate on displayStatus === "GRACE"). */
+export function computeGraceDaysRemaining(
+  displayStatus: DisplayStatus,
+  gracePeriodDays: number,
+  daysRemaining: number | null
+): number | null {
+  if (displayStatus !== "GRACE" || daysRemaining === null) return null;
+  return Math.max(0, gracePeriodDays + daysRemaining);
+}
+
+// SUSPENDED/CANCELLED are terminal states set explicitly by a Super Admin
+// action and never auto-derived. TRIAL/ACTIVE become EXPIRED once endDate has
+// passed, computed lazily on every read — there is no background job in this
+// codebase to flip status on a timer, and none is needed. GRACE is a
+// transient window immediately after endDate, sized by the plan's
+// gracePeriodDays — full access stays granted (see isAccessGranting) with a
+// warning shown in the UI, purely to extend the "still works" period before
+// the real EXPIRED lockout; nothing is feature-restricted during it.
+export type DisplayStatus = "TRIAL" | "ACTIVE" | "EXPIRING_SOON" | "GRACE" | "EXPIRED" | "SUSPENDED" | "CANCELLED";
 
 export function computeDisplayStatus(
-  sub: Pick<SubscriptionRecord, "status" | "endDate">,
+  sub: Pick<SubscriptionRecord, "status" | "endDate" | "gracePeriodDays">,
   now = new Date()
 ): DisplayStatus {
   if (sub.status === "SUSPENDED" || sub.status === "CANCELLED") return sub.status;
 
   const daysRemaining = computeDaysRemaining(sub.endDate, now);
-  if (sub.status === "EXPIRED" || (daysRemaining !== null && daysRemaining < 0)) return "EXPIRED";
+  const isPastExpiry = sub.status === "EXPIRED" || (daysRemaining !== null && daysRemaining < 0);
+  if (isPastExpiry) {
+    const daysPastExpiry = daysRemaining !== null ? -daysRemaining : null;
+    if (daysPastExpiry !== null && sub.gracePeriodDays > 0 && daysPastExpiry <= sub.gracePeriodDays) {
+      return "GRACE";
+    }
+    return "EXPIRED";
+  }
   if (daysRemaining !== null && daysRemaining <= EXPIRY_WARNING_DAYS) return "EXPIRING_SOON";
   return sub.status === "TRIAL" ? "TRIAL" : "ACTIVE";
 }
 
 /** Whether this display status should grant access to premium features at all. */
 export function isAccessGranting(displayStatus: DisplayStatus): boolean {
-  return displayStatus === "ACTIVE" || displayStatus === "TRIAL" || displayStatus === "EXPIRING_SOON";
+  return (
+    displayStatus === "ACTIVE" ||
+    displayStatus === "TRIAL" ||
+    displayStatus === "EXPIRING_SOON" ||
+    displayStatus === "GRACE"
+  );
 }
 
 export class SubscriptionExpiredError extends ForbiddenError {
@@ -274,6 +306,9 @@ export interface SubscriptionSummary {
   endDate: Date | null;
   daysRemaining: number | null;
   showExpiryWarning: boolean;
+  // Only set when status is "GRACE" — days left until the grace window
+  // itself ends and the real EXPIRED lockout begins.
+  graceDaysRemaining: number | null;
   cancelAtPeriodEnd: boolean;
   pendingPlanId: string | null;
 }
@@ -283,6 +318,7 @@ export async function getSubscriptionSummaryForBusiness(adminId: string): Promis
   const sub = await getCurrentSubscription(adminId);
   const status = computeDisplayStatus(sub);
   const daysRemaining = computeDaysRemaining(sub.endDate);
+  const graceDaysRemaining = computeGraceDaysRemaining(status, sub.gracePeriodDays, daysRemaining);
 
   return {
     planCode: sub.planCode,
@@ -292,6 +328,7 @@ export async function getSubscriptionSummaryForBusiness(adminId: string): Promis
     endDate: sub.endDate,
     daysRemaining,
     showExpiryWarning: daysRemaining !== null && daysRemaining >= 0 && daysRemaining <= EXPIRY_WARNING_DAYS,
+    graceDaysRemaining,
     cancelAtPeriodEnd: sub.cancelAtPeriodEnd,
     pendingPlanId: sub.pendingPlanId,
   };
