@@ -1,3 +1,15 @@
+// Dynamically imported inside request() rather than statically — api-client.ts
+// is a plain fetch wrapper used by every client component (admin, staff,
+// customer); a static import would pull the gate's React/UI code into every
+// one of those bundles even where it can never fire (its own actorType check
+// below already no-ops for staff/customer responses).
+async function maybeOpenSubscriptionGate(body: Record<string, unknown> | null) {
+  if (body?.code === "SUBSCRIPTION_EXPIRED" && body?.actorType === "admin") {
+    const { openSubscriptionGate } = await import("@/components/shared/subscription-gate");
+    openSubscriptionGate();
+  }
+}
+
 export class ApiError extends Error {
   status: number;
   data: Record<string, unknown> | null;
@@ -33,6 +45,7 @@ async function request<T>(
     const body = isJson ? await res.json().catch(() => null) : null;
 
     if (!res.ok) {
+      if (res.status === 403) maybeOpenSubscriptionGate(body);
       throw new ApiError(body?.error ?? "Something went wrong", res.status, body);
     }
 

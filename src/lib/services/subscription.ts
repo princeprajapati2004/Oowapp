@@ -268,23 +268,28 @@ export function isAccessGranting(displayStatus: DisplayStatus): boolean {
   );
 }
 
+export type SubscriptionActorType = "admin" | "staff" | "customer";
+
 export class SubscriptionExpiredError extends ForbiddenError {
-  constructor(message = "Your subscription has expired. Please renew to continue.") {
+  // actorType lets handleApiError tell the client who was blocked — the
+  // global subscription-purchase gate (src/components/shared/subscription-gate.tsx)
+  // must only pop up for the owner ("admin"); staff can't pay for the plan,
+  // and a customer must never see the shop's own billing UI.
+  actorType: SubscriptionActorType;
+  constructor(actorType: SubscriptionActorType = "admin", message = "Your subscription has expired. Please renew to continue.") {
     super(message);
     this.name = "SubscriptionExpiredError";
+    this.actorType = actorType;
   }
 }
 
 /**
- * Account-wide access gate — stricter and broader than feature-permission.ts's
- * per-feature resolveFeatures(): that one only disables specific premium
- * add-ons while leaving core operation untouched; this one is the single
- * choke point every surface (admin dashboard, counter/kitchen staff tools,
- * the customer ordering app, public display boards, and the order-placement
- * APIs) must call through so NOTHING works for the account once its
- * subscription stops being access-granting (EXPIRED/SUSPENDED/CANCELLED).
- * Re-checked live on every call, never cached — the instant a renewal
- * pushes endDate forward, access is restored with no other state to flip.
+ * Account-wide gate for genuinely new paid activity (write operations) —
+ * see this module's read-vs-write access model: reads always stay
+ * available regardless of subscription status, only write paths call
+ * through here. Re-checked live on every call, never cached — the instant
+ * a renewal pushes endDate forward, access is restored with no other state
+ * to flip.
  */
 export async function isAccountAccessBlocked(adminId: string): Promise<boolean> {
   const subscription = await getCurrentSubscription(adminId);
@@ -292,9 +297,9 @@ export async function isAccountAccessBlocked(adminId: string): Promise<boolean> 
 }
 
 /** Throws SubscriptionExpiredError (403 via the existing handleApiError) if blocked. */
-export async function assertAccountAccess(adminId: string): Promise<void> {
+export async function assertAccountAccess(adminId: string, actorType: SubscriptionActorType = "admin"): Promise<void> {
   if (await isAccountAccessBlocked(adminId)) {
-    throw new SubscriptionExpiredError();
+    throw new SubscriptionExpiredError(actorType);
   }
 }
 

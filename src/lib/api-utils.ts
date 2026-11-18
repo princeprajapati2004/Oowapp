@@ -139,6 +139,15 @@ export function handleApiError(error: unknown) {
   if (error instanceof UnauthorizedError) {
     return NextResponse.json({ error: error.message }, { status: 401 });
   }
+  // Checked by name, not instanceof SubscriptionExpiredError, to avoid a
+  // subscription.ts <-> api-utils.ts import cycle (subscription.ts already
+  // imports NotFoundError from this file) — the `code` lets the client pop
+  // the global subscription-purchase gate (see api-client.ts) without
+  // string-matching the human-readable message.
+  if (error instanceof ForbiddenError && error.name === "SubscriptionExpiredError") {
+    const actorType = (error as { actorType?: string }).actorType ?? "admin";
+    return NextResponse.json({ error: error.message, code: "SUBSCRIPTION_EXPIRED", actorType }, { status: 403 });
+  }
   if (error instanceof ForbiddenError) {
     return NextResponse.json({ error: error.message }, { status: 403 });
   }

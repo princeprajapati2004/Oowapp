@@ -40,7 +40,7 @@ export async function requireShopActor(
 
   if (opts.requireActiveSubscription) {
     const adminId = resolved.kind === "admin" ? resolved.actorId : await resolveAdminIdForShop(resolved.shopId);
-    await assertAccountAccess(adminId);
+    await assertAccountAccess(adminId, resolved.kind);
   }
 
   return resolved;

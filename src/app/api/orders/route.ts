@@ -66,7 +66,7 @@ export async function POST(request: Request) {
       include: { taxes: { where: { isEnabled: true } } },
     });
     if (!shop || !shop.isPublished) throw new NotFoundError("Shop not found");
-    await assertAccountAccess(shop.adminId);
+    await assertAccountAccess(shop.adminId, "customer");
 
     // DIRECT mode always saves orders to the DB — saveOrdersToDb is only a
     // logging override in WHATSAPP mode.

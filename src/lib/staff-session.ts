@@ -34,7 +34,7 @@ export async function requireStaffSession(opts: { requireActiveSubscription?: bo
   if (!session) throw new UnauthorizedError();
   if (opts.requireActiveSubscription) {
     const adminId = await resolveAdminIdForShop(session.shopId);
-    await assertAccountAccess(adminId);
+    await assertAccountAccess(adminId, "staff");
   }
   return session;
 }

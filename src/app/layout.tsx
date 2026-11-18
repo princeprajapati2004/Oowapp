@@ -5,6 +5,7 @@ import { ThemeProvider } from "@/components/theme-provider";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Toaster } from "@/components/ui/sonner";
 import { PwaRegister } from "@/components/shared/pwa-register";
+import { SubscriptionGateProvider } from "@/components/shared/subscription-gate";
 
 export const metadata: Metadata = {
   title: {
@@ -64,7 +65,7 @@ export default function RootLayout({
           disableTransitionOnChange
         >
           <TooltipProvider>
-            {children}
+            <SubscriptionGateProvider>{children}</SubscriptionGateProvider>
             <Toaster position="top-center" richColors />
           </TooltipProvider>
         </ThemeProvider>

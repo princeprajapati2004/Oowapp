@@ -8,6 +8,58 @@ import { activateSubscriptionFromPayment } from "@/lib/services/subscription-bil
 import { hasAcceptedCurrentTerms } from "@/lib/services/subscription-terms";
 import type { BillingCycle } from "@/generated/prisma/client";
 
+/**
+ * The plans an admin can actually buy right now, with each plan's active
+ * terms version (if any) and whether THIS admin has already accepted it —
+ * same computation /admin/subscription/page.tsx does server-side for its
+ * own plan grid, exposed here as a plain function so the global
+ * subscription-gate (triggered from anywhere, not just that page) can fetch
+ * it client-side via GET /api/admin/subscription/purchasable-plans.
+ */
+export async function getPurchasablePlans(adminId: string) {
+  const plans = await db.plan.findMany({
+    where: { isActive: true, isArchived: false },
+    orderBy: { sortOrder: "asc" },
+    include: {
+      planFeatures: { where: { enabled: true }, include: { feature: true } },
+      planLimits: true,
+      termsVersions: { where: { isActive: true } },
+    },
+  });
+
+  const activeTermsIds = plans
+    .map((plan: (typeof plans)[number]) => plan.termsVersions[0]?.id)
+    .filter((id: string | undefined): id is string => !!id);
+  const acceptances = activeTermsIds.length
+    ? await db.subscriptionTermsAcceptance.findMany({
+        where: { adminId, termsVersionId: { in: activeTermsIds } },
+        select: { termsVersionId: true },
+      })
+    : [];
+  const acceptedTermsIds = new Set(acceptances.map((a: (typeof acceptances)[number]) => a.termsVersionId));
+
+  return plans.map((plan: (typeof plans)[number]) => {
+    const activeTerms = plan.termsVersions[0] ?? null;
+    return {
+      id: plan.id,
+      code: plan.code,
+      name: plan.name,
+      description: plan.description,
+      sortOrder: plan.sortOrder,
+      monthlyPrice: plan.monthlyPrice !== null ? Number(plan.monthlyPrice) : null,
+      annualPrice: plan.annualPrice !== null ? Number(plan.annualPrice) : null,
+      currency: plan.currency,
+      isPopular: plan.isPopular,
+      trialDays: plan.trialDays,
+      features: plan.planFeatures.map((pf: (typeof plan.planFeatures)[number]) => ({ key: pf.feature.key, label: pf.feature.label })),
+      limits: plan.planLimits.map((pl: (typeof plan.planLimits)[number]) => ({ limitKey: pl.limitKey, limitValue: pl.limitValue })),
+      terms: activeTerms
+        ? { id: activeTerms.id, content: activeTerms.content, version: activeTerms.version, accepted: acceptedTermsIds.has(activeTerms.id) }
+        : null,
+    };
+  });
+}
+
 export interface CheckoutOrderResult {
   transactionId: string;
   gatewayOrderId: string;
