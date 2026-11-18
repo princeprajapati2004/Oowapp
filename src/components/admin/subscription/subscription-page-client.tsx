@@ -109,11 +109,13 @@ export function SubscriptionPageClient({
   usage,
   plans,
   invoices,
+  autoPayMandate,
 }: {
   current: CurrentClient;
   usage: UsageSnapshot;
   plans: PlanClient[];
   invoices: InvoiceClient[];
+  autoPayMandate: { id: string; planName: string; status: string } | null;
 }) {
   const router = useRouter();
   const [billingCycle, setBillingCycle] = useState<BillingCycle>("MONTHLY");
@@ -128,7 +130,7 @@ export function SubscriptionPageClient({
         <p className="text-sm text-muted-foreground">Manage your plan, usage, and billing.</p>
       </div>
 
-      <CurrentPlanCard current={current} />
+      <CurrentPlanCard current={current} autoPayMandate={autoPayMandate} />
 
       <UsageOverview usage={usage} status={current.status} />
 
@@ -191,24 +193,15 @@ async function handleDowngrade(plan: PlanClient, billingCycle: BillingCycle, rou
   }
 }
 
-function CurrentPlanCard({ current }: { current: CurrentClient }) {
-  const [cancelling, setCancelling] = useState(false);
-  const [confirmOpen, setConfirmOpen] = useState(false);
+function CurrentPlanCard({
+  current,
+  autoPayMandate,
+}: {
+  current: CurrentClient;
+  autoPayMandate: { id: string; planName: string; status: string } | null;
+}) {
   const router = useRouter();
-
-  async function handleCancel() {
-    setCancelling(true);
-    try {
-      await api.post("/api/admin/subscription/cancel", {});
-      toast.success("Subscription will end at the close of your current billing period.");
-      setConfirmOpen(false);
-      router.refresh();
-    } catch (error) {
-      toast.error(error instanceof ApiError ? error.message : "Failed to cancel");
-    } finally {
-      setCancelling(false);
-    }
-  }
+  const [cancellingAutoPay, setCancellingAutoPay] = useState(false);
 
   async function handleUndoCancel() {
     try {
@@ -217,6 +210,20 @@ function CurrentPlanCard({ current }: { current: CurrentClient }) {
       router.refresh();
     } catch (error) {
       toast.error(error instanceof ApiError ? error.message : "Failed to undo cancellation");
+    }
+  }
+
+  async function handleCancelAutoPay() {
+    if (!autoPayMandate) return;
+    setCancellingAutoPay(true);
+    try {
+      await api.post("/api/admin/subscription/autopay/cancel", { mandateId: autoPayMandate.id });
+      toast.success("Auto-pay cancelled. Your plan stays active until it naturally expires.");
+      router.refresh();
+    } catch (error) {
+      toast.error(error instanceof ApiError ? error.message : "Failed to cancel auto-pay");
+    } finally {
+      setCancellingAutoPay(false);
     }
   }
 
@@ -262,26 +269,16 @@ function CurrentPlanCard({ current }: { current: CurrentClient }) {
           </div>
         )}
 
-        {!current.cancelAtPeriodEnd && (
-          <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
-            <Button variant="outline" size="sm" onClick={() => setConfirmOpen(true)}>
-              Cancel Subscription
+        {autoPayMandate && (
+          <div className="flex items-center justify-between gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800 dark:border-emerald-900/50 dark:bg-emerald-900/20 dark:text-emerald-400">
+            <span>
+              Auto-pay is {autoPayMandate.status === "ACTIVE" ? "active" : "being set up"} for {autoPayMandate.planName} — it
+              renews automatically each cycle.
+            </span>
+            <Button size="sm" variant="outline" disabled={cancellingAutoPay} onClick={handleCancelAutoPay}>
+              {cancellingAutoPay ? "Cancelling…" : "Cancel Auto-Pay"}
             </Button>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>Cancel subscription?</DialogTitle>
-                <DialogDescription>
-                  You&apos;ll keep full access until the end of your current billing period, then your
-                  account moves to the free tier. No data is ever deleted.
-                </DialogDescription>
-              </DialogHeader>
-              <DialogFooter>
-                <Button variant="destructive" disabled={cancelling} onClick={handleCancel}>
-                  {cancelling ? "Cancelling…" : "Confirm Cancellation"}
-                </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
+          </div>
         )}
       </CardContent>
     </Card>
@@ -575,6 +572,7 @@ function CheckoutDialog({
   const [checkingCoupon, setCheckingCoupon] = useState(false);
   const [paying, setPaying] = useState(false);
   const [termsAccepted, setTermsAccepted] = useState(plan.terms?.accepted ?? true);
+  const [autoPay, setAutoPay] = useState(false);
 
   const basePrice = (billingCycle === "ANNUAL" ? plan.annualPrice : plan.monthlyPrice) ?? 0;
 
@@ -604,60 +602,110 @@ function CheckoutDialog({
         await api.post("/api/admin/subscription/terms/accept", { termsVersionId: plan.terms.id });
       }
 
-      const order = await api.post<{
-        transactionId: string;
-        gatewayOrderId: string;
-        razorpayKeyId: string;
-        amount: number;
-        currency: string;
-      }>("/api/admin/subscription/checkout", {
-        planId: plan.id,
-        billingCycle,
-        couponCode: couponApplied?.code,
-      });
-
-      if (!order.razorpayKeyId) {
-        toast.error("Payments are not configured yet. Please contact support.");
-        setPaying(false);
-        return;
+      if (autoPay) {
+        await payWithAutoPay();
+      } else {
+        await payOneTime();
       }
-
-      await loadRazorpayScript();
-      setStep("paying");
-
-      const razorpay = new window.Razorpay!({
-        key: order.razorpayKeyId,
-        amount: order.amount,
-        currency: order.currency,
-        order_id: order.gatewayOrderId,
-        name: "OOWAPP",
-        description: `${plan.name} — ${billingCycle === "ANNUAL" ? "Annual" : "Monthly"}`,
-        handler: async (response: { razorpay_order_id: string; razorpay_payment_id: string; razorpay_signature: string }) => {
-          try {
-            await api.post("/api/admin/subscription/checkout/verify", {
-              transactionId: order.transactionId,
-              gatewayOrderId: response.razorpay_order_id,
-              gatewayPaymentId: response.razorpay_payment_id,
-              gatewaySignature: response.razorpay_signature,
-            });
-            setStep("success");
-            toast.success(`${plan.name} is now active.`);
-          } catch (error) {
-            toast.error(error instanceof ApiError ? error.message : "Payment verification failed");
-            setStep("confirm");
-          }
-        },
-        modal: {
-          ondismiss: () => setStep("confirm"),
-        },
-      });
-      razorpay.open();
     } catch (error) {
       toast.error(error instanceof ApiError ? error.message : "Could not start checkout");
       setStep("confirm");
     } finally {
       setPaying(false);
     }
+  }
+
+  async function payOneTime() {
+    const order = await api.post<{
+      transactionId: string;
+      gatewayOrderId: string;
+      razorpayKeyId: string;
+      amount: number;
+      currency: string;
+    }>("/api/admin/subscription/checkout", {
+      planId: plan.id,
+      billingCycle,
+      couponCode: couponApplied?.code,
+    });
+
+    if (!order.razorpayKeyId) {
+      toast.error("Payments are not configured yet. Please contact support.");
+      return;
+    }
+
+    await loadRazorpayScript();
+    setStep("paying");
+
+    const razorpay = new window.Razorpay!({
+      key: order.razorpayKeyId,
+      amount: order.amount,
+      currency: order.currency,
+      order_id: order.gatewayOrderId,
+      name: "OOWAPP",
+      description: `${plan.name} — ${billingCycle === "ANNUAL" ? "Annual" : "Monthly"}`,
+      handler: async (response: { razorpay_order_id: string; razorpay_payment_id: string; razorpay_signature: string }) => {
+        try {
+          await api.post("/api/admin/subscription/checkout/verify", {
+            transactionId: order.transactionId,
+            gatewayOrderId: response.razorpay_order_id,
+            gatewayPaymentId: response.razorpay_payment_id,
+            gatewaySignature: response.razorpay_signature,
+          });
+          setStep("success");
+          toast.success(`${plan.name} is now active.`);
+        } catch (error) {
+          toast.error(error instanceof ApiError ? error.message : "Payment verification failed");
+          setStep("confirm");
+        }
+      },
+      modal: {
+        ondismiss: () => setStep("confirm"),
+      },
+    });
+    razorpay.open();
+  }
+
+  async function payWithAutoPay() {
+    const setup = await api.post<{
+      mandateId: string;
+      razorpaySubscriptionId: string;
+      razorpayKeyId: string;
+      totalAmount: number;
+      currency: string;
+    }>("/api/admin/subscription/autopay/setup", { planId: plan.id, billingCycle });
+
+    if (!setup.razorpayKeyId) {
+      toast.error("Payments are not configured yet. Please contact support.");
+      return;
+    }
+
+    await loadRazorpayScript();
+    setStep("paying");
+
+    const razorpay = new window.Razorpay!({
+      key: setup.razorpayKeyId,
+      subscription_id: setup.razorpaySubscriptionId,
+      name: "OOWAPP",
+      description: `${plan.name} — ${billingCycle === "ANNUAL" ? "Annual" : "Monthly"} (auto-pay)`,
+      handler: async (response: { razorpay_payment_id: string; razorpay_subscription_id: string; razorpay_signature: string }) => {
+        try {
+          await api.post("/api/admin/subscription/autopay/verify", {
+            mandateId: setup.mandateId,
+            razorpayPaymentId: response.razorpay_payment_id,
+            razorpaySignature: response.razorpay_signature,
+          });
+          setStep("success");
+          toast.success(`${plan.name} is now active with auto-pay.`);
+        } catch (error) {
+          toast.error(error instanceof ApiError ? error.message : "Payment verification failed");
+          setStep("confirm");
+        }
+      },
+      modal: {
+        ondismiss: () => setStep("confirm"),
+      },
+    });
+    razorpay.open();
   }
 
   const discount = couponApplied?.discountAmount ?? 0;
@@ -669,7 +717,11 @@ function CheckoutDialog({
           <div className="flex flex-col items-center gap-3 py-6 text-center">
             <CheckCircle2 className="size-12 text-emerald-600 dark:text-emerald-400" />
             <h3 className="text-lg font-semibold">You&apos;re on {plan.name}!</h3>
-            <p className="text-sm text-muted-foreground">Your new plan is active immediately.</p>
+            <p className="text-sm text-muted-foreground">
+              {autoPay
+                ? "Your plan is active and will renew automatically each billing cycle — no action needed from you."
+                : "Your new plan is active immediately."}
+            </p>
             <Button onClick={onSuccess}>Done</Button>
           </div>
         ) : (
@@ -680,8 +732,13 @@ function CheckoutDialog({
             </DialogHeader>
             <div className="space-y-3">
               <div className="flex gap-2">
-                <Input placeholder="Coupon code" value={couponCode} onChange={(e) => setCouponCode(e.target.value)} disabled={!!couponApplied} />
-                <Button variant="outline" disabled={checkingCoupon || !!couponApplied} onClick={applyCoupon}>
+                <Input
+                  placeholder="Coupon code"
+                  value={couponCode}
+                  onChange={(e) => setCouponCode(e.target.value)}
+                  disabled={!!couponApplied || autoPay}
+                />
+                <Button variant="outline" disabled={checkingCoupon || !!couponApplied || autoPay} onClick={applyCoupon}>
                   {checkingCoupon ? <Loader2 className="size-4 animate-spin" /> : "Apply"}
                 </Button>
               </div>
@@ -695,6 +752,26 @@ function CheckoutDialog({
                 )}
                 <p className="text-xs text-muted-foreground pt-1">GST (if applicable) is calculated on the next step.</p>
               </div>
+
+              <label className="flex items-start gap-2 rounded-lg border p-3 text-sm">
+                <Checkbox
+                  checked={autoPay}
+                  onCheckedChange={(checked) => {
+                    const next = checked === true;
+                    setAutoPay(next);
+                    if (next) {
+                      setCouponCode("");
+                      setCouponApplied(null);
+                    }
+                  }}
+                  className="mt-0.5"
+                />
+                <span>
+                  <span className="font-medium">Enable auto-pay</span> — authorize once, and this plan renews
+                  automatically every billing cycle without you doing anything again. Coupons aren&apos;t available
+                  with auto-pay. Cancel anytime.
+                </span>
+              </label>
 
               {plan.terms && !plan.terms.accepted && (
                 <div className="space-y-2 rounded-lg border p-3">

@@ -74,7 +74,7 @@ export interface CheckoutOrderResult {
   };
 }
 
-function priceForCycle(plan: { monthlyPrice: unknown; annualPrice: unknown }, cycle: BillingCycle): number | null {
+export function priceForCycle(plan: { monthlyPrice: unknown; annualPrice: unknown }, cycle: BillingCycle): number | null {
   const raw = cycle === "ANNUAL" ? plan.annualPrice : plan.monthlyPrice;
   return raw === null ? null : Number(raw);
 }

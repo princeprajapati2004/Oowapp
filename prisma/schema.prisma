@@ -473,6 +473,7 @@ model Admin {
   subscriptionCouponRedemptions SubscriptionCouponRedemption[]
   usageRecords                  SubscriptionUsageRecord[]
   termsAcceptances              SubscriptionTermsAcceptance[]
+  autoPayMandates               SubscriptionAutoPayMandate[]
 
   emailVerifications EmailVerification[]
 
@@ -2306,6 +2307,7 @@ model Plan {
   transactions  SubscriptionTransaction[]
   usageRecords  SubscriptionUsageRecord[]
   termsVersions SubscriptionTermsVersion[]
+  autoPayMandates SubscriptionAutoPayMandate[]
 
   @@map("plans")
 }
@@ -2461,8 +2463,59 @@ model SubscriptionTransaction {
 
   couponRedemption SubscriptionCouponRedemption?
 
+  // Set only for a charge that came from a recurring auto-pay mandate
+  // (the first cycle's charge, verified client-side same as a one-time
+  // purchase, AND every later cycle, which only ever arrives via the
+  // subscription.charged webhook since no customer is present to drive a
+  // client-side verify call) — null for a regular one-time purchase.
+  autoPayMandateId String?
+  autoPayMandate   SubscriptionAutoPayMandate? @relation(fields: [autoPayMandateId], references: [id], onDelete: SetNull)
+
   @@index([adminId])
   @@map("subscription_transactions")
+}
+
+// Razorpay's real subscription lifecycle statuses — see
+// node_modules/razorpay/dist/types/subscriptions.d.ts. No separate "paused"
+// value exists there despite a pause() API method, so this mirrors exactly
+// what Razorpay documents rather than inventing one.
+enum AutoPayMandateStatus {
+  CREATED
+  AUTHENTICATED
+  ACTIVE
+  PENDING
+  HALTED
+  CANCELLED
+  COMPLETED
+  EXPIRED
+}
+
+// One-time customer authorization that Razorpay then auto-charges every
+// billing cycle without the customer doing anything again — see
+// subscription-autopay.ts. A fresh Razorpay Plan (razorpayPlanId) is created
+// at setup time from whatever our own Plan's CURRENT price is, every time
+// (never cached/reused) — Razorpay Plan amounts are immutable once created,
+// so caching one on our Plan row would silently keep charging an old price
+// forever after a Super Admin price change.
+model SubscriptionAutoPayMandate {
+  id           String       @id @default(cuid())
+  adminId      String
+  admin        Admin        @relation(fields: [adminId], references: [id], onDelete: Cascade)
+  planId       String
+  plan         Plan         @relation(fields: [planId], references: [id])
+  billingCycle BillingCycle
+
+  razorpayPlanId         String
+  razorpaySubscriptionId String               @unique
+  status                 AutoPayMandateStatus @default(CREATED)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  transactions SubscriptionTransaction[]
+
+  @@index([adminId])
+  @@map("subscription_autopay_mandates")
 }
 
 // Admin-created discount code for OOWAPP's own subscription billing —

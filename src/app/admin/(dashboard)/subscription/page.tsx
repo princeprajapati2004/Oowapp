@@ -2,13 +2,16 @@ import { requireAdminSession } from "@/lib/session";
 import { getCurrentSubscription, computeDisplayStatus, computeDaysRemaining, computeGraceDaysRemaining } from "@/lib/services/subscription";
 import { getUsageSnapshot } from "@/lib/services/subscription-limits";
 import { getPurchasablePlans } from "@/lib/services/subscription-checkout";
+import { getCurrentAutoPayMandate } from "@/lib/services/subscription-autopay";
 import { db } from "@/lib/db";
 import { SubscriptionPageClient } from "@/components/admin/subscription/subscription-page-client";
+
+const ACTIVE_MANDATE_STATUSES = new Set(["CREATED", "AUTHENTICATED", "ACTIVE", "PENDING"]);
 
 export default async function SubscriptionPage() {
   const session = await requireAdminSession();
 
-  const [subscription, usage, plansForClient, invoices] = await Promise.all([
+  const [subscription, usage, plansForClient, invoices, mandate] = await Promise.all([
     getCurrentSubscription(session.adminId),
     getUsageSnapshot(session.adminId),
     getPurchasablePlans(session.adminId),
@@ -17,6 +20,7 @@ export default async function SubscriptionPage() {
       orderBy: { paidAt: "desc" },
       include: { plan: { select: { name: true } }, coupon: { select: { code: true } } },
     }),
+    getCurrentAutoPayMandate(session.adminId),
   ]);
 
   const displayStatus = computeDisplayStatus(subscription);
@@ -52,6 +56,11 @@ export default async function SubscriptionPage() {
       usage={usage}
       plans={plansForClient}
       invoices={invoicesForClient}
+      autoPayMandate={
+        mandate && ACTIVE_MANDATE_STATUSES.has(mandate.status)
+          ? { id: mandate.id, planName: mandate.plan.name, status: mandate.status }
+          : null
+      }
     />
   );
 }
