@@ -12,6 +12,7 @@ import { resolveOrderItems } from "@/lib/services/order-items";
 import { getOrCreateItemSettings } from "@/lib/services/item-settings";
 import { decrementStockForSale } from "@/lib/services/stock";
 import { checkRateLimit } from "@/lib/rate-limit";
+import { recordFeatureUsage } from "@/lib/services/subscription-usage";
 import type { Prisma } from "@/generated/prisma/client";
 
 const orderItemSchema = z.object({
@@ -32,9 +33,8 @@ const createWaiterOrderSchema = z.object({
 
 export async function POST(request: Request) {
   try {
-    // requireStaffRole() -> requireStaffSession() already enforces the
-    // account-wide subscription gate (see staff-session.ts).
-    const staffSession = await requireStaffRole("WAITER", "MANAGER");
+    // Creating an order is new paid activity — requires an active subscription.
+    const staffSession = await requireStaffRole(["WAITER", "MANAGER"], { requireActiveSubscription: true });
 
     if (!checkRateLimit(`staff-orders:${staffSession.staffId}`, 20, 60_000)) {
       return NextResponse.json({ error: "Too many requests" }, { status: 429 });
@@ -134,6 +134,16 @@ export async function POST(request: Request) {
       }).catch(() => {});
 
       publishOrderEvent(shop.id, { type: "order.created", order: toOrderEvent(order) });
+
+      recordFeatureUsage({
+        shopId: shop.id,
+        adminId: shop.adminId,
+        featureKey: "orders",
+        action: "CREATE",
+        actorType: "staff",
+        actorId: staffSession.staffId,
+        relatedRecordId: order.id,
+      });
     }
 
     return NextResponse.json({ ok: true, orderId: order.id, billNumber: order.billNumber });

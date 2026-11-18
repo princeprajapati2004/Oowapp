@@ -6,7 +6,7 @@ import { createCheckoutOrder } from "@/lib/services/subscription-checkout";
 
 export async function POST(request: Request) {
   try {
-    const session = await requireAdminSession({ skipSubscriptionCheck: true });
+    const session = await requireAdminSession();
     const body = await request.json();
     const input = createCheckoutOrderSchema.parse(body);
     const result = await createCheckoutOrder(session.adminId, input);

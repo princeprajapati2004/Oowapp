@@ -125,6 +125,16 @@ export class SubscriptionLimitExceededError extends Error {
   }
 }
 
+// The plan being purchased has published terms the owner hasn't accepted yet — distinct
+// from a permission error (they CAN buy it, they just haven't completed this required
+// step), so this maps to 400, not 403; see subscription-terms.ts.
+export class TermsNotAcceptedError extends Error {
+  constructor(message = "Please review and accept this plan's terms before continuing.") {
+    super(message);
+    this.name = "TermsNotAcceptedError";
+  }
+}
+
 export function handleApiError(error: unknown) {
   if (error instanceof UnauthorizedError) {
     return NextResponse.json({ error: error.message }, { status: 401 });
@@ -156,6 +166,9 @@ export function handleApiError(error: unknown) {
   }
   if (error instanceof SubscriptionLimitExceededError) {
     return NextResponse.json({ error: error.message }, { status: 403 });
+  }
+  if (error instanceof TermsNotAcceptedError) {
+    return NextResponse.json({ error: error.message }, { status: 400 });
   }
   if (error instanceof InvalidCouponError) {
     return NextResponse.json({ error: error.message }, { status: 400 });

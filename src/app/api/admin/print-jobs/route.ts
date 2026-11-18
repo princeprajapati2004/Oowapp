@@ -16,7 +16,7 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
-    const session = await requireAdminSession();
+    const session = await requireAdminSession({ requireActiveSubscription: true });
     const body = await request.json();
     const input = printJobCreateSchema.parse(body);
     const job = await createPrintJob(session.shopId, input);

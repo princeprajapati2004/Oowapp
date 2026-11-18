@@ -15,7 +15,7 @@ function priceForCycle(plan: { monthlyPrice: unknown; annualPrice: unknown }, cy
 // between "apply" and "pay" can't still silently discount the actual charge.
 export async function POST(request: Request) {
   try {
-    const session = await requireAdminSession({ skipSubscriptionCheck: true });
+    const session = await requireAdminSession();
     const body = await request.json();
     const input = validateCouponSchema.parse(body);
 

@@ -50,7 +50,7 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
-    const session = await requireAdminSession();
+    const session = await requireAdminSession({ requireActiveSubscription: true });
     await assertFeatureEnabled(session.shopId, "expenses");
     const body = await request.json();
     const input = expenseSchema.parse(body);

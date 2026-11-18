@@ -23,7 +23,7 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const session = await requireAdminSession();
+    const session = await requireAdminSession({ requireActiveSubscription: true });
     const { id } = await params;
     const body = await request.json();
     const input = partyPriceSchema.parse(body);

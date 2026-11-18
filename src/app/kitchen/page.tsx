@@ -3,13 +3,14 @@ import { ChefHat } from "lucide-react";
 import { getStaffSession } from "@/lib/staff-session";
 import { getAdminSession } from "@/lib/session";
 import { getShopById } from "@/lib/services/shop";
-import { resolveAdminIdForShop, isAccountAccessBlocked } from "@/lib/services/subscription";
 import { db } from "@/lib/db";
 import { toOrderEvent } from "@/lib/server/order-events";
 import { EmptyState } from "@/components/shared/empty-state";
 import { KitchenDisplay } from "@/components/admin/kitchen-display";
-import { SubscriptionExpiredScreen } from "@/components/shared/subscription-expired-screen";
 
+// Viewing/progressing already-placed orders is read/manage-existing-data —
+// always available regardless of subscription status (see
+// subscription.ts's module doc comment on the read-vs-write access model).
 export default async function KitchenStaffPage() {
   // Accept either a staff session (KITCHEN/MANAGER) or an admin session
   const staffSession = await getStaffSession();
@@ -23,11 +24,6 @@ export default async function KitchenStaffPage() {
 
   if (staffSession && staffSession.role !== "KITCHEN" && staffSession.role !== "MANAGER") {
     redirect("/staff/login");
-  }
-
-  const adminId = adminSession?.adminId ?? (await resolveAdminIdForShop(shopId));
-  if (await isAccountAccessBlocked(adminId)) {
-    return <SubscriptionExpiredScreen variant={adminSession ? "owner" : "staff"} />;
   }
 
   const shop = await getShopById(shopId);

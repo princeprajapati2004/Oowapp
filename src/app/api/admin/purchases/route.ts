@@ -29,7 +29,7 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
-    const session = await requireAdminSession();
+    const session = await requireAdminSession({ requireActiveSubscription: true });
     const body = await request.json();
     const input = purchaseSchema.parse(body);
     const purchase = await createPurchase(session.shopId, session.adminId, input);

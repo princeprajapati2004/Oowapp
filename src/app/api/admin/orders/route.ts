@@ -15,6 +15,7 @@ import { writeAuditLog, extractRequestMeta } from "@/lib/services/audit-log";
 import { findOrCreatePartyForOrder } from "@/lib/services/party";
 import { getOrCreateItemSettings } from "@/lib/services/item-settings";
 import { decrementStockForSale } from "@/lib/services/stock";
+import { recordFeatureUsage } from "@/lib/services/subscription-usage";
 import type { Prisma } from "@/generated/prisma/client";
 
 // GET — the owner order management list (brief §2/§12–§18): server-side
@@ -87,9 +88,8 @@ const createManualOrderSchema = z.object({
 
 export async function POST(request: Request) {
   try {
-    // requireAdminSession() already enforces the account-wide subscription
-    // gate (see session.ts) — no separate assertAccountAccess call needed here.
-    const session = await requireAdminSession();
+    // Creating an order is new paid activity — requires an active subscription.
+    const session = await requireAdminSession({ requireActiveSubscription: true });
     const body = await request.json();
     const input = createManualOrderSchema.parse(body);
 
@@ -327,6 +327,16 @@ export async function POST(request: Request) {
       body: `${formatCurrency(bill.grandTotal, shop.currency)} · ${input.items.length} item${input.items.length === 1 ? "" : "s"}`,
       link: `/admin/orders/${order.id}`,
     }).catch(() => {});
+
+    recordFeatureUsage({
+      shopId: shop.id,
+      adminId: session.adminId,
+      featureKey: "orders",
+      action: "CREATE",
+      actorType: "admin",
+      actorId: session.adminId,
+      relatedRecordId: order.id,
+    });
 
     publishOrderEvent(shop.id, { type: "order.created", order: toOrderEvent(order) });
 

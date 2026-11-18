@@ -16,6 +16,7 @@ export default async function SubscriptionPage() {
       include: {
         planFeatures: { where: { enabled: true }, include: { feature: true } },
         planLimits: true,
+        termsVersions: { where: { isActive: true } },
       },
     }),
     db.subscriptionTransaction.findMany({
@@ -29,20 +30,37 @@ export default async function SubscriptionPage() {
   const daysRemaining = computeDaysRemaining(subscription.endDate);
   const graceDaysRemaining = computeGraceDaysRemaining(displayStatus, subscription.gracePeriodDays, daysRemaining);
 
-  const plansForClient = plans.map((plan: (typeof plans)[number]) => ({
-    id: plan.id,
-    code: plan.code,
-    name: plan.name,
-    description: plan.description,
-    sortOrder: plan.sortOrder,
-    monthlyPrice: plan.monthlyPrice !== null ? Number(plan.monthlyPrice) : null,
-    annualPrice: plan.annualPrice !== null ? Number(plan.annualPrice) : null,
-    currency: plan.currency,
-    isPopular: plan.isPopular,
-    trialDays: plan.trialDays,
-    features: plan.planFeatures.map((pf: (typeof plan.planFeatures)[number]) => ({ key: pf.feature.key, label: pf.feature.label })),
-    limits: plan.planLimits.map((pl: (typeof plan.planLimits)[number]) => ({ limitKey: pl.limitKey, limitValue: pl.limitValue })),
-  }));
+  const activeTermsIds = plans
+    .map((plan: (typeof plans)[number]) => plan.termsVersions[0]?.id)
+    .filter((id: string | undefined): id is string => !!id);
+  const acceptances = activeTermsIds.length
+    ? await db.subscriptionTermsAcceptance.findMany({
+        where: { adminId: session.adminId, termsVersionId: { in: activeTermsIds } },
+        select: { termsVersionId: true },
+      })
+    : [];
+  const acceptedTermsIds = new Set(acceptances.map((a: (typeof acceptances)[number]) => a.termsVersionId));
+
+  const plansForClient = plans.map((plan: (typeof plans)[number]) => {
+    const activeTerms = plan.termsVersions[0] ?? null;
+    return {
+      id: plan.id,
+      code: plan.code,
+      name: plan.name,
+      description: plan.description,
+      sortOrder: plan.sortOrder,
+      monthlyPrice: plan.monthlyPrice !== null ? Number(plan.monthlyPrice) : null,
+      annualPrice: plan.annualPrice !== null ? Number(plan.annualPrice) : null,
+      currency: plan.currency,
+      isPopular: plan.isPopular,
+      trialDays: plan.trialDays,
+      features: plan.planFeatures.map((pf: (typeof plan.planFeatures)[number]) => ({ key: pf.feature.key, label: pf.feature.label })),
+      limits: plan.planLimits.map((pl: (typeof plan.planLimits)[number]) => ({ limitKey: pl.limitKey, limitValue: pl.limitValue })),
+      terms: activeTerms
+        ? { id: activeTerms.id, content: activeTerms.content, version: activeTerms.version, accepted: acceptedTermsIds.has(activeTerms.id) }
+        : null,
+    };
+  });
 
   const invoicesForClient = invoices.map((t: (typeof invoices)[number]) => ({
     id: t.id,

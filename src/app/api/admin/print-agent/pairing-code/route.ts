@@ -6,7 +6,7 @@ import { createPairingCode } from "@/lib/services/print-agent";
 
 export async function POST() {
   try {
-    const session = await requireAdminSession();
+    const session = await requireAdminSession({ requireActiveSubscription: true });
     if (!checkRateLimit(`print-agent-pairing:${session.shopId}`, 10, 10 * 60_000)) {
       return NextResponse.json({ error: "Too many requests" }, { status: 429 });
     }

@@ -6,7 +6,7 @@ import { commitMenuImport } from "@/lib/services/menu-import";
 
 export async function POST(request: Request) {
   try {
-    const session = await requireAdminSession();
+    const session = await requireAdminSession({ requireActiveSubscription: true });
     const body = await request.json();
     const input = menuImportCommitSchema.parse(body);
 

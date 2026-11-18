@@ -8,7 +8,7 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string; partyId: string }> }
 ) {
   try {
-    const session = await requireAdminSession();
+    const session = await requireAdminSession({ requireActiveSubscription: true });
     const { id, partyId } = await params;
     await removePartyPrice(session.shopId, id, partyId);
     return NextResponse.json({ ok: true });

@@ -12,7 +12,7 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const session = await requireAdminSession({ skipSubscriptionCheck: true });
+    const session = await requireAdminSession();
     const { id } = await params;
 
     const [transaction, admin] = await Promise.all([

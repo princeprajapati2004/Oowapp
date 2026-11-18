@@ -4,6 +4,7 @@ import { handleApiError } from "@/lib/api-utils";
 import { productSchema } from "@/lib/validation/product";
 import { listProducts, createProduct } from "@/lib/services/product";
 import { checkSubscriptionLimit, assertLimitNotExceededInTx } from "@/lib/services/subscription-limits";
+import { recordFeatureUsage } from "@/lib/services/subscription-usage";
 import { db } from "@/lib/db";
 import type { Prisma } from "@/generated/prisma/client";
 
@@ -19,7 +20,7 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
-    const session = await requireAdminSession();
+    const session = await requireAdminSession({ requireActiveSubscription: true });
     const { limit, planName } = await checkSubscriptionLimit(session.adminId, "PRODUCTS", 1);
     const body = await request.json();
     const input = productSchema.parse(body);
@@ -34,6 +35,15 @@ export async function POST(request: Request) {
         return tx.product.count({ where: { shopId: { in: shops.map((s) => s.id) } } });
       });
       return createProduct(session.shopId, input, tx);
+    });
+    recordFeatureUsage({
+      shopId: session.shopId,
+      adminId: session.adminId,
+      featureKey: "products",
+      action: "CREATE",
+      actorType: "admin",
+      actorId: session.adminId,
+      relatedRecordId: product.id,
     });
     return NextResponse.json(product, { status: 201 });
   } catch (error) {

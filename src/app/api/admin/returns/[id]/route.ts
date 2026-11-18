@@ -72,7 +72,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     // existing "mark_refunded" order action (the closest analog in this
     // codebase), which is also restricted to MANAGER via
     // src/lib/staff-permissions.ts's ORDER_ACTIONS_BY_ROLE.
-    const actor = await requireShopActor("MANAGER");
+    const actor = await requireShopActor(["MANAGER"]);
     const { id } = await params;
     const body = await request.json();
     const parsed: PatchAction = patchSchema.parse(body);

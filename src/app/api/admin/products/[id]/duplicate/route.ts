@@ -8,7 +8,7 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const session = await requireAdminSession();
+    const session = await requireAdminSession({ requireActiveSubscription: true });
     const { id } = await params;
     const product = await duplicateProduct(session.shopId, id);
     return NextResponse.json(product, { status: 201 });

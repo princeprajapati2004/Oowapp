@@ -1,10 +1,11 @@
 import { db } from "@/lib/db";
-import { NotFoundError } from "@/lib/api-utils";
+import { NotFoundError, TermsNotAcceptedError } from "@/lib/api-utils";
 import { ForbiddenError } from "@/lib/session";
 import { createOrder, verifyPaymentSignature, getSubscriptionRouteAccountId, getSubscriptionRouteMerchantId } from "@/lib/services/razorpay";
 import { validateAndPriceCoupon } from "@/lib/services/subscription-coupon";
 import { getSubscriptionTaxConfig, calculateTax } from "@/lib/services/subscription-tax";
 import { activateSubscriptionFromPayment } from "@/lib/services/subscription-billing";
+import { hasAcceptedCurrentTerms } from "@/lib/services/subscription-terms";
 import type { BillingCycle } from "@/generated/prisma/client";
 
 export interface CheckoutOrderResult {
@@ -36,6 +37,10 @@ export async function createCheckoutOrder(adminId: string, opts: { planId: strin
   const baseAmount = priceForCycle(plan, opts.billingCycle);
   if (baseAmount === null) {
     throw new NotFoundError(`${plan.name} does not have a self-service ${opts.billingCycle.toLowerCase()} price — contact sales.`);
+  }
+
+  if (!(await hasAcceptedCurrentTerms(adminId, plan.id))) {
+    throw new TermsNotAcceptedError(`Please review and accept ${plan.name}'s terms before continuing.`);
   }
 
   let discountAmount = 0;

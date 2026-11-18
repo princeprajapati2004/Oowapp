@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Plus, Settings2, Sliders, Copy, Archive } from "lucide-react";
+import { Plus, Settings2, Sliders, Copy, Archive, FileText } from "lucide-react";
 import { api, ApiError } from "@/lib/api-client";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -197,6 +197,7 @@ function PlanCard({
             onSaved={onChanged}
           />
           <ManageLimitsDialog plan={plan} limitByKey={limitByKey} onSaved={onChanged} />
+          <ManageTermsDialog plan={plan} />
           <DuplicatePlanDialog plan={plan} onDuplicated={onChanged} />
           {!plan.isArchived && <ArchivePlanButton plan={plan} onArchived={onChanged} />}
         </div>
@@ -674,6 +675,107 @@ function ManageLimitsDialog({
           )}
           <Button disabled={saving} onClick={handleSubmit}>
             {saving ? "Saving…" : confirming ? "Apply Changes" : "Save"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+interface TermsVersion {
+  id: string;
+  version: number;
+  content: string;
+  isActive: boolean;
+  createdAt: string;
+}
+
+function ManageTermsDialog({ plan }: { plan: Plan }) {
+  const [open, setOpen] = useState(false);
+  const [versions, setVersions] = useState<TermsVersion[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [draft, setDraft] = useState("");
+  const [publishing, setPublishing] = useState(false);
+
+  async function load() {
+    setLoading(true);
+    try {
+      const data = await api.get<TermsVersion[]>(`/api/super-admin/plans/${plan.id}/terms`);
+      setVersions(data);
+      setDraft(data.find((v) => v.isActive)?.content ?? "");
+    } catch (error) {
+      toast.error(error instanceof ApiError ? error.message : "Failed to load terms");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handlePublish() {
+    if (!draft.trim()) return;
+    setPublishing(true);
+    try {
+      await api.post(`/api/super-admin/plans/${plan.id}/terms`, { content: draft.trim() });
+      toast.success("New terms version published.");
+      await load();
+    } catch (error) {
+      toast.error(error instanceof ApiError ? error.message : "Failed to publish terms");
+    } finally {
+      setPublishing(false);
+    }
+  }
+
+  const activeVersion = versions.find((v) => v.isActive);
+
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next);
+        if (next) load();
+      }}
+    >
+      <DialogTrigger render={<Button variant="outline" size="sm" />}>
+        <FileText className="size-4" />
+        Terms
+      </DialogTrigger>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>{plan.name} — Terms &amp; Conditions</DialogTitle>
+          <DialogDescription>
+            Businesses must accept these terms before purchasing this plan. Publishing a new
+            version never edits the old one in place — anyone who already accepted v
+            {activeVersion?.version ?? 1} stays recorded as having accepted that exact text.
+          </DialogDescription>
+        </DialogHeader>
+        {loading ? (
+          <p className="text-sm text-muted-foreground">Loading…</p>
+        ) : (
+          <div className="space-y-3">
+            <Textarea
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              rows={10}
+              placeholder="No terms published yet for this plan. Leave blank to allow checkout without requiring acceptance."
+              className="font-mono text-xs"
+            />
+            {versions.length > 0 && (
+              <div className="max-h-24 space-y-1 overflow-y-auto border-t pt-2">
+                <p className="text-xs font-medium text-muted-foreground">Version history</p>
+                {versions.map((v) => (
+                  <div key={v.id} className="flex items-center justify-between text-xs text-muted-foreground">
+                    <span>
+                      v{v.version} {v.isActive && <Badge variant="secondary" className="ml-1 text-[10px]">Active</Badge>}
+                    </span>
+                    <span>{new Date(v.createdAt).toLocaleDateString()}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+        <DialogFooter>
+          <Button disabled={publishing || loading || !draft.trim() || draft.trim() === activeVersion?.content} onClick={handlePublish}>
+            {publishing ? "Publishing…" : "Publish New Version"}
           </Button>
         </DialogFooter>
       </DialogContent>

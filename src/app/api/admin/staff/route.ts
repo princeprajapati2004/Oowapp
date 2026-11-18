@@ -3,6 +3,7 @@ import { z } from "zod";
 import { requireAdminSession } from "@/lib/session";
 import { assertFeatureEnabled } from "@/lib/services/feature-permission";
 import { checkSubscriptionLimit, assertLimitNotExceededInTx } from "@/lib/services/subscription-limits";
+import { recordFeatureUsage } from "@/lib/services/subscription-usage";
 import { handleApiError } from "@/lib/api-utils";
 import { hashPassword } from "@/lib/auth";
 import { db } from "@/lib/db";
@@ -46,7 +47,7 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
-    const session = await requireAdminSession();
+    const session = await requireAdminSession({ requireActiveSubscription: true });
     await assertFeatureEnabled(session.shopId, "multi_staff");
     const { limit, planName } = await checkSubscriptionLimit(session.adminId, "USERS", 1);
     const body = await request.json();
@@ -88,6 +89,15 @@ export async function POST(request: Request) {
       });
     });
 
+    recordFeatureUsage({
+      shopId: session.shopId,
+      adminId: session.adminId,
+      featureKey: "staff",
+      action: "CREATE",
+      actorType: "admin",
+      actorId: session.adminId,
+      relatedRecordId: staff.id,
+    });
     return NextResponse.json({ ...staff, orderCount: 0 }, { status: 201 });
   } catch (error) {
     return handleApiError(error);

@@ -3,6 +3,7 @@ import { requireAdminSession } from "@/lib/session";
 import { handleApiError } from "@/lib/api-utils";
 import { partySchema } from "@/lib/validation/party";
 import { listPartiesWithBalances, createParty } from "@/lib/services/party";
+import { recordFeatureUsage } from "@/lib/services/subscription-usage";
 
 export async function GET() {
   try {
@@ -16,10 +17,19 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
-    const session = await requireAdminSession();
+    const session = await requireAdminSession({ requireActiveSubscription: true });
     const body = await request.json();
     const input = partySchema.parse(body);
     const party = await createParty(session.shopId, input);
+    recordFeatureUsage({
+      shopId: session.shopId,
+      adminId: session.adminId,
+      featureKey: "customers",
+      action: "CREATE",
+      actorType: "admin",
+      actorId: session.adminId,
+      relatedRecordId: party.id,
+    });
     return NextResponse.json(party, { status: 201 });
   } catch (error) {
     return handleApiError(error);

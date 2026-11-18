@@ -471,6 +471,8 @@ model Admin {
   subscriptions Subscription[]
   subscriptionTransactions      SubscriptionTransaction[]
   subscriptionCouponRedemptions SubscriptionCouponRedemption[]
+  usageRecords                  SubscriptionUsageRecord[]
+  termsAcceptances              SubscriptionTermsAcceptance[]
 
   emailVerifications EmailVerification[]
 
@@ -686,6 +688,7 @@ model Shop {
   returnRequests         ReturnRequest[]
   lossDamageRecords      LossDamageRecord[]
   purchases              Purchase[]
+  usageRecords           SubscriptionUsageRecord[]
 
   @@index([adminId])
   @@map("shops")
@@ -2225,6 +2228,7 @@ model Subscription {
   pendingBillingCycle BillingCycle?
 
   reminderLogs SubscriptionReminderLog[]
+  usageRecords SubscriptionUsageRecord[]
 
   @@index([adminId])
   @@index([adminId, createdAt])
@@ -2300,8 +2304,49 @@ model Plan {
   subscriptions Subscription[]
   pendingSubscriptions Subscription[] @relation("SubscriptionPendingPlan")
   transactions  SubscriptionTransaction[]
+  usageRecords  SubscriptionUsageRecord[]
+  termsVersions SubscriptionTermsVersion[]
 
   @@map("plans")
+}
+
+// Versioned per-plan terms — a materially changed plan gets a NEW row (never
+// edited in place) so a business that already accepted v1 is never silently
+// bound to v2's different terms; see subscription-terms.ts::publishTermsVersion.
+model SubscriptionTermsVersion {
+  id        String   @id @default(cuid())
+  planId    String
+  plan      Plan     @relation(fields: [planId], references: [id], onDelete: Cascade)
+  version   Int
+  content   String
+  // Exactly one version per plan should be active at a time, enforced in
+  // publishTermsVersion (deactivates the prior version in the same
+  // transaction) rather than a DB constraint — simpler than a partial unique
+  // index, and this table is only ever written by Super Admin action.
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  createdBy String
+
+  acceptances SubscriptionTermsAcceptance[]
+
+  @@unique([planId, version])
+  @@map("subscription_terms_versions")
+}
+
+// One row per business that has accepted a specific terms version — checked
+// before checkout completes (subscription-terms.ts::hasAcceptedCurrentTerms).
+// Never deleted when a newer version is published, so "what did they agree
+// to and when" stays a permanent record even after the plan's terms change.
+model SubscriptionTermsAcceptance {
+  id             String                   @id @default(cuid())
+  termsVersionId String
+  termsVersion   SubscriptionTermsVersion @relation(fields: [termsVersionId], references: [id], onDelete: Cascade)
+  adminId        String
+  admin          Admin                    @relation(fields: [adminId], references: [id], onDelete: Cascade)
+  acceptedAt     DateTime                 @default(now())
+
+  @@unique([termsVersionId, adminId])
+  @@map("subscription_terms_acceptances")
 }
 
 // Numeric per-plan caps — boolean toggles live on PlanFeature instead; kept
@@ -2468,6 +2513,46 @@ model SubscriptionCouponRedemption {
   @@index([couponId])
   @@index([adminId])
   @@map("subscription_coupon_redemptions")
+}
+
+// One row per successful (never failed/retried) feature-consuming action —
+// the "what happened" ledger behind the Usage History page and
+// getRemainingPlanUsage's current-period counts. Deliberately separate from
+// PlanLimit/getUsageSnapshot (which counts *current* rows, e.g. db.product.count())
+// — that answers "how many do I have now" post-renewal/deletion; this answers
+// "what did I do and when," and must survive deletions/renewals untouched
+// (see subscription-usage.ts::recordFeatureUsage).
+model SubscriptionUsageRecord {
+  id      String @id @default(cuid())
+  shopId  String
+  shop    Shop   @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  adminId String
+  admin   Admin  @relation(fields: [adminId], references: [id], onDelete: Cascade)
+
+  // Nullable FKs, same convention as Subscription.planRef — a later plan
+  // edit/delete must never retroactively corrupt historical usage rows.
+  subscriptionId String?
+  subscription   Subscription? @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
+  planId         String?
+  plan           Plan?         @relation(fields: [planId], references: [id], onDelete: SetNull)
+
+  // Matches Feature.key where the action is feature-gated; free-form rather
+  // than a FK since core actions (orders/products/parties/staff) are tracked
+  // even on plans/actions that predate or don't need a Feature row.
+  featureKey String
+  // Short verb: CREATE/UPDATE/DELETE — free text, not an enum, so a new
+  // action type never needs a migration.
+  action     String
+
+  actorType       String // "admin" | "staff" — see shop-actor.ts::actorAuditFields
+  actorId         String
+  relatedRecordId String?
+
+  createdAt DateTime @default(now())
+
+  @@index([adminId, createdAt])
+  @@index([shopId, featureKey, createdAt])
+  @@map("subscription_usage_records")
 }
 
 model AuditLog {

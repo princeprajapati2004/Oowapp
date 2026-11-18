@@ -71,7 +71,7 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
-    const actor = await requireShopActor();
+    const actor = await requireShopActor([], { requireActiveSubscription: true });
     assertActorCanCreate(actor);
     const body = await request.json();
     const parsed = createSchema.parse(body);

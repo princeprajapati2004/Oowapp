@@ -15,7 +15,7 @@ import type { LimitKey } from "@/generated/prisma/client";
 // the subscription spec's downgrade-safety rule.
 export async function POST(request: Request) {
   try {
-    const session = await requireAdminSession({ skipSubscriptionCheck: true });
+    const session = await requireAdminSession();
     const body = await request.json();
     const input = scheduleDowngradeSchema.parse(body);
 
@@ -77,7 +77,7 @@ export async function POST(request: Request) {
 
 export async function DELETE(request: Request) {
   try {
-    const session = await requireAdminSession({ skipSubscriptionCheck: true });
+    const session = await requireAdminSession();
     const subscription = await cancelScheduledDowngrade(session.adminId, { createdBy: session.adminId });
 
     const { ipAddress, userAgent, requestId } = extractRequestMeta(request);

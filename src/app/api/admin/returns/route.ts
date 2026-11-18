@@ -54,7 +54,7 @@ export async function POST(request: Request) {
     // WAITER can log a return on a customer's behalf (front-of-house),
     // KITCHEN can't; mutating status transitions (approve/reject/refund) are
     // MANAGER-only, enforced separately in returns/[id]/route.ts.
-    const actor = await requireShopActor("WAITER", "MANAGER");
+    const actor = await requireShopActor(["WAITER", "MANAGER"]);
     const body = await request.json();
     const parsed = createReturnSchema.parse(body);
 

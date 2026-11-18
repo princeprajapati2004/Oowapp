@@ -5,7 +5,7 @@ import { getUsageSnapshot } from "@/lib/services/subscription-limits";
 
 export async function GET() {
   try {
-    const session = await requireAdminSession({ skipSubscriptionCheck: true });
+    const session = await requireAdminSession();
     const usage = await getUsageSnapshot(session.adminId);
     return NextResponse.json(usage);
   } catch (error) {

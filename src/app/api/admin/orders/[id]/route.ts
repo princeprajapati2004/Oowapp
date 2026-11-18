@@ -144,7 +144,7 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const actor = await requireShopActor();
+    const actor = await requireShopActor([], { requireActiveSubscription: true });
     const { id } = await params;
     const body = await request.json();
 
@@ -538,7 +538,7 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const actor = await requireShopActor("MANAGER");
+    const actor = await requireShopActor(["MANAGER"], { requireActiveSubscription: true });
     const { id } = await params;
     const order = await db.order.findFirst({ where: { id, shopId: actor.shopId } });
     if (!order) throw new NotFoundError("Order not found");

@@ -11,7 +11,7 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const session = await requireAdminSession();
+    const session = await requireAdminSession({ requireActiveSubscription: true });
     await assertFeatureEnabled(session.shopId, "coupons");
     const { id } = await params;
     const body = await request.json();
@@ -28,7 +28,7 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const session = await requireAdminSession();
+    const session = await requireAdminSession({ requireActiveSubscription: true });
     await assertFeatureEnabled(session.shopId, "coupons");
     const { id } = await params;
     await deleteCoupon(session.shopId, id);

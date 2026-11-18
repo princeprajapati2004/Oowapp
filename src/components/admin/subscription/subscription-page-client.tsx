@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { CheckCircle2, AlertTriangle, Loader2 } from "lucide-react";
@@ -17,6 +18,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { Checkbox } from "@/components/ui/checkbox";
 import { formatCurrency } from "@/lib/utils/currency";
 import { generateSubscriptionInvoicePdf } from "@/lib/utils/subscription-invoice-pdf";
 import { Download, Mail } from "lucide-react";
@@ -49,6 +51,7 @@ interface PlanClient {
   trialDays: number;
   features: { key: string; label: string }[];
   limits: { limitKey: LimitKey; limitValue: number | null }[];
+  terms: { id: string; content: string; version: number; accepted: boolean } | null;
 }
 
 interface CurrentClient {
@@ -127,7 +130,7 @@ export function SubscriptionPageClient({
 
       <CurrentPlanCard current={current} />
 
-      <UsageOverview usage={usage} />
+      <UsageOverview usage={usage} status={current.status} />
 
       <div>
         <div className="flex items-center justify-between gap-4 flex-wrap mb-4">
@@ -299,10 +302,27 @@ function StatusBadge({ status }: { status: string }) {
   return <Badge className={styles[status] ?? styles.CANCELLED}>{label}</Badge>;
 }
 
-function UsageOverview({ usage }: { usage: UsageSnapshot }) {
+function UsageOverview({ usage, status }: { usage: UsageSnapshot; status: string }) {
+  // Once the subscription isn't active, these numbers are a frozen snapshot
+  // of what you had — not an invitation to add more. Say so explicitly
+  // rather than letting a "720 / 10,000 — within limit" bar imply new usage
+  // is still possible (it isn't; every creation path is blocked separately).
+  const isInactive = status === "EXPIRED" || status === "SUSPENDED" || status === "CANCELLED";
+
   return (
     <div>
-      <h2 className="text-lg font-semibold mb-3">Usage Overview</h2>
+      <div className="mb-3 flex items-center justify-between gap-2">
+        <h2 className="text-lg font-semibold">Usage Overview</h2>
+        <Link href="/admin/subscription/usage-history" className="text-sm text-primary underline underline-offset-2">
+          View usage history
+        </Link>
+      </div>
+      {isInactive && (
+        <div className="mb-3 flex items-start gap-2 rounded-lg border border-muted-foreground/20 bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
+          <AlertTriangle className="mt-0.5 size-4 shrink-0" />
+          <p>These are your last known usage numbers, not room still available — your subscription isn&apos;t active, so new usage is blocked. Renew to continue.</p>
+        </div>
+      )}
       <div className="grid gap-4 sm:grid-cols-2">
         {LIMIT_ORDER.filter((key) => usage[key].limit !== null || usage[key].used > 0).map((key) => {
           const { used, limit } = usage[key];
@@ -554,6 +574,7 @@ function CheckoutDialog({
   const [couponApplied, setCouponApplied] = useState<{ code: string; discountAmount: number } | null>(null);
   const [checkingCoupon, setCheckingCoupon] = useState(false);
   const [paying, setPaying] = useState(false);
+  const [termsAccepted, setTermsAccepted] = useState(plan.terms?.accepted ?? true);
 
   const basePrice = (billingCycle === "ANNUAL" ? plan.annualPrice : plan.monthlyPrice) ?? 0;
 
@@ -579,6 +600,10 @@ function CheckoutDialog({
   async function handlePay() {
     setPaying(true);
     try {
+      if (plan.terms && !plan.terms.accepted && termsAccepted) {
+        await api.post("/api/admin/subscription/terms/accept", { termsVersionId: plan.terms.id });
+      }
+
       const order = await api.post<{
         transactionId: string;
         gatewayOrderId: string;
@@ -670,9 +695,22 @@ function CheckoutDialog({
                 )}
                 <p className="text-xs text-muted-foreground pt-1">GST (if applicable) is calculated on the next step.</p>
               </div>
+
+              {plan.terms && !plan.terms.accepted && (
+                <div className="space-y-2 rounded-lg border p-3">
+                  <p className="text-xs font-medium text-muted-foreground">Terms &amp; Conditions</p>
+                  <div className="max-h-28 overflow-y-auto whitespace-pre-wrap text-xs text-muted-foreground">
+                    {plan.terms.content}
+                  </div>
+                  <label className="flex items-start gap-2 text-sm">
+                    <Checkbox checked={termsAccepted} onCheckedChange={(checked) => setTermsAccepted(checked === true)} className="mt-0.5" />
+                    <span>I have read and accept {plan.name}&apos;s terms and conditions.</span>
+                  </label>
+                </div>
+              )}
             </div>
             <DialogFooter>
-              <Button disabled={paying || step === "paying"} onClick={handlePay}>
+              <Button disabled={paying || step === "paying" || !termsAccepted} onClick={handlePay}>
                 {paying || step === "paying" ? "Opening payment…" : "Proceed to Pay"}
               </Button>
             </DialogFooter>

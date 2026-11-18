@@ -4,6 +4,7 @@ import { handleApiError } from "@/lib/api-utils";
 import { addBusinessSchema } from "@/lib/validation/business";
 import { createShopForAdmin, listShopsForAdmin } from "@/lib/services/shop";
 import { checkSubscriptionLimit, assertLimitNotExceededInTx } from "@/lib/services/subscription-limits";
+import { recordFeatureUsage } from "@/lib/services/subscription-usage";
 import { db } from "@/lib/db";
 import { writeAuditLog, extractRequestMeta } from "@/lib/services/audit-log";
 import type { Prisma } from "@/generated/prisma/client";
@@ -20,7 +21,7 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
-    const session = await requireAdminSession();
+    const session = await requireAdminSession({ requireActiveSubscription: true });
     const { limit, planName } = await checkSubscriptionLimit(session.adminId, "BUSINESSES", 1);
     const body = await request.json();
     const input = addBusinessSchema.parse(body);
@@ -49,6 +50,16 @@ export async function POST(request: Request) {
       ipAddress,
       userAgent,
       requestId,
+    });
+
+    recordFeatureUsage({
+      shopId: shop.id,
+      adminId: session.adminId,
+      featureKey: "branches",
+      action: "CREATE",
+      actorType: "admin",
+      actorId: session.adminId,
+      relatedRecordId: shop.id,
     });
 
     return NextResponse.json({ shop });

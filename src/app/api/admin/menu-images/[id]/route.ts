@@ -5,7 +5,7 @@ import { db } from "@/lib/db";
 
 export async function DELETE(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const session = await requireAdminSession();
+    const session = await requireAdminSession({ requireActiveSubscription: true });
     const { id } = await params;
     const image = await db.menuImage.findFirst({ where: { id, shopId: session.shopId } });
     if (!image) throw new NotFoundError("Image not found");

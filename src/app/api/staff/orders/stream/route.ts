@@ -10,7 +10,7 @@ export const maxDuration = 60;
 export async function GET(request: Request) {
   let shopId: string;
   try {
-    const session = await requireStaffRole("KITCHEN", "MANAGER", "WAITER");
+    const session = await requireStaffRole(["KITCHEN", "MANAGER", "WAITER"]);
     shopId = session.shopId;
   } catch (error) {
     return handleApiError(error);

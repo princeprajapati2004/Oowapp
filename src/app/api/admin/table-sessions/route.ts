@@ -74,7 +74,7 @@ const setTableStateSchema = z.object({
 // callers are responsible for not offering this on an occupied table.
 export async function PATCH(request: Request) {
   try {
-    const actor = await requireShopActor("WAITER", "MANAGER");
+    const actor = await requireShopActor(["WAITER", "MANAGER"]);
     const body = await request.json();
     const input = setTableStateSchema.parse(body);
 

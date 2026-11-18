@@ -42,17 +42,8 @@ export async function proxy(request: NextRequest) {
   }
 
   // Everything below is /admin/* (the only other tree this matcher covers).
-  // Forward the pathname as a header — src/app/admin/layout.tsx has no other
-  // way to know which route it's wrapping, and needs it to exempt
-  // /admin/login, /admin/onboarding, and /admin/subscription from the
-  // account-wide subscription gate (see subscription.ts::isAccountAccessBlocked)
-  // while every other /admin/* route stays covered.
-  const requestHeaders = new Headers(request.headers);
-  requestHeaders.set("x-pathname", pathname);
-  const next = () => NextResponse.next({ request: { headers: requestHeaders } });
-
   if (PUBLIC_ADMIN_PATHS.some((path) => pathname === path)) {
-    return next();
+    return NextResponse.next();
   }
 
   const token = request.cookies.get(SESSION_COOKIE)?.value;
@@ -63,7 +54,7 @@ export async function proxy(request: NextRequest) {
     return NextResponse.redirect(loginUrl);
   }
 
-  return next();
+  return NextResponse.next();
 }
 
 export const config = {

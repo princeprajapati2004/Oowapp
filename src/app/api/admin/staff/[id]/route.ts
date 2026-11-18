@@ -17,7 +17,7 @@ const updateStaffSchema = z.object({
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const session = await requireAdminSession();
+    const session = await requireAdminSession({ requireActiveSubscription: true });
     await assertFeatureEnabled(session.shopId, "multi_staff");
     const { id } = await params;
     const body = await request.json();
@@ -63,7 +63,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
 
 export async function DELETE(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const session = await requireAdminSession();
+    const session = await requireAdminSession({ requireActiveSubscription: true });
     await assertFeatureEnabled(session.shopId, "multi_staff");
     const { id } = await params;
 

@@ -22,6 +22,7 @@ import { nextBillNumber } from "@/lib/services/bill-number";
 import { findOrCreatePartyForOrder } from "@/lib/services/party";
 import { createNotification } from "@/lib/services/notification";
 import { formatCurrency } from "@/lib/utils/currency";
+import { recordFeatureUsage } from "@/lib/services/subscription-usage";
 import type { Prisma } from "@/generated/prisma/client";
 
 const orderItemSchema = z.object({
@@ -324,6 +325,16 @@ export async function POST(request: Request) {
       }).catch(() => {});
 
       publishOrderEvent(shop.id, { type: "order.created", order: toOrderEvent(order) });
+
+      recordFeatureUsage({
+        shopId: shop.id,
+        adminId: shop.adminId,
+        featureKey: "orders",
+        action: "CREATE",
+        actorType: "customer",
+        actorId: customerId ?? "guest",
+        relatedRecordId: order.id,
+      });
     }
 
     // When this order is part of a table session, hand the client back the
