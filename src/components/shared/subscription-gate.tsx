@@ -63,8 +63,22 @@ export function SubscriptionGateProvider({ children }: { children: ReactNode }) 
   const [termsAccepted, setTermsAccepted] = useState(true);
   const [paying, setPaying] = useState(false);
   const scriptLoaded = useRef(false);
+  // Mirrors `step` for open() below — a ref (not state) so open() always
+  // sees the latest value without needing `step` in its own deps, which
+  // would otherwise force registeredOpen to be re-registered on every step
+  // change via the effect right below.
+  const stepRef = useRef<GateStep>(step);
+  stepRef.current = step;
 
+  // Called from api-client.ts on EVERY 403 SUBSCRIPTION_EXPIRED response,
+  // anywhere in the app — including ones unrelated to this dialog, which
+  // can easily fire while the admin is already mid-checkout here (the
+  // account is still expired for the whole duration of paying to fix
+  // that). Resetting unconditionally would yank them back to the "locked"
+  // screen and discard their selected plan/checkout progress; only the
+  // first call (while actually closed) should open it.
   const open = useCallback(() => {
+    if (stepRef.current !== "closed") return;
     setStep("locked");
     setPlans(null);
     setSelectedPlan(null);
