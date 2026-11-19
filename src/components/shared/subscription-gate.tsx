@@ -81,6 +81,15 @@ export function SubscriptionGateProvider({ children }: { children: ReactNode }) 
     setStep("closed");
   }
 
+  useEffect(() => {
+    if (step !== "success") return;
+    const timer = setTimeout(() => {
+      close();
+      router.refresh();
+    }, 1200);
+    return () => clearTimeout(timer);
+  }, [step, router]);
+
   async function loadPlans() {
     setStep("plans");
     try {

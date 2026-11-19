@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -575,6 +575,12 @@ function CheckoutDialog({
   const [autoPay, setAutoPay] = useState(false);
 
   const basePrice = (billingCycle === "ANNUAL" ? plan.annualPrice : plan.monthlyPrice) ?? 0;
+
+  useEffect(() => {
+    if (step !== "success") return;
+    const timer = setTimeout(onSuccess, 1200);
+    return () => clearTimeout(timer);
+  }, [step, onSuccess]);
 
   async function applyCoupon() {
     if (!couponCode.trim()) return;
