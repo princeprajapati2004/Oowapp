@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Plus } from "lucide-react";
+import { Plus, Pencil } from "lucide-react";
 import { api, ApiError } from "@/lib/api-client";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -43,7 +43,7 @@ export function CouponManager({ coupons }: { coupons: Coupon[] }) {
   return (
     <div className="space-y-4">
       <div className="flex justify-end">
-        <NewCouponDialog onCreated={() => router.refresh()} />
+        <CouponFormDialog onSaved={() => router.refresh()} />
       </div>
       <Card>
         <CardContent className="p-0">
@@ -56,6 +56,7 @@ export function CouponManager({ coupons }: { coupons: Coupon[] }) {
                   <tr className="border-b bg-muted/40">
                     <th className="px-3 py-2 text-left">Code</th>
                     <th className="px-3 py-2 text-left">Discount</th>
+                    <th className="px-3 py-2 text-left">Min amount</th>
                     <th className="px-3 py-2 text-left">Plans</th>
                     <th className="px-3 py-2 text-left">Usage</th>
                     <th className="px-3 py-2 text-left">Expires</th>
@@ -74,6 +75,9 @@ export function CouponManager({ coupons }: { coupons: Coupon[] }) {
                         )}
                       </td>
                       <td className="px-3 py-2 text-muted-foreground">
+                        {c.minAmount !== null ? `₹${c.minAmount}` : "None"}
+                      </td>
+                      <td className="px-3 py-2 text-muted-foreground">
                         {c.applicablePlanCodes.length === 0 ? "All plans" : c.applicablePlanCodes.join(", ")}
                       </td>
                       <td className="px-3 py-2 text-muted-foreground">
@@ -87,7 +91,10 @@ export function CouponManager({ coupons }: { coupons: Coupon[] }) {
                         {c.isActive ? <Badge className="bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400">Active</Badge> : <Badge variant="outline">Disabled</Badge>}
                       </td>
                       <td className="px-3 py-2">
-                        <ToggleActiveButton coupon={c} onSaved={() => router.refresh()} />
+                        <div className="flex items-center gap-1.5 justify-end">
+                          <CouponFormDialog coupon={c} onSaved={() => router.refresh()} />
+                          <ToggleActiveButton coupon={c} onSaved={() => router.refresh()} />
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -122,43 +129,59 @@ function ToggleActiveButton({ coupon, onSaved }: { coupon: Coupon; onSaved: () =
   );
 }
 
-function NewCouponDialog({ onCreated }: { onCreated: () => void }) {
+function toDateInputValue(iso: string | null) {
+  return iso ? iso.slice(0, 10) : "";
+}
+
+/** Create when `coupon` is omitted, edit when provided — same fields, same
+ * validation, just POST vs PATCH and a different trigger (the "New Coupon"
+ * button vs a per-row edit icon). Kept as one component so the two modes
+ * can't drift apart. */
+function CouponFormDialog({ coupon, onSaved }: { coupon?: Coupon; onSaved: () => void }) {
+  const isEdit = !!coupon;
   const [open, setOpen] = useState(false);
-  const [code, setCode] = useState("");
-  const [discountType, setDiscountType] = useState<"PERCENTAGE" | "FIXED">("PERCENTAGE");
-  const [discountValue, setDiscountValue] = useState("");
-  const [maxDiscountAmount, setMaxDiscountAmount] = useState("");
-  const [minAmount, setMinAmount] = useState("");
-  const [applicablePlanCodes, setApplicablePlanCodes] = useState("");
-  const [expiresAt, setExpiresAt] = useState("");
-  const [totalUsageLimit, setTotalUsageLimit] = useState("");
-  const [perAdminLimit, setPerAdminLimit] = useState("");
+  const [code, setCode] = useState(coupon?.code ?? "");
+  const [discountType, setDiscountType] = useState<"PERCENTAGE" | "FIXED">(coupon?.discountType ?? "PERCENTAGE");
+  const [discountValue, setDiscountValue] = useState(coupon ? String(coupon.discountValue) : "");
+  const [maxDiscountAmount, setMaxDiscountAmount] = useState(coupon?.maxDiscountAmount != null ? String(coupon.maxDiscountAmount) : "");
+  const [minAmount, setMinAmount] = useState(coupon?.minAmount != null ? String(coupon.minAmount) : "");
+  const [applicablePlanCodes, setApplicablePlanCodes] = useState(coupon?.applicablePlanCodes.join(", ") ?? "");
+  const [startsAt, setStartsAt] = useState(toDateInputValue(coupon?.startsAt ?? null));
+  const [expiresAt, setExpiresAt] = useState(toDateInputValue(coupon?.expiresAt ?? null));
+  const [totalUsageLimit, setTotalUsageLimit] = useState(coupon?.totalUsageLimit != null ? String(coupon.totalUsageLimit) : "");
+  const [perAdminLimit, setPerAdminLimit] = useState(coupon?.perAdminLimit != null ? String(coupon.perAdminLimit) : "");
   const [saving, setSaving] = useState(false);
 
   async function handleSubmit() {
     setSaving(true);
     try {
-      await api.post("/api/super-admin/subscription-coupons", {
+      const payload = {
         code: code.trim().toUpperCase(),
         discountType,
         discountValue: Number(discountValue),
-        maxDiscountAmount: maxDiscountAmount ? Number(maxDiscountAmount) : undefined,
-        minAmount: minAmount ? Number(minAmount) : undefined,
+        maxDiscountAmount: maxDiscountAmount ? Number(maxDiscountAmount) : null,
+        minAmount: minAmount ? Number(minAmount) : null,
         applicablePlanCodes: applicablePlanCodes
           .split(",")
           .map((s) => s.trim().toUpperCase())
           .filter(Boolean),
-        expiresAt: expiresAt || undefined,
-        totalUsageLimit: totalUsageLimit ? Number(totalUsageLimit) : undefined,
-        perAdminLimit: perAdminLimit ? Number(perAdminLimit) : undefined,
-      });
-      toast.success("Coupon created.");
+        startsAt: startsAt || null,
+        expiresAt: expiresAt || null,
+        totalUsageLimit: totalUsageLimit ? Number(totalUsageLimit) : null,
+        perAdminLimit: perAdminLimit ? Number(perAdminLimit) : null,
+      };
+
+      if (isEdit) {
+        await api.patch(`/api/super-admin/subscription-coupons/${coupon.id}`, payload);
+        toast.success("Coupon updated.");
+      } else {
+        await api.post("/api/super-admin/subscription-coupons", payload);
+        toast.success("Coupon created.");
+      }
       setOpen(false);
-      setCode("");
-      setDiscountValue("");
-      onCreated();
+      onSaved();
     } catch (error) {
-      toast.error(error instanceof ApiError ? error.message : "Failed to create coupon");
+      toast.error(error instanceof ApiError ? error.message : `Failed to ${isEdit ? "update" : "create"} coupon`);
     } finally {
       setSaving(false);
     }
@@ -166,13 +189,25 @@ function NewCouponDialog({ onCreated }: { onCreated: () => void }) {
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger render={<Button size="sm" />}>
-        <Plus className="size-4" />
-        New Coupon
+      <DialogTrigger
+        render={
+          isEdit ? (
+            <Button variant="ghost" size="icon-sm" aria-label="Edit coupon" className="text-muted-foreground hover:text-foreground" />
+          ) : (
+            <Button size="sm" />
+          )
+        }
+      >
+        {isEdit ? <Pencil className="size-3.5" /> : (
+          <>
+            <Plus className="size-4" />
+            New Coupon
+          </>
+        )}
       </DialogTrigger>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>New Coupon</DialogTitle>
+          <DialogTitle>{isEdit ? "Edit Coupon" : "New Coupon"}</DialogTitle>
           <DialogDescription>e.g. OOWAPP50 — 50% off, max ₹500.</DialogDescription>
         </DialogHeader>
         <div className="space-y-3">
@@ -206,7 +241,7 @@ function NewCouponDialog({ onCreated }: { onCreated: () => void }) {
           )}
           <Field>
             <FieldLabel>Minimum order amount (optional)</FieldLabel>
-            <Input type="number" min="0" value={minAmount} onChange={(e) => setMinAmount(e.target.value)} />
+            <Input type="number" min="0" value={minAmount} onChange={(e) => setMinAmount(e.target.value)} placeholder="Leave blank for no minimum" />
           </Field>
           <Field>
             <FieldLabel>Applicable plans (comma-separated codes, blank = all)</FieldLabel>
@@ -222,14 +257,20 @@ function NewCouponDialog({ onCreated }: { onCreated: () => void }) {
               <Input type="number" min="0" value={perAdminLimit} onChange={(e) => setPerAdminLimit(e.target.value)} placeholder="Unlimited" />
             </Field>
           </div>
-          <Field>
-            <FieldLabel>Expires (optional)</FieldLabel>
-            <Input type="date" value={expiresAt} onChange={(e) => setExpiresAt(e.target.value)} />
-          </Field>
+          <div className="grid grid-cols-2 gap-3">
+            <Field>
+              <FieldLabel>Starts on (optional)</FieldLabel>
+              <Input type="date" value={startsAt} onChange={(e) => setStartsAt(e.target.value)} />
+            </Field>
+            <Field>
+              <FieldLabel>Expires (optional)</FieldLabel>
+              <Input type="date" value={expiresAt} onChange={(e) => setExpiresAt(e.target.value)} />
+            </Field>
+          </div>
         </div>
         <DialogFooter>
           <Button disabled={!code.trim() || !discountValue || saving} onClick={handleSubmit}>
-            {saving ? "Creating…" : "Create Coupon"}
+            {saving ? (isEdit ? "Saving…" : "Creating…") : isEdit ? "Save Changes" : "Create Coupon"}
           </Button>
         </DialogFooter>
       </DialogContent>

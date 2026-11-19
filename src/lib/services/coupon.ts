@@ -154,7 +154,9 @@ async function findEligibleCoupon(
   if (coupon.startsAt && now < coupon.startsAt) throw new InvalidCouponError("This coupon isn't active yet");
   if (coupon.expiresAt && now > coupon.expiresAt) throw new InvalidCouponError("This coupon has expired");
   if (coupon.minOrderAmount != null && subtotal < Number(coupon.minOrderAmount)) {
-    throw new InvalidCouponError(`Minimum order of ₹${Number(coupon.minOrderAmount)} required for this coupon`);
+    throw new InvalidCouponError(
+      `Minimum order of ₹${Number(coupon.minOrderAmount)} required for this coupon — your order is ₹${subtotal}`
+    );
   }
   return coupon;
 }

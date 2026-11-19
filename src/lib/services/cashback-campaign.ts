@@ -102,7 +102,9 @@ async function findEligibleCampaign(
   if (campaign.startsAt && now < campaign.startsAt) throw new InvalidCouponError("This cashback code isn't active yet");
   if (campaign.expiresAt && now > campaign.expiresAt) throw new InvalidCouponError("This cashback code has expired");
   if (campaign.minOrderAmount != null && subtotal < Number(campaign.minOrderAmount)) {
-    throw new InvalidCouponError(`Minimum order of ₹${Number(campaign.minOrderAmount)} required for this code`);
+    throw new InvalidCouponError(
+      `Minimum order of ₹${Number(campaign.minOrderAmount)} required for this code — your order is ₹${subtotal}`
+    );
   }
   return campaign;
 }

@@ -51,7 +51,9 @@ export async function validateAndPriceCoupon(
   }
 
   if (coupon.minAmount !== null && opts.baseAmount < Number(coupon.minAmount)) {
-    throw new SubscriptionCouponError(`This coupon requires a minimum amount of ${coupon.minAmount}.`);
+    throw new SubscriptionCouponError(
+      `This coupon requires a minimum amount of ₹${coupon.minAmount} — this plan is ₹${opts.baseAmount}.`
+    );
   }
 
   if (coupon.totalUsageLimit !== null && coupon.usageCount >= coupon.totalUsageLimit) {
