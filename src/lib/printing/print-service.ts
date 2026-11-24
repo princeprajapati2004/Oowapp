@@ -104,6 +104,13 @@ function charWidthFor(paperSize: PrintFormat): "58" | "80" {
   return paperSize === "THERMAL_58" ? "58" : "80";
 }
 
+/** Renders a bill to ESC/POS bytes without sending it anywhere — shared by sendBillReceipt (hardware adapters) and the RawBT hand-off, which has no ConnectedPrinterHandle of its own to write through. */
+export function buildBillReceiptBytes(order: BillOrderData, shop: BillShopData, paperSize: PrintFormat): Uint8Array {
+  const width = charWidthFor(paperSize);
+  const lines = buildReceiptLines(order, shop, width);
+  return renderEscPosReceipt(lines, THERMAL_CHAR_WIDTH[width]);
+}
+
 async function connectForPrinter(printer: PrinterProfileDTO): Promise<ConnectedPrinterHandle> {
   switch (printer.connectionType) {
     case "BLUETOOTH": {
@@ -134,10 +141,7 @@ async function connectForPrinter(printer: PrinterProfileDTO): Promise<ConnectedP
 }
 
 async function sendBillReceipt(handle: ConnectedPrinterHandle, order: BillOrderData, shop: BillShopData, paperSize: PrintFormat): Promise<void> {
-  const width = charWidthFor(paperSize);
-  const lines = buildReceiptLines(order, shop, width);
-  const bytes = renderEscPosReceipt(lines, THERMAL_CHAR_WIDTH[width]);
-  await handle.write(bytes);
+  await handle.write(buildBillReceiptBytes(order, shop, paperSize));
 }
 
 /** Also used by the Add Printer wizard's connectivity check, before a PrinterProfile row exists to attach job bookkeeping to. */

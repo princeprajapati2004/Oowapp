@@ -54,6 +54,23 @@ function serialArgs(comPort) {
   ];
 }
 
+// A Bluetooth Classic/SPP RFCOMM link that's been idle goes to sleep at the
+// radio level — the first port-open after idle routinely fails with
+// "The network location cannot be reached" purely because that first open
+// is what wakes the link back up, not because anything is actually wrong.
+// Confirmed directly against a real paired printer while building this:
+// back-to-back open attempts went fail-then-succeed with nothing else
+// changing. One retry after a short pause absorbs that without masking a
+// genuinely offline device (which fails both attempts).
+const SERIAL_RETRY_DELAY_MS = 700;
+
+async function runSerialScriptWithRetry(args) {
+  const first = await runPowerShellScript(SERIAL_SCRIPT_PATH, args);
+  if (first.ok) return first;
+  await new Promise((resolve) => setTimeout(resolve, SERIAL_RETRY_DELAY_MS));
+  return runPowerShellScript(SERIAL_SCRIPT_PATH, args);
+}
+
 /**
  * Opens (and immediately closes) a Bluetooth SPP COM port without sending
  * any data — the "is this link actually alive right now" check used by
@@ -63,7 +80,7 @@ function serialArgs(comPort) {
  * @returns {Promise<{ok: true} | {ok: false, error: string}>}
  */
 export function testSerialPortReachable(comPort) {
-  return runPowerShellScript(SERIAL_SCRIPT_PATH, [...serialArgs(comPort), "-TestOnly"]);
+  return runSerialScriptWithRetry([...serialArgs(comPort), "-TestOnly"]);
 }
 
 /**
@@ -78,7 +95,7 @@ export async function printRawBytes(target, base64Bytes) {
 
   try {
     if (COM_PORT_PATTERN.test(target)) {
-      return await runPowerShellScript(SERIAL_SCRIPT_PATH, [...serialArgs(target), "-FilePath", tempFile]);
+      return await runSerialScriptWithRetry([...serialArgs(target), "-FilePath", tempFile]);
     }
     return await runPowerShellScript(RAW_SCRIPT_PATH, ["-PrinterName", target, "-FilePath", tempFile]);
   } finally {

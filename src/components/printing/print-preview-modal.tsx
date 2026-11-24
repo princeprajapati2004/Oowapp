@@ -1,6 +1,7 @@
 "use client";
 
-import { Loader2, Printer, X } from "lucide-react";
+import { Loader2, Printer, Smartphone, X } from "lucide-react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -10,6 +11,9 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { BillDocument } from "@/components/printing/bill-document";
+import { getPrinterCapabilities } from "@/lib/printing/capability";
+import { buildBillReceiptBytes } from "@/lib/printing/print-service";
+import { printViaRawbt } from "@/lib/printing/adapters/rawbt";
 import type { PrintFormat } from "@/lib/types/print";
 import type { BillOrderData, BillShopData } from "@/lib/hooks/use-bill-actions";
 
@@ -37,6 +41,13 @@ export function PrintPreviewModal({
   format: PrintFormat;
   printing?: boolean;
 }) {
+  const isAndroid = getPrinterCapabilities().device === "android";
+
+  function handlePrintViaRawbt() {
+    printViaRawbt(buildBillReceiptBytes(order, shop, format));
+    toast.info("Opening RawBT…", { description: "If nothing happens, RawBT isn't installed on this phone." });
+  }
+
   return (
     <Dialog open={open} onOpenChange={(v) => !v && !printing && onClose()}>
       <DialogContent
@@ -72,6 +83,11 @@ export function PrintPreviewModal({
           <Button variant="outline" onClick={onClose} disabled={printing}>
             Cancel
           </Button>
+          {isAndroid && (
+            <Button variant="outline" onClick={handlePrintViaRawbt} disabled={printing} className="gap-1.5">
+              <Smartphone className="size-4" /> Print via RawBT
+            </Button>
+          )}
           <Button onClick={onConfirmPrint} disabled={printing} className="gap-1.5">
             {printing ? (
               <>
